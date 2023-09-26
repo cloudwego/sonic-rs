@@ -1,0 +1,22 @@
+[package]
+name = "sonic_rs-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+sonic-rs = { path = ".." }
+
+[[bin]]
+name = "fuzz_value"
+path = "fuzz_targets/from_slice.rs"
+test = false
+doc = false
