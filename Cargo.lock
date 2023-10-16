@@ -403,10 +403,8 @@ source = "git+https://github.com/serde-rs/json-benchmark#a0250e5ec7ad6c61ee8433f
 dependencies = [
  "getopts",
  "jemallocator",
- "rustc-serialize",
  "serde",
  "serde_json",
- "simd-json 0.11.0",
 ]
 
 [[package]]
@@ -656,12 +654,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dbb5fb1acd8a1a18b3dd5be62d25485eb770e05afb408a9627d14d451bae12da"
 
 [[package]]
-name = "rustc-serialize"
-version = "0.3.24"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcf128d1287d2ea9d80910b5f1120d0b8eede3fbf1abe91c40d39ea7d51e6fda"
-
-[[package]]
 name = "rustix"
 version = "0.38.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -737,21 +729,6 @@ dependencies = [
 
 [[package]]
 name = "simd-json"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5292d9aeaa0fcfd2732c6254761ef6394a4c1a9f255426c0c95b77069184816f"
-dependencies = [
- "getrandom",
- "halfbrown",
- "lexical-core",
- "serde",
- "serde_json",
- "simdutf8",
- "value-trait",
-]
-
-[[package]]
-name = "simd-json"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0f07a84c7456b901b8dd2c1d44caca8b0fd2c2616206ee5acc9d9da61e8d9ec"
@@ -801,7 +778,7 @@ dependencies = [
  "serde_bytes",
  "serde_derive",
  "serde_json",
- "simd-json 0.12.0",
+ "simd-json",
  "smallvec",
 ]
 

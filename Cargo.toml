@@ -29,21 +29,20 @@ gjson = "0.8"
 serde_derive = "1.0"
 env_logger = "0.10"
 faststr = "0.2"
-json-benchmark = { git = "https://github.com/serde-rs/json-benchmark" }
+json-benchmark = { git = "https://github.com/serde-rs/json-benchmark", default-features = false, features = ["all-files", "lib-serde"]}
 paste = "1.0"
 serde_bytes = "0.11"
 
-
 [profile.release]
 opt-level = 3
-debug = true
-debug-assertions = false
-overflow-checks = false
+debug = false
+rpath = false
 lto = true
+debug-assertions = false
+codegen-units = 1
 panic = 'unwind'
 incremental = false
-codegen-units = 16
-rpath = false
+overflow-checks = false
 
 [[bench]]
 name = "deserialize_struct"
