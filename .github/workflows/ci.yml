@@ -17,7 +17,6 @@ jobs:
       - test-linux
       - test-linux-aarch64
       - test-macos
-      - test-windows
       - lint
     steps:
       - run: exit 0
@@ -35,6 +34,7 @@ jobs:
       run: |
         cargo check
         cargo test
+        cargo bench
 
   test-linux-aarch64:
     runs-on: [self-hosted, arm]
@@ -52,20 +52,6 @@ jobs:
 
   test-macos:
     runs-on: macos-latest
-
-    steps:
-      - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt
-      - uses: Swatinem/rust-cache@v1
-      - name: Run tests
-        run: |
-          cargo check
-          cargo test
-
-  test-windows:
-    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v3

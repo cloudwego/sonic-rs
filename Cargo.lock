@@ -766,7 +766,6 @@ dependencies = [
  "criterion",
  "env_logger",
  "faststr",
- "getopts",
  "gjson",
  "itoa",
  "jemallocator",

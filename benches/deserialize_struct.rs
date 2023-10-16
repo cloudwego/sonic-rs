@@ -6,6 +6,7 @@ use criterion::{criterion_group, BatchSize, Criterion, Throughput};
 use std::fs::File;
 use std::io::Read;
 use std::str::from_utf8_unchecked;
+
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
