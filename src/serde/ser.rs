@@ -2,9 +2,9 @@
 
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
 
+use super::de::tri;
 use crate::error::{Error, ErrorCode, Result};
 use crate::format::{CompactFormatter, Formatter, PrettyFormatter};
-use crate::serde::tri;
 use crate::writer::WriterExt;
 use core::fmt::{self, Display};
 use core::num::FpCategory;

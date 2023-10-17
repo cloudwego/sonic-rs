@@ -59,7 +59,7 @@ impl Hash for N {
     }
 }
 
-pub trait NumberImpl: Sealed {
+pub trait JsonNumberTrait: Sealed {
     fn is_i64(&self) -> bool;
     fn is_u64(&self) -> bool;
     fn is_f64(&self) -> bool;
@@ -70,7 +70,7 @@ pub trait NumberImpl: Sealed {
 
 impl Sealed for Number {}
 
-impl NumberImpl for Number {
+impl JsonNumberTrait for Number {
     /// Returns true if the `Number` is an integer between `i64::MIN` and
     /// `i64::MAX`.
     ///
@@ -546,7 +546,7 @@ impl Serialize for RawNumber {
 
 impl Sealed for RawNumber {}
 
-impl NumberImpl for RawNumber {
+impl JsonNumberTrait for RawNumber {
     /// Returns true if the `Number` is an integer between `i64::MIN` and
     /// `i64::MAX`.
     ///

@@ -1,5 +1,5 @@
-mod point;
-mod tree;
+pub(crate) mod point;
+pub(crate) mod tree;
 
-pub use point::*;
-pub use tree::*;
+pub use point::{JsonPointer, PointerNode, PointerTarit};
+pub use tree::PointerTree;

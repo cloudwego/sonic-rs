@@ -8,7 +8,7 @@ use faststr::FastStr;
 
 /// A lazied iterator for JSON object.
 /// ObjectIterator can be used as `into_iter` directly.
-pub struct ObjectIterator<'de> {
+pub struct ObjectIntoIter<'de> {
     json: JsonSlice<'de>,
     parser: Option<Parser<SliceRead<'static>>>,
     strbuf: Vec<u8>,
@@ -19,7 +19,7 @@ pub struct ObjectIterator<'de> {
 
 /// A lazied iterator for JSON array.
 // ArrayIterator can be used as `into_iter` directly.
-pub struct ArrayIterator<'de> {
+pub struct ArrayIntoIter<'de> {
     json: JsonSlice<'de>,
     parser: Option<Parser<SliceRead<'static>>>,
     first: bool,
@@ -28,19 +28,19 @@ pub struct ArrayIterator<'de> {
 }
 
 /// ObjectTryIter return the result as Item.
-pub struct ObjectTryIter<'i, 'de: 'i>(&'i mut ObjectIterator<'de>);
+pub struct ObjectTryIter<'i, 'de: 'i>(&'i mut ObjectIntoIter<'de>);
 
 /// ArrayTryIter return the result as Item.
-pub struct ArrayTryIter<'i, 'de: 'i>(&'i mut ArrayIterator<'de>);
+pub struct ArrayTryIter<'i, 'de: 'i>(&'i mut ArrayIntoIter<'de>);
 
 /// ObjectIter return the LazyValue as Item.
-pub struct ObjectIter<'i, 'de: 'i>(&'i mut ObjectIterator<'de>);
+pub struct ObjectIter<'i, 'de: 'i>(&'i mut ObjectIntoIter<'de>);
 
 /// ArrayIter return the LazyValue as Item.
-pub struct ArrayIter<'i, 'de: 'i>(&'i mut ArrayIterator<'de>);
+pub struct ArrayIter<'i, 'de: 'i>(&'i mut ArrayIntoIter<'de>);
 
 /// ObjectTryIter return the LazyValue as Item.
-impl<'de> ObjectIterator<'de> {
+impl<'de> ObjectIntoIter<'de> {
     fn new(json: JsonSlice<'de>) -> Self {
         Self {
             json,
@@ -98,7 +98,7 @@ impl<'de> ObjectIterator<'de> {
 }
 
 /// ArrayTryIter return the LazyValue as Item.
-impl<'de> ArrayIterator<'de> {
+impl<'de> ArrayIntoIter<'de> {
     fn new(json: JsonSlice<'de>) -> Self {
         Self {
             json,
@@ -153,23 +153,23 @@ impl<'de> ArrayIterator<'de> {
     }
 }
 
-pub fn to_object_iter<'de, I: JsonInput<'de>>(json: I) -> ObjectIterator<'de> {
-    ObjectIterator::new(json.to_json_slice())
+pub fn to_object_iter<'de, I: JsonInput<'de>>(json: I) -> ObjectIntoIter<'de> {
+    ObjectIntoIter::new(json.to_json_slice())
 }
 
-pub fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayIterator<'de> {
-    ArrayIterator::new(json.to_json_slice())
+pub fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayIntoIter<'de> {
+    ArrayIntoIter::new(json.to_json_slice())
 }
 
 // A iterator for fields in JSON object. It will return none if parsing errors.
-impl<'de> Iterator for ObjectIterator<'de> {
+impl<'de> Iterator for ObjectIntoIter<'de> {
     type Item = (FastStr, LazyValue<'de>);
     fn next(&mut self) -> Option<Self::Item> {
         self.next_entry_impl()
     }
 }
 
-impl<'de> Iterator for ArrayIterator<'de> {
+impl<'de> Iterator for ArrayIntoIter<'de> {
     type Item = LazyValue<'de>;
     fn next(&mut self) -> Option<Self::Item> {
         self.next_elem_impl()

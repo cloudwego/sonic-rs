@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use sonic_rs::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 struct Person {

@@ -1,4 +1,4 @@
-use crate::{Index, JsonPointer, Number, NumberImpl};
+use crate::{Index, JsonNumberTrait, JsonPointer, Number};
 
 /// JsonType is an enum that represents the type of a JSON value.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]

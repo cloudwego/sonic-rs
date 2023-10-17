@@ -151,7 +151,8 @@ twitter/gjson::get      time:   [340.67 µs 344.56 µs 349.10 µs]
 ### Serde into Rust Type
 
 ```
-use serde::{Deserialize, Serialize};
+use sonic_rs::{Deserialize, Serialize};
+// or use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 struct Person {

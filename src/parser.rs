@@ -1,8 +1,10 @@
 use super::reader::{Reader, Reference};
 use crate::error::ErrorCode::{self, *};
 use crate::error::{Error, Result};
+use crate::pointer::{
+    tree::MultiIndex, tree::MultiKey, tree::PointerTreeInner, tree::PointerTreeNode, PointerTarit,
+};
 use crate::pointer::{JsonPointer, PointerTree};
-use crate::pointer::{MultiIndex, MultiKey, PointerTarit, PointerTreeInner, PointerTreeNode};
 use crate::util::arch::{get_nonspace_bits, prefix_xor};
 use crate::util::num::{parse_number_unchecked, ParserNumber};
 use crate::util::string::parse_valid_escaped_string;

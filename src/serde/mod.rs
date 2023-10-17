@@ -2,11 +2,19 @@ mod de;
 mod number;
 mod raw;
 mod ser;
+mod traits;
 
-pub use crate::serde::de::*;
-pub use crate::serde::number::*;
-pub use crate::serde::raw::*;
-pub use crate::serde::ser::*;
+pub use self::de::{from_slice, from_str, Deserializer};
+pub use self::number::{JsonNumberString, JsonNumberTrait, Number, RawNumber};
+pub use self::raw::{to_raw_value, RawValue};
+pub use self::ser::{
+    to_string, to_string_pretty, to_vec, to_vec_pretty, to_writer, to_writer_pretty, Serializer,
+};
+
+pub(crate) use self::de::tri;
+
+// re-export serde trait
+pub use serde::{Deserialize, Serialize};
 
 #[cfg(test)]
 #[allow(clippy::mutable_key_type)]
