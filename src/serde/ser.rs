@@ -747,11 +747,11 @@ struct MapKeySerializer<'a, W: 'a, F: 'a> {
 }
 
 fn invalid_raw_value() -> Error {
-    Error::syntax(ErrorCode::ExpectedSomeValue, 0, 0)
+    Error::syntax(ErrorCode::InvalidJsonValue, 0, 0)
 }
 
 fn key_must_be_a_string() -> Error {
-    Error::syntax(ErrorCode::KeyMustBeAString, 0, 0)
+    Error::syntax(ErrorCode::ExpectObjectKeyOrEnd, 0, 0)
 }
 
 impl<'a, W, F> ser::Serializer for MapKeySerializer<'a, W, F>

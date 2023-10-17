@@ -9,6 +9,8 @@ use std::error;
 use std::str::FromStr;
 use std::string::{String, ToString};
 
+use thiserror::Error as ErrorTrait;
+
 /// This type represents all possible errors that can occur when serializing or
 /// deserializing JSON data.
 pub struct Error {
@@ -42,50 +44,6 @@ impl Error {
         self.err.column
     }
 
-    /// Categorizes the cause of this error.
-    ///
-    /// - `Category::Io` - failure to read or write bytes on an I/O stream
-    /// - `Category::Syntax` - input that is not syntactically valid JSON
-    /// - `Category::Data` - input data that is semantically incorrect
-    /// - `Category::Eof` - unexpected end of the input data
-    pub fn classify(&self) -> Category {
-        match &self.err.code {
-            ErrorCode::Message(_) => Category::Data,
-            ErrorCode::Io(_) => Category::Io,
-            code => code.classify(),
-        }
-    }
-
-    /// Returns true if this error was caused by a failure to read or write
-    /// bytes on an I/O stream.
-    pub fn is_io(&self) -> bool {
-        self.classify() == Category::Io
-    }
-
-    /// Returns true if this error was caused by input that was not
-    /// syntactically valid JSON.
-    pub fn is_syntax(&self) -> bool {
-        self.classify() == Category::Syntax
-    }
-
-    /// Returns true if this error was caused by input data that was
-    /// semantically incorrect.
-    ///
-    /// For example, JSON containing a number is semantically incorrect when the
-    /// type being deserialized into holds a String.
-    pub fn is_data(&self) -> bool {
-        self.classify() == Category::Data
-    }
-
-    /// Returns true if this error was caused by prematurely reaching the end of
-    /// the input data.
-    ///
-    /// Callers that process streaming input may be interested in retrying the
-    /// deserialization once more data is available.
-    pub fn is_eof(&self) -> bool {
-        self.classify() == Category::Eof
-    }
-
     /// The kind reported by the underlying standard library I/O error, if this
     /// error was caused by a failure to read or write bytes on an I/O stream.
     ///
@@ -98,29 +56,6 @@ impl Error {
     }
 }
 
-/// Categorizes the cause of a `sonic_rs::Error`.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum Category {
-    /// The error was caused by a failure to read or write bytes on an I/O
-    /// stream.
-    Io,
-
-    /// The error was caused by input that was not syntactically valid JSON.
-    Syntax,
-
-    /// The error was caused by input data that was semantically incorrect.
-    ///
-    /// For example, JSON containing a number is semantically incorrect when the
-    /// type being deserialized into holds a String.
-    Data,
-
-    /// The error was caused by prematurely reaching the end of the input data.
-    ///
-    /// Callers that process streaming input may be interested in retrying the
-    /// deserialization once more data is available.
-    Eof,
-}
-
 #[allow(clippy::fallible_impl_from)]
 impl From<Error> for std::io::Error {
     /// Convert a `sonic_rs::Error` into an `std::io::Error`.
@@ -129,16 +64,10 @@ impl From<Error> for std::io::Error {
     /// EOF errors are turned into `UnexpectedEof` I/O errors.
     ///
     fn from(j: Error) -> Self {
-        if let ErrorCode::Io(err) = j.err.code {
-            err
-        } else {
-            match j.classify() {
-                Category::Io => unreachable!(),
-                Category::Syntax | Category::Data => {
-                    std::io::Error::new(std::io::ErrorKind::InvalidData, j)
-                }
-                Category::Eof => std::io::Error::new(std::io::ErrorKind::UnexpectedEof, j),
-            }
+        match j.err.code {
+            ErrorCode::Io(err) => err,
+            ErrorCode::EofWhileParsing => std::io::Error::new(std::io::ErrorKind::UnexpectedEof, j),
+            _ => std::io::Error::new(std::io::ErrorKind::InvalidData, j),
         }
     }
 }
@@ -149,153 +78,75 @@ struct ErrorImpl {
     column: usize,
 }
 
-impl ErrorCode {
-    /// Categorizes the cause of this error.
-    ///
-    /// - `Category::Io` - failure to read or write bytes on an I/O stream
-    /// - `Category::Syntax` - input that is not syntactically valid JSON
-    /// - `Category::Data` - input data that is semantically incorrect
-    /// - `Category::Eof` - unexpected end of the input data
-    pub fn classify(&self) -> Category {
-        match self {
-            ErrorCode::EofWhileParsingArray
-            | ErrorCode::EofWhileParsingObject
-            | ErrorCode::EofWhileParsingString
-            | ErrorCode::EofWhileParsingNumber
-            | ErrorCode::EofWhileParsingLiteral
-            | ErrorCode::EofAfterSkipSpace => Category::Eof,
-
-            ErrorCode::ExpectedColon
-            | ErrorCode::ExpectedArrayCommaOrEnd
-            | ErrorCode::ExpectedObjectCommaOrEnd
-            | ErrorCode::ExpectedSomeLiteral
-            | ErrorCode::ExpectedSomeValue
-            | ErrorCode::InvalidEscape
-            | ErrorCode::InvalidNumber
-            | ErrorCode::NumberOutOfRange
-            | ErrorCode::InvalidUnicodeCodePoint
-            | ErrorCode::ControlCharacterWhileParsingString
-            | ErrorCode::KeyMustBeAString
-            | ErrorCode::LoneLeadingSurrogateInHexEscape
-            | ErrorCode::TrailingComma
-            | ErrorCode::MimatchedNumberFormat
-            | ErrorCode::NumberWithLeadingZero
-            | ErrorCode::TrailingCharacters
-            | ErrorCode::UnexpectedEndOfHexEscape
-            | ErrorCode::RecursionLimitExceeded => Category::Syntax,
-            _ => unreachable!(),
-        }
-    }
-}
-
-#[derive(Debug)]
+#[derive(ErrorTrait, Debug)]
 pub(crate) enum ErrorCode {
-    /// Catchall for syntax error messages
+    #[error("`{0}`")]
     Message(Box<str>),
 
-    /// Some I/O error occurred while serializing or deserializing.
+    #[error("io error while serializing or deserializing")]
     Io(std::io::Error),
 
-    /// No errors
-    ErrorNone,
+    #[error("EOF while parsing")]
+    EofWhileParsing,
 
-    /// Not error,
-    HasEsacped,
-
-    /// Number is too long
-    NumberTooLong,
-
-    /// EOF while parsing a array.
-    EofWhileParsingArray,
-
-    /// EOF while parsing an object.
-    EofWhileParsingObject,
-
-    /// EOF while parsing a string.
-    EofWhileParsingString,
-
-    /// EOF while parsing a JSON number.
-    EofWhileParsingNumber,
-
-    /// EOF while parsing a JSON literal, either a `true`, `false`, or a `null`.
-    EofWhileParsingLiteral,
-
-    /// EOF after skip space.
-    EofAfterSkipSpace,
-
-    /// Expected this character to be a `':'`.
+    #[error("Expected this character to be a ':' while parsing")]
     ExpectedColon,
 
-    /// Expected this character to be either a `','` or a `']'`.
+    #[error("Expected this character to be either a ',' or a ']' while parsing")]
     ExpectedArrayCommaOrEnd,
 
-    /// Expected this character to be either a `','` or a `'}'`.
+    #[error("Expected this character to be either a ',' or a '}}' while parsing")]
     ExpectedObjectCommaOrEnd,
 
-    /// Expected to parse either a `true`, `false`, or a `null`.
-    ExpectedSomeLiteral,
+    #[error("Invalid literal (`true`, `false`, or a `null`) while parsing")]
+    InvalidLiteral,
 
-    /// Expected this character to start a JSON value.
-    ExpectedSomeValue,
+    #[error("Invalid JSON value")]
+    InvalidJsonValue,
 
-    /// Expected this character to start a JSON object.
-    ExpectedObject,
+    #[error("Expected this character to be '{{'")]
+    ExpectedObjectStart,
 
-    /// Expected this character to start a JSON array.
-    ExpectedArray,
+    #[error("Expected this character to be '['")]
+    ExpectedArrayStart,
 
-    /// Invalid hex escape code.
+    #[error("Invalid hex escape code")]
     InvalidEscape,
 
-    /// Invalid number. such as "-", "0."
+    #[error("Invalid number")]
     InvalidNumber,
 
-    /// Number with leading zero is not allowed, such as "0123"
-    NumberWithLeadingZero,
-
-    /// Mismatched number format, such as parse "0.123" to a integer
-    MimatchedNumberFormat,
-
-    /// Number is bigger than the maximum value of its type.
+    #[error("Number is bigger than the maximum value of its type")]
     NumberOutOfRange,
 
-    /// Invalid unicode code point.
+    #[error("Invalid unicode code point")]
     InvalidUnicodeCodePoint,
 
-    /// Control character found while parsing a string.
+    #[error("Control character found while parsing a string")]
     ControlCharacterWhileParsingString,
 
-    /// Object key is not a string.
-    KeyMustBeAString,
+    #[error("Expected this character to be '\"' or '}}'")]
+    ExpectObjectKeyOrEnd,
 
-    /// Lone leading surrogate in hex escape.
-    LoneLeadingSurrogateInHexEscape,
-
-    /// JSON has a comma after the last value in an array or map.
+    #[error("JSON has a comma after the last value in an array or object")]
     TrailingComma,
 
-    /// JSON has non-whitespace trailing characters after the value.
+    #[error("JSON has non-whitespace trailing characters after the value")]
     TrailingCharacters,
 
-    /// Unexpected end of hex escape.
-    UnexpectedEndOfHexEscape,
-
-    /// Encountered nesting of JSON maps and arrays more than 128 layers deep.
+    #[error("Encountered nesting of JSON maps and arrays more than 128 layers deep")]
     RecursionLimitExceeded,
 
-    /// Get value from a empty object
+    #[error("Get value from a empty object")]
     GetInEmptyObj,
 
-    /// Get unknown key from a object
+    #[error("Get unknown key from a object")]
     GetUnknownKeyInObj,
 
-    /// Get value from a empty array
-    GetInEmptyArray,
-
-    /// Get index out of array
+    #[error("Get index out of array")]
     GetIndexOutOfArray,
 
-    /// Unexpected visit type
+    #[error("Unexpected visited type in JSON visitor")]
     UnexpectedVisitType,
 }
 
@@ -307,12 +158,8 @@ impl Error {
         }
     }
 
-    // Not public API. Should be pub(crate).
-    //
-    // Update `eager_json` crate when this function changes.
-    #[doc(hidden)]
     #[cold]
-    pub fn io(error: std::io::Error) -> Self {
+    pub(crate) fn io(error: std::io::Error) -> Self {
         Error {
             err: Box::new(ErrorImpl {
                 code: ErrorCode::Io(error),
@@ -335,66 +182,12 @@ impl Error {
     }
 }
 
-impl Display for ErrorCode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ErrorCode::Message(msg) => f.write_str(msg),
-            ErrorCode::Io(err) => Display::fmt(err, f),
-            code => match code {
-                ErrorCode::EofWhileParsingArray => f.write_str("EOF while parsing a array"),
-                ErrorCode::EofWhileParsingObject => f.write_str("EOF while parsing an object"),
-                ErrorCode::EofWhileParsingString => f.write_str("EOF while parsing a string"),
-                ErrorCode::EofWhileParsingNumber => f.write_str("EOF while parsing a number"),
-                ErrorCode::EofWhileParsingLiteral => {
-                    f.write_str("EOF while parsing a literal, true, false or null")
-                }
-                ErrorCode::EofAfterSkipSpace => f.write_str("EOF after skip space"),
-                ErrorCode::ExpectedColon => f.write_str("expected `:`"),
-                ErrorCode::ExpectedArrayCommaOrEnd => f.write_str("expected `,` or `]`"),
-                ErrorCode::ExpectedObjectCommaOrEnd => f.write_str("expected `,` or `}`"),
-                ErrorCode::ExpectedSomeLiteral => f.write_str("expected literal "),
-                ErrorCode::ExpectedSomeValue => f.write_str("expected value"),
-                ErrorCode::ExpectedObject => f.write_str("expect '{'"),
-                ErrorCode::ExpectedArray => f.write_str("expect '['"),
-                ErrorCode::InvalidEscape => f.write_str("invalid escape"),
-                ErrorCode::InvalidNumber => f.write_str("invalid number"),
-                ErrorCode::NumberOutOfRange => f.write_str("number out of range"),
-                ErrorCode::InvalidUnicodeCodePoint => f.write_str("invalid unicode code point"),
-                ErrorCode::ControlCharacterWhileParsingString => {
-                    f.write_str("control character (\\u0000-\\u001F) found while parsing a string")
-                }
-                ErrorCode::KeyMustBeAString => f.write_str("key must be a string"),
-                ErrorCode::LoneLeadingSurrogateInHexEscape => {
-                    f.write_str("lone leading surrogate in hex escape")
-                }
-                ErrorCode::MimatchedNumberFormat => {
-                    f.write_str("Mismatched number format, such as parse \"0.123\" to a integer")
-                }
-                ErrorCode::NumberWithLeadingZero => f.write_str(
-                    "Number with leading zero is not allowed, such as \"0123\", \"0e123\"",
-                ),
-                ErrorCode::TrailingComma => f.write_str("trailing comma"),
-                ErrorCode::TrailingCharacters => f.write_str("trailing characters"),
-                ErrorCode::UnexpectedEndOfHexEscape => f.write_str("unexpected end of hex escape"),
-                ErrorCode::RecursionLimitExceeded => f.write_str("recursion limit exceeded"),
-                _ => f.write_str("unpected error, should not has error here"),
-            },
-        }
-    }
-}
-
 impl serde::de::StdError for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match &self.err.code {
             ErrorCode::Io(err) => err.source(),
             _ => None,
         }
-    }
-}
-
-impl serde::de::StdError for ErrorCode {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        None
     }
 }
 
@@ -420,10 +213,8 @@ impl Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Error({:?}, line: {}, column: {})",
-            self.err.code.to_string(),
-            self.err.line,
-            self.err.column
+            "Error({}, line: {}, column: {})",
+            self.err.code, self.err.line, self.err.column
         )
     }
 }

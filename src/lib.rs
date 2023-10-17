@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 mod error;
 mod input;
 mod parser;

@@ -138,13 +138,6 @@ impl<'de> LazyValue<'de> {
             own: UnsafeCell::new(Vec::new()),
         }
     }
-
-    fn from_u8_inner(json: &[u8]) -> Result<&[u8]> {
-        let reader = SliceRead::new(json);
-        let mut parser = Parser::new(reader);
-        let slice = parser.skip_one()?;
-        Ok(slice)
-    }
 }
 
 #[cfg(test)]

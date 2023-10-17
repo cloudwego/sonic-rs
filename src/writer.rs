@@ -3,11 +3,13 @@ use bytes::BytesMut;
 use std::io;
 use std::slice::from_raw_parts_mut;
 
+use std::mem::MaybeUninit;
+
 pub trait WriterExt: io::Write {
     /// rerserve with additional space, equal as vector/bufmut reserve, but return the reserved buffer at [len: cap]
     /// # Safety
     /// must be used with add len
-    unsafe fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [u8]>;
+    unsafe fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]>;
 
     /// add len to the writer
     /// # Safety
@@ -16,10 +18,10 @@ pub trait WriterExt: io::Write {
 }
 
 impl WriterExt for &mut Vec<u8> {
-    unsafe fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [u8]> {
+    unsafe fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
         self.reserve(additional);
         unsafe {
-            let ptr = self.as_mut_ptr().add(self.len());
+            let ptr = self.as_mut_ptr().add(self.len()) as *mut MaybeUninit<u8>;
             Ok(from_raw_parts_mut(ptr, additional))
         }
     }
@@ -38,10 +40,10 @@ impl WriterExt for Writer<BytesMut> {
         self.get_mut().set_len(new_len);
     }
 
-    unsafe fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [u8]> {
+    unsafe fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
         self.get_mut().reserve(additional);
         unsafe {
-            let ptr = self.get_mut().as_mut_ptr().add(self.get_ref().len());
+            let ptr = self.get_mut().as_mut_ptr().add(self.get_ref().len()) as *mut MaybeUninit<u8>;
             Ok(from_raw_parts_mut(ptr, additional))
         }
     }

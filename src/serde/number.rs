@@ -164,27 +164,6 @@ impl Number {
             None
         }
     }
-
-    pub(crate) fn as_f32(&self) -> Option<f32> {
-        match self.n {
-            N::PosInt(n) => Some(n as f32),
-            N::NegInt(n) => Some(n as f32),
-            N::Float(n) => Some(n as f32),
-        }
-    }
-
-    pub(crate) fn from_f32(f: f32) -> Option<Number> {
-        if f.is_finite() {
-            let n = { N::Float(f as f64) };
-            Some(Number { n })
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn number(&self) -> N {
-        self.n
-    }
 }
 
 impl Display for Number {
@@ -393,17 +372,6 @@ macro_rules! impl_from_signed {
 
 impl_from_unsigned!(u8, u16, u32, u64, usize);
 impl_from_signed!(i8, i16, i32, i64, isize);
-
-impl Number {
-    #[cold]
-    pub(crate) fn unexpected(&self) -> Unexpected {
-        match self.n {
-            N::PosInt(u) => Unexpected::Unsigned(u),
-            N::NegInt(i) => Unexpected::Signed(i),
-            N::Float(f) => Unexpected::Float(f),
-        }
-    }
-}
 
 /// Represents a JSON number with arbitrary precision, like as Golang json.Number
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]

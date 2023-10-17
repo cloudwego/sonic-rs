@@ -152,34 +152,6 @@ fn hex_to_u32_nocheck(src: &[u8; 4]) -> u32 {
 // function looks cheap.
 //
 // Note: we assume that surrogates are treated separately
-// TODO: use faster vector
-#[inline(always)]
-pub fn codepoint_to_utf8_unchecked(cp: u32, dst: &mut Vec<u8>) {
-    if cp <= 0x7F {
-        dst.push(cp as u8);
-    } else if cp <= 0x7FF {
-        dst.push(((cp >> 6) + 192) as u8);
-        dst.push(((cp & 63) + 128) as u8);
-        // universal plane
-        //  Surrogates are treated elsewhere...
-        //} //else if (0xd800 <= cp && cp <= 0xdfff) {
-        //  return 0; // surrogates // could put assert here
-    } else if cp <= 0xFFFF {
-        dst.push(((cp >> 12) + 224) as u8);
-        dst.push((((cp >> 6) & 63) + 128) as u8);
-        dst.push(((cp & 63) + 128) as u8);
-    } else if cp <= 0x10FFFF {
-        // if you know you have a valid code point, this
-        // is not needed
-        dst.push(((cp >> 18) + 240) as u8);
-        dst.push((((cp >> 12) & 63) + 128) as u8);
-        dst.push((((cp >> 6) & 63) + 128) as u8);
-        dst.push(((cp & 63) + 128) as u8);
-    } else {
-        unreachable!()
-    }
-}
-
 fn codepoint_to_utf8(cp: u32, c: *mut u8) -> usize {
     if cp <= 0x7F {
         unsafe { *c = cp as u8 };

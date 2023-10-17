@@ -109,7 +109,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         let peek = match self.parser.skip_space() {
             Some(b) => b,
             None => {
-                return Err(self.parser.error(EofAfterSkipSpace));
+                return Err(self.parser.error(EofWhileParsing));
             }
         };
 
@@ -164,7 +164,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
             }
             b'[' => de::Error::invalid_type(Unexpected::Seq, exp),
             b'{' => de::Error::invalid_type(Unexpected::Map, exp),
-            _ => self.parser.error(ErrorCode::ExpectedSomeValue),
+            _ => self.parser.error(ErrorCode::InvalidJsonValue),
         };
 
         self.parser.fix_position(err)
@@ -178,7 +178,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
                 _ => Err(self.parser.error(ErrorCode::TrailingCharacters)),
             },
             Some(_) => Err(self.parser.error(ErrorCode::TrailingCharacters)),
-            None => Err(self.parser.error(ErrorCode::EofWhileParsingArray)),
+            None => Err(self.parser.error(ErrorCode::EofWhileParsing)),
         }
     }
 
@@ -187,7 +187,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
             Some(b'}') => Ok(()),
             Some(b',') => Err(self.parser.error(ErrorCode::TrailingComma)),
             Some(_) => Err(self.parser.error(ErrorCode::TrailingCharacters)),
-            None => Err(self.parser.error(ErrorCode::EofWhileParsingObject)),
+            None => Err(self.parser.error(ErrorCode::EofWhileParsing)),
         }
     }
 
@@ -263,7 +263,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         let peek = match self.parser.skip_space() {
             Some(b) => b,
             None => {
-                return Err(self.parser.error(EofAfterSkipSpace));
+                return Err(self.parser.error(EofWhileParsing));
             }
         };
 
@@ -297,7 +297,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 let _ = DepthGuard::guard(self);
                 visitor.visit_map(MapAccess::new(self))
             }
-            _ => Err(self.parser.error(ErrorCode::ExpectedSomeValue)),
+            _ => Err(self.parser.error(ErrorCode::InvalidJsonValue)),
         };
 
         match value {
@@ -318,7 +318,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         let peek = match self.parser.skip_space() {
             Some(b) => b,
             None => {
-                return Err(self.parser.error(ErrorCode::EofAfterSkipSpace));
+                return Err(self.parser.error(ErrorCode::EofWhileParsing));
             }
         };
 
@@ -363,7 +363,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
             }
             Some(_) => {}
             None => {
-                return Err(self.parser.error(ErrorCode::EofAfterSkipSpace));
+                return Err(self.parser.error(ErrorCode::EofWhileParsing));
             }
         };
 
@@ -392,7 +392,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
             }
             Some(_) => {}
             None => {
-                return Err(self.parser.error(ErrorCode::EofAfterSkipSpace));
+                return Err(self.parser.error(ErrorCode::EofWhileParsing));
             }
         }
 
@@ -426,7 +426,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         let peek = match self.parser.skip_space() {
             Some(b) => b,
             None => {
-                return Err(self.parser.error(ErrorCode::EofAfterSkipSpace));
+                return Err(self.parser.error(ErrorCode::EofWhileParsing));
             }
         };
 
@@ -464,7 +464,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         let peek = match self.parser.skip_space() {
             Some(b) => b,
             None => {
-                return Err(self.parser.error(ErrorCode::EofAfterSkipSpace));
+                return Err(self.parser.error(ErrorCode::EofWhileParsing));
             }
         };
 
@@ -514,7 +514,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         let peek = match self.parser.skip_space() {
             Some(b) => b,
             None => {
-                return Err(self.parser.error(ErrorCode::EofAfterSkipSpace));
+                return Err(self.parser.error(ErrorCode::EofWhileParsing));
             }
         };
 
@@ -564,7 +564,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         let peek = match self.parser.skip_space() {
             Some(b) => b,
             None => {
-                return Err(self.parser.error(ErrorCode::EofAfterSkipSpace));
+                return Err(self.parser.error(ErrorCode::EofWhileParsing));
             }
         };
 
@@ -614,7 +614,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         let peek = match self.parser.skip_space() {
             Some(b) => b,
             None => {
-                return Err(self.parser.error(ErrorCode::EofAfterSkipSpace));
+                return Err(self.parser.error(ErrorCode::EofWhileParsing));
             }
         };
 
@@ -643,7 +643,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         let peek = match self.parser.skip_space() {
             Some(b) => b,
             None => {
-                return Err(self.parser.error(ErrorCode::EofAfterSkipSpace));
+                return Err(self.parser.error(ErrorCode::EofWhileParsing));
             }
         };
 
@@ -696,13 +696,13 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
 
                 match self.parser.skip_space() {
                     Some(b'}') => Ok(value),
-                    Some(_) => Err(self.parser.error(ErrorCode::ExpectedSomeValue)),
-                    None => Err(self.parser.error(ErrorCode::EofWhileParsingObject)),
+                    Some(_) => Err(self.parser.error(ErrorCode::InvalidJsonValue)),
+                    None => Err(self.parser.error(ErrorCode::EofWhileParsing)),
                 }
             }
             Some(b'"') => visitor.visit_enum(UnitVariantAccess::new(self)),
-            Some(_) => Err(self.parser.error(ErrorCode::ExpectedSomeValue)),
-            None => Err(self.parser.error(ErrorCode::EofAfterSkipSpace)),
+            Some(_) => Err(self.parser.error(ErrorCode::InvalidJsonValue)),
+            None => Err(self.parser.error(ErrorCode::EofWhileParsing)),
         }
     }
 
@@ -753,7 +753,7 @@ impl<'de, 'a, R: Reader<'de> + 'a> de::SeqAccess<'de> for SeqAccess<'a, R> {
                     Err(self.de.parser.error(ErrorCode::ExpectedArrayCommaOrEnd))
                 }
             }
-            None => Err(self.de.parser.error(ErrorCode::EofWhileParsingArray)),
+            None => Err(self.de.parser.error(ErrorCode::EofWhileParsing)),
         }
     }
 }
@@ -791,15 +791,15 @@ impl<'de, 'a, R: Reader<'de> + 'a> de::MapAccess<'de> for MapAccess<'a, R> {
                 }
             }
             None => {
-                return Err(self.de.parser.error(ErrorCode::EofWhileParsingObject));
+                return Err(self.de.parser.error(ErrorCode::EofWhileParsing));
             }
         };
 
         match peek {
             Some(b'"') => seed.deserialize(MapKey { de: &mut *self.de }).map(Some),
             Some(b'}') => Err(self.de.parser.error(ErrorCode::TrailingComma)),
-            Some(_) => Err(self.de.parser.error(ErrorCode::KeyMustBeAString)),
-            None => Err(self.de.parser.error(ErrorCode::EofAfterSkipSpace)),
+            Some(_) => Err(self.de.parser.error(ErrorCode::ExpectObjectKeyOrEnd)),
+            None => Err(self.de.parser.error(ErrorCode::EofWhileParsing)),
         }
     }
 

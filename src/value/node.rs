@@ -173,7 +173,7 @@ impl<'dom> ops::Deref for Array<'dom> {
 
 impl<'dom> ArrayMut<'dom> {
     pub fn push(&mut self, node: Value<'dom>) {
-        self.0.append_array(node)
+        self.0.val.append_array(node, self.0.alloc)
     }
 
     pub fn pop(&mut self) -> Option<Value<'dom>> {
@@ -657,18 +657,6 @@ impl<'dom> Value<'dom> {
         }
     }
 
-    fn to_pairs(src: &[Self]) -> &[(Self, Self)] {
-        let ptr = src.as_ptr() as *const (Self, Self);
-        let len = src.len() / 2;
-        unsafe { from_raw_parts(ptr, len) }
-    }
-
-    fn to_pairs_mut(src: &mut [Self]) -> &mut [(Self, Self)] {
-        let ptr = src.as_mut_ptr() as *mut (Self, Self);
-        let len = src.len() / 2;
-        unsafe { from_raw_parts_mut(ptr, len) }
-    }
-
     // if object, return as a doubled size slice
     pub(crate) fn children<T>(&self) -> Option<&[T]> {
         if self.has_children() {
@@ -739,21 +727,6 @@ impl<'dom> Value<'dom> {
             std::slice::from_raw_parts(ptr as *const (Self, Self), len)
         };
         slice
-    }
-
-    fn set_f64(&mut self, val: f64) {
-        self.typ.0 = Self::FLOAT;
-        self.val.fval = val;
-    }
-
-    fn set_u64(&mut self, val: u64) {
-        self.typ.0 = Self::UNSIGNED;
-        self.val.uval = val;
-    }
-
-    fn set_i64(&mut self, val: i64) {
-        self.typ.0 = Self::SIGNED;
-        self.val.ival = val;
     }
 
     fn set_null(&mut self) {
@@ -831,10 +804,6 @@ impl MetaNode {
     fn from_nodes<'dom>(slice: &'dom mut [Value]) -> &'dom mut Self {
         debug_assert!(slice.len() >= Value::MEAT_NODE_COUNT);
         unsafe { &mut *(slice.as_mut_ptr() as *mut MetaNode) }
-    }
-
-    fn set_cap(&mut self, cap: usize) {
-        self.cap = cap as u64;
     }
 }
 
@@ -948,22 +917,6 @@ impl<'dom> ValueMut<'dom> {
 
     pub fn take(&mut self) -> Value<'dom> {
         self.val.take()
-    }
-
-    pub(crate) fn reserve_array(&mut self, additional: usize) {
-        self.val.reserve_array(additional, self.alloc)
-    }
-
-    pub(crate) fn reserve_object(&mut self, additional: usize) {
-        self.val.reserve_object(additional, self.alloc)
-    }
-
-    pub(crate) fn append_array(&mut self, node: Value<'dom>) {
-        self.val.append_array(node, self.alloc)
-    }
-
-    pub(crate) fn append_object(&mut self, pair: (Value<'dom>, Value<'dom>)) -> &mut Value<'dom> {
-        self.val.append_object(pair, self.alloc)
     }
 }
 

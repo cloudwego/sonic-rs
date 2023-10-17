@@ -128,6 +128,11 @@ pub struct Parser<R> {
     nospace_start: isize, // the start position of nospace_bits
 }
 
+enum ParseStatus {
+    None,
+    HasEsacped,
+}
+
 impl<'de, R> Parser<R>
 where
     R: Reader<'de>,
@@ -246,7 +251,7 @@ where
                 Some(b'{') => self.parse_object(visitor, strbuf),
                 Some(b'[') => self.parse_array(visitor, strbuf),
                 Some(first) => self.parse_literal_visit(first, visitor),
-                None => perr!(self, EofAfterSkipSpace),
+                None => perr!(self, EofWhileParsing),
             }?;
             count += 1;
             first = match self.skip_space() {
@@ -288,7 +293,7 @@ where
             }
             Some(b'"') => {}
             _ => {
-                return perr!(self, KeyMustBeAString);
+                return perr!(self, ExpectObjectKeyOrEnd);
             }
         }
 
@@ -306,7 +311,7 @@ where
                 Some(b',') => match self.skip_space() {
                     Some(b'"') => continue,
                     _ => {
-                        return perr!(self, KeyMustBeAString);
+                        return perr!(self, ExpectObjectKeyOrEnd);
                     }
                 },
                 _ => return perr!(self, ExpectedArrayCommaOrEnd),
@@ -323,13 +328,13 @@ where
             b't' => "rue",
             b'f' => "alse",
             b'n' => "ull",
-            _ => return perr!(self, ExpectedSomeValue),
+            _ => return perr!(self, InvalidJsonValue),
         };
 
         let reader = &mut self.read;
         if let Some(chunck) = reader.next_n(literal.len()) {
             if chunck != literal.as_bytes() {
-                perr!(self, ExpectedSomeLiteral)
+                perr!(self, InvalidLiteral)
             } else {
                 let ok = match first {
                     b't' => visitor.visit_bool(true),
@@ -341,7 +346,7 @@ where
                 Ok(())
             }
         } else {
-            perr!(self, EofWhileParsingLiteral)
+            perr!(self, EofWhileParsing)
         }
     }
 
@@ -354,7 +359,7 @@ where
             Some(b'[') => Ok(JsonType::Array),
             Some(b't') | Some(b'f') => Ok(JsonType::Boolean),
             Some(b'n') => Ok(JsonType::Null),
-            _ => perr!(self, EofAfterSkipSpace),
+            _ => perr!(self, EofWhileParsing),
         }
     }
 
@@ -372,7 +377,7 @@ where
         first: &mut bool,
     ) -> Result<Option<(&'de [u8], JsonType)>> {
         if *first && self.skip_space() != Some(b'[') {
-            return perr!(self, UnexpectedVisitType);
+            return perr!(self, ExpectedArrayStart);
         }
         match self.skip_space_peek() {
             Some(b']') => {
@@ -398,14 +403,14 @@ where
         first: &mut bool,
     ) -> Result<Option<(FastStr, &'de [u8], JsonType)>> {
         if *first && self.skip_space() != Some(b'{') {
-            return perr!(self, UnexpectedVisitType);
+            return perr!(self, ExpectedObjectStart);
         }
         match self.skip_space() {
             Some(b'}') => return Ok(None),
             Some(b'"') if *first => *first = false,
             Some(b',') if !*first => {
                 if self.skip_space() != Some(b'"') {
-                    return perr!(self, KeyMustBeAString);
+                    return perr!(self, ExpectObjectKeyOrEnd);
                 }
             }
             _ => return perr!(self, ExpectedObjectCommaOrEnd),
@@ -432,7 +437,7 @@ where
             Some(b'{') => self.parse_object(visitor, strbuf),
             Some(b'[') => self.parse_array(visitor, strbuf),
             Some(first) => self.parse_literal_visit(first, visitor),
-            None => perr!(self, EofAfterSkipSpace),
+            None => perr!(self, EofWhileParsing),
         }
     }
 
@@ -443,7 +448,7 @@ where
     {
         let r = &mut self.read;
         if r.index() == 0 {
-            return perr!(self, EofAfterSkipSpace);
+            return perr!(self, EofWhileParsing);
         }
         match r.at(r.index() - 1) {
             b'-' => self.parse_number_visit(true, visitor),
@@ -554,7 +559,7 @@ where
                 Fsm::ObjKey => {
                     'obj_key: loop {
                         if c != b'"' {
-                            return perr!(self, KeyMustBeAString);
+                            return perr!(self, ExpectObjectKeyOrEnd);
                         }
                         self.parse_string_inplace_visit(visitor)?;
                         self.parse_object_clo()?;
@@ -692,14 +697,13 @@ where
         let status = self.skip_string_impl()?;
         let key = self.read.slice_unchecked(start, self.read.index() - 1);
         match status {
-            HasEsacped => {
+            ParseStatus::HasEsacped => {
                 buf.clear();
-                let (len, status) = parse_valid_escaped_string(key, buf);
-                match status {
-                    ErrorNone => Ok(Reference::Copied(buf)),
-                    _ => {
-                        self.error_index = start + len;
-                        perr!(self, status)
+                match parse_valid_escaped_string(key, buf) {
+                    Ok(_) => Ok(Reference::Copied(buf)),
+                    Err(code) => {
+                        self.error_index = start;
+                        perr!(self, code)
                     }
                 }
             }
@@ -742,13 +746,13 @@ where
     // skip_string skips a JSON string, and return the later parts afer closed quote, and the escaped status.
     // skip_string always start with the quote marks.
     #[inline(always)]
-    fn skip_string_impl(&mut self) -> Result<ErrorCode> {
+    fn skip_string_impl(&mut self) -> Result<ParseStatus> {
         const LANS: usize = u8x32::lanes();
         let r = &mut self.read;
         let mut quote_bits;
         let mut escaped;
         let mut prev_escaped = 0;
-        let mut status = ErrorNone;
+        let mut status = ParseStatus::None;
 
         while let Some(chunck) = r.peek_n(LANS) {
             let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunck) };
@@ -758,7 +762,7 @@ where
             // maybe has escaped quotes
             if ((quote_bits.wrapping_sub(1)) & bs_bits) != 0 || prev_escaped != 0 {
                 escaped = get_escaped_branchless_u32(&mut prev_escaped, bs_bits);
-                status = HasEsacped;
+                status = ParseStatus::HasEsacped;
                 //
                 quote_bits &= !escaped;
             }
@@ -783,7 +787,7 @@ where
                 if r.remain() < 2 {
                     break;
                 }
-                status = HasEsacped;
+                status = ParseStatus::HasEsacped;
                 r.eat(2);
                 continue;
             }
@@ -792,7 +796,7 @@ where
                 return Ok(status);
             }
         }
-        perr!(self, EofWhileParsingString)
+        perr!(self, EofWhileParsing)
     }
 
     #[inline(always)]
@@ -808,7 +812,7 @@ where
         match self.skip_space() {
             Some(b':') => Ok(()),
             Some(_) => perr!(self, ExpectedColon),
-            None => perr!(self, EofWhileParsingObject),
+            None => perr!(self, EofWhileParsing),
         }
     }
 
@@ -818,7 +822,7 @@ where
         match self.skip_space() {
             Some(b']') => Ok(()),
             Some(_) => perr!(self, ExpectedArrayCommaOrEnd),
-            None => perr!(self, EofWhileParsingArray),
+            None => perr!(self, EofWhileParsing),
         }
     }
 
@@ -866,11 +870,7 @@ where
             return Ok(());
         }
 
-        if left == b'[' {
-            perr!(self, EofWhileParsingArray)
-        } else {
-            perr!(self, EofWhileParsingObject)
-        }
+        perr!(self, EofWhileParsing)
     }
 
     // TODO: add nospace bitmap optimize
@@ -1005,12 +1005,12 @@ where
         let reader = &mut self.read;
         if let Some(chunck) = reader.next_n(literal.len()) {
             if chunck != literal.as_bytes() {
-                perr!(self, ExpectedSomeLiteral)
+                perr!(self, InvalidLiteral)
             } else {
                 Ok(())
             }
         } else {
-            perr!(self, EofWhileParsingLiteral)
+            perr!(self, EofWhileParsing)
         }
     }
 
@@ -1032,8 +1032,8 @@ where
             Some(b't') => self.parse_literal("rue"),
             Some(b'f') => self.parse_literal("alse"),
             Some(b'n') => self.parse_literal("ull"),
-            Some(_) => perr!(self, ExpectedSomeValue),
-            None => perr!(self, EofAfterSkipSpace),
+            Some(_) => perr!(self, InvalidJsonValue),
+            None => perr!(self, EofWhileParsing),
         }?;
         let slice = self.read.slice_unchecked(start, self.read.index());
         Ok(slice)
@@ -1057,15 +1057,15 @@ where
         debug_assert!(temp_buf.is_empty());
         match self.skip_space() {
             Some(b'{') => {}
-            Some(_) => return perr!(self, ExpectedObject),
-            None => return perr!(self, EofAfterSkipSpace),
+            Some(_) => return perr!(self, ExpectedObjectStart),
+            None => return perr!(self, EofWhileParsing),
         }
 
         // deal with the empty object
         match self.get_next_token([b'"', b'}'], 1) {
             Some(b'"') => {}
             Some(b'}') => return perr!(self, GetInEmptyObj),
-            None => return perr!(self, EofWhileParsingObject),
+            None => return perr!(self, EofWhileParsing),
             Some(_) => unreachable!(),
         }
 
@@ -1081,7 +1081,7 @@ where
                 Some(b'{') => self.skip_container(b'{', b'}')?,
                 Some(b'[') => self.skip_container(b'[', b']')?,
                 Some(b'"') => self.skip_string()?,
-                None => return perr!(self, EofWhileParsingArray),
+                None => return perr!(self, EofWhileParsing),
                 _ => {}
             };
 
@@ -1089,7 +1089,7 @@ where
             match self.get_next_token([b'"', b'}'], 1) {
                 Some(b'"') => continue,
                 Some(b'}') => return perr!(self, GetUnknownKeyInObj),
-                None => return perr!(self, EofWhileParsingObject),
+                None => return perr!(self, EofWhileParsing),
                 Some(_) => unreachable!(),
             }
         }
@@ -1101,8 +1101,8 @@ where
         let mut count = index;
         match self.skip_space() {
             Some(b'[') => {}
-            Some(_) => return perr!(self, ExpectedArray),
-            None => return perr!(self, EofAfterSkipSpace),
+            Some(_) => return perr!(self, ExpectedArrayStart),
+            None => return perr!(self, EofWhileParsing),
         }
         while count > 0 {
             // skip object,array,string at first
@@ -1110,7 +1110,7 @@ where
                 Some(b'{') => self.skip_container(b'{', b'}')?,
                 Some(b'[') => self.skip_container(b'[', b']')?,
                 Some(b'"') => self.skip_string()?,
-                None => return perr!(self, EofWhileParsingArray),
+                None => return perr!(self, EofWhileParsing),
                 _ => {}
             };
 
@@ -1121,7 +1121,7 @@ where
                     count -= 1;
                     continue;
                 }
-                None => return perr!(self, EofWhileParsingArray),
+                None => return perr!(self, EofWhileParsing),
                 Some(_) => unreachable!(),
             }
         }
@@ -1168,7 +1168,7 @@ where
         // skip the leading space
         let ch = self.skip_space_peek();
         if ch.is_none() {
-            return perr!(self, EofAfterSkipSpace);
+            return perr!(self, EofWhileParsing);
         }
 
         // need write to out, record the start position
@@ -1204,15 +1204,15 @@ where
         debug_assert!(strbuf.is_empty());
         match self.skip_space() {
             Some(b'{') => {}
-            Some(_) => return perr!(self, ExpectedObject),
-            None => return perr!(self, EofAfterSkipSpace),
+            Some(_) => return perr!(self, ExpectedObjectStart),
+            None => return perr!(self, EofWhileParsing),
         }
 
         // deal with the empty object
         match self.get_next_token([b'"', b'}'], 1) {
             Some(b'"') => {}
             Some(b'}') => return perr!(self, GetInEmptyObj),
-            None => return perr!(self, EofWhileParsingObject),
+            None => return perr!(self, EofWhileParsing),
             Some(_) => unreachable!(),
         }
 
@@ -1232,7 +1232,7 @@ where
                     Some(b'{') => self.skip_container(b'{', b'}')?,
                     Some(b'[') => self.skip_container(b'[', b']')?,
                     Some(b'"') => self.skip_string()?,
-                    None => return perr!(self, EofWhileParsingObject),
+                    None => return perr!(self, EofWhileParsing),
                     _ => {}
                 };
             }
@@ -1241,7 +1241,7 @@ where
             match self.get_next_token([b'"', b'}'], 1) {
                 Some(b'"') => {}
                 Some(b'}') => break,
-                None => return perr!(self, EofWhileParsingObject),
+                None => return perr!(self, EofWhileParsing),
                 Some(_) => unreachable!(),
             }
         }
@@ -1274,8 +1274,8 @@ where
     ) -> Result<()> {
         match self.skip_space() {
             Some(b'[') => {}
-            Some(_) => return perr!(self, ExpectedArray),
-            None => return perr!(self, EofAfterSkipSpace),
+            Some(_) => return perr!(self, ExpectedArrayStart),
+            None => return perr!(self, EofWhileParsing),
         }
         let mut index = 0;
         let mut visited = 0;
@@ -1292,7 +1292,7 @@ where
                     Some(b'{') => self.skip_container(b'{', b'}')?,
                     Some(b'[') => self.skip_container(b'[', b']')?,
                     Some(b'"') => self.skip_string()?,
-                    None => return perr!(self, EofWhileParsingArray),
+                    None => return perr!(self, EofWhileParsing),
                     _ => {}
                 };
             }
@@ -1304,7 +1304,7 @@ where
                     index += 1;
                     continue;
                 }
-                None => return perr!(self, EofWhileParsingArray),
+                None => return perr!(self, EofWhileParsing),
                 Some(_) => unreachable!(),
             }
         }
