@@ -2,7 +2,6 @@ mod de;
 mod number;
 mod raw;
 mod ser;
-mod traits;
 
 pub use self::de::{from_slice, from_str, Deserializer};
 pub use self::number::{JsonNumberString, JsonNumberTrait, Number, RawNumber};
