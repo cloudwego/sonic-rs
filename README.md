@@ -4,7 +4,8 @@
 A fast Rust JSON library based on SIMD. It has some references to other open-source libraries like [sonic_cpp](https://github.com/bytedance/sonic-cpp), [serde_json](https://github.com/serde-rs/json), [sonic](https://github.com/bytedance/sonic), [simdjson](https://github.com/simdjson/simdjson) and [rust-lang](https://github.com/rust-lang/rust).
 
 ## Requirements
-Support x86_64 or aarch64. Note that the performance in aarch64 is low and it need to optimize.
+1. Support x86_64 or aarch64. Note that the performance in aarch64 is low and it need to optimize.
+2. Rust nightly version. Because we use the `packed_simd` crate.
 
 ## Features
 1. Serde into Rust struct as `serde_json` and `serde`

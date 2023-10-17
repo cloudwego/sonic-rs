@@ -1,0 +1,3 @@
+[toolchain]
+# because sonic-rs used the `packed-simd` crate, and it requires the nightly rust
+channel = "nightly"
