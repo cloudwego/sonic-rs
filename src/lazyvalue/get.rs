@@ -9,7 +9,7 @@ use faststr::FastStr;
 
 /// get_from_str returns the raw value from json path.
 ///
-/// `json` must be a well-formed json.
+/// Note: the JSON must be valid and well-formed, otherwise it may return unexpected result.
 pub fn get_from_str<Path: Iterator>(json: &str, path: Path) -> Result<LazyValue<'_>>
 where
     Path::Item: PointerTarit,
@@ -19,7 +19,7 @@ where
 
 /// get_from_slice returns the raw value from json path.
 ///
-/// Note: json should be valid.
+/// Note: the JSON must be valid and well-formed, otherwise it may return unexpected result.
 pub fn get_from_slice<Path: Iterator>(json: &[u8], path: Path) -> Result<LazyValue<'_>>
 where
     Path::Item: PointerTarit,
@@ -29,7 +29,7 @@ where
 
 /// get_from_bytes returns the raw value from json path.
 ///
-/// Note: json should be valid.
+/// Note: the JSON must be valid and well-formed, otherwise it may return unexpected result.
 pub fn get_from_bytes<Path: Iterator>(json: &Bytes, path: Path) -> Result<LazyValue<'_>>
 where
     Path::Item: PointerTarit,
@@ -39,7 +39,7 @@ where
 
 /// get_from_bytes returns the raw value from json path.
 ///
-/// Note: json should be valid.
+/// Note: the JSON must be valid and well-formed, otherwise it may return unexpected result.
 pub fn get_from_faststr<Path: Iterator>(json: &FastStr, path: Path) -> Result<LazyValue<'_>>
 where
     Path::Item: PointerTarit,
@@ -49,7 +49,7 @@ where
 
 /// get_from returns the raw value from json path.
 ///
-/// Note: json should be valid.
+/// Note: the JSON must be valid and well-formed, otherwise it may return unexpected result.
 pub fn get_from<'de, Input, Path: Iterator>(json: Input, path: Path) -> Result<LazyValue<'de>>
 where
     Input: JsonInput<'de>,
@@ -65,7 +65,7 @@ where
 
 /// get_many returns the raw value from the PointerTree.
 ///
-/// Note: json should be valid.
+/// Note: the JSON must be valid and well-formed, otherwise it may return unexpected result.
 pub fn get_many<'de, Input>(json: Input, tree: &PointerTree) -> Result<Vec<LazyValue<'de>>>
 where
     Input: JsonInput<'de>,

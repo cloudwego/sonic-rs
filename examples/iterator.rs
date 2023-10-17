@@ -15,6 +15,6 @@ fn main() {
     let ret = iter.take_result();
     assert_eq!(
         ret.as_ref().err().unwrap().to_string(),
-        "expected `,` or `]` at line 1 column 17"
+        "Expected this character to be either a ',' or a ']' while parsing at line 1 column 17"
     );
 }

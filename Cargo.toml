@@ -1,7 +1,13 @@
 [package]
 name = "sonic-rs"
 version = "0.0.1"
+authors = ["Volo Team <volo@cloudwego.io>"]
 edition = "2021"
+description = "Sonic-rs is a fast Rust JSON library based on SIMD"
+repository = "https://github.com/cloudwego/sonic-rs"
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["json", "simd"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
