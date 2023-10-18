@@ -306,7 +306,7 @@ impl<'a> JsonValue for Value<'a> {
 
     fn pointer<'dom>(&'dom self, path: &JsonPointer) -> Option<Self::ValueType<'dom>> {
         let mut node = self;
-        for p in path.iter() {
+        for p in path {
             if let Some(next) = node.at_pointer(p) {
                 node = next;
             } else {
@@ -435,7 +435,7 @@ impl<'dom> Value<'dom> {
 
     fn pointer_mut(&mut self, path: &JsonPointer) -> Option<&mut Self> {
         let mut node = self;
-        for p in path.iter() {
+        for p in path {
             if let Some(next) = node.at_pointer_mut(p) {
                 node = next;
             } else {
@@ -481,7 +481,7 @@ impl<'dom> Value<'dom> {
     pub(crate) fn get_key(&self, key: &str) -> Option<&Self> {
         debug_assert!(self.is_object());
         if let Some(kv) = self.children::<(Self, Self)>() {
-            for (k, v) in kv.iter() {
+            for (k, v) in kv {
                 assert!(k.is_str());
                 if k.equal_str(key) {
                     return Some(v);
@@ -1141,8 +1141,8 @@ impl Document {
         let nodes = Vec::with_capacity((json.len() / 2) + 2);
         let parent = 0;
         let mut visitor = DocumentVisitor {
-            nodes,
             alloc,
+            nodes,
             parent,
         };
         parser.parse_value_goto(&mut visitor)?;
@@ -1205,7 +1205,7 @@ impl<'dom> Serialize for Value<'dom> {
             Self::ARRAY => {
                 let nodes = self.array();
                 let mut seq = tri!(serializer.serialize_seq(Some(nodes.len())));
-                for n in nodes.iter() {
+                for n in nodes {
                     tri!(seq.serialize_element(n));
                 }
                 seq.end()
@@ -1213,7 +1213,7 @@ impl<'dom> Serialize for Value<'dom> {
             Self::OBJECT => {
                 let entrys = self.object();
                 let mut map = tri!(serializer.serialize_map(Some(entrys.len())));
-                for (k, v) in entrys.iter() {
+                for (k, v) in entrys {
                     tri!(map.serialize_entry(k, v));
                 }
                 map.end()
