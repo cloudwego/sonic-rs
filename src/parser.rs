@@ -1043,12 +1043,18 @@ where
 
     #[inline(always)]
     pub(crate) fn parse_trailing(&mut self) -> Result<()> {
-        let has_remain = self.read.remain() > 0;
-        if !has_remain {
+        // has_main should marked before skip_space
+        let remain = self.read.remain() > 0;
+        if !remain {
             return Ok(());
         }
-        match self.skip_space() {
-            Some(_) if has_remain => perr!(self, TrailingCharacters),
+
+        // note: we use padding chars `x"x` when parsing json into dom.
+        // so, we should check the trailing chars is not the padding chars.
+        let last = self.skip_space();
+        let exceed = self.read.index() > self.read.as_u8_slice().len();
+        match last {
+            Some(_) if remain & !exceed => perr!(self, TrailingCharacters),
             _ => Ok(()),
         }
     }
