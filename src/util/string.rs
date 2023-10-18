@@ -1,4 +1,6 @@
-use crate::error::ErrorCode::{self, *};
+use crate::error::ErrorCode::{
+    self, ControlCharacterWhileParsingString, InvalidEscape, InvalidUnicodeCodePoint,
+};
 use crate::util::unicode::{handle_unicode_codepoint, handle_unicode_codepoint_mut};
 use packed_simd::u8x32;
 use std::mem::MaybeUninit;
@@ -587,16 +589,16 @@ pub fn quote(value: &str, dst: &mut [MaybeUninit<u8>]) -> usize {
             };
             v.write_to_slice_unaligned_unchecked(std::slice::from_raw_parts_mut(dptr, LANS));
             let mask = escaped_mask(v);
-            if mask != 0 {
+            if mask == 0 {
+                nb -= LANS;
+                dptr = dptr.add(LANS);
+                sptr = sptr.add(LANS);
+            } else {
                 let cn = mask.trailing_zeros() as usize;
                 nb -= cn;
                 dptr = dptr.add(cn);
                 sptr = sptr.add(cn);
                 escape_unchecked(&mut sptr, &mut nb, &mut dptr);
-            } else {
-                nb -= LANS;
-                dptr = dptr.add(LANS);
-                sptr = sptr.add(LANS);
             }
         }
 
@@ -612,15 +614,15 @@ pub fn quote(value: &str, dst: &mut [MaybeUninit<u8>]) -> usize {
             v.write_to_slice_unaligned_unchecked(std::slice::from_raw_parts_mut(dptr, LANS));
 
             let mask = escaped_mask(v) & (0xFFFFFFFFu32 >> (LANS - nb));
-            if mask != 0 {
+            if mask == 0 {
+                dptr = dptr.add(nb);
+                break;
+            } else {
                 let cn = mask.trailing_zeros() as usize;
                 nb -= cn;
                 dptr = dptr.add(cn);
                 sptr = sptr.add(cn);
-                escape_unchecked(&mut sptr, &mut nb, &mut dptr);
-            } else {
-                dptr = dptr.add(nb);
-                break;
+                escape_unchecked(&mut sptr, &mut nb, &mut dptr); 
             }
         }
         *dptr = b'"';
