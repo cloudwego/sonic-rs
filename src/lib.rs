@@ -1,3 +1,4 @@
+#![cfg_attr(not(doctest), doc = include_str!("../README.md"))]
 #![allow(dead_code)]
 mod error;
 mod input;

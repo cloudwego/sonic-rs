@@ -1,5 +1,13 @@
-
 # sonic-rs
+
+[![Crates.io](https://img.shields.io/crates/v/sonic-rs)](https://crates.io/crates/sonic-rs)
+[![Documentation](https://docs.rs/sonic-rs/badge.svg)](https://docs.rs/sonic-rs)
+[![Website](https://img.shields.io/website?up_message=cloudwego&url=https%3A%2F%2Fwww.cloudwego.io%2F)](https://www.cloudwego.io/)
+[![License](https://img.shields.io/crates/l/sonic-rs)](#license)
+[![Build Status][actions-badge]][actions-url]
+
+[actions-badge]: https://github.com/cloudwego/sonic-rs/actions/workflows/ci.yaml/badge.svg
+[actions-url]: https://github.com/cloudwego/sonic-rs/actions
 
 A fast Rust JSON library based on SIMD. It has some references to other open-source libraries like [sonic_cpp](https://github.com/bytedance/sonic-cpp), [serde_json](https://github.com/serde-rs/json), [sonic](https://github.com/bytedance/sonic), [simdjson](https://github.com/simdjson/simdjson) and [rust-lang](https://github.com/rust-lang/rust).
 
