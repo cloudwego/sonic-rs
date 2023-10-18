@@ -4,7 +4,7 @@
 
 use crate::error::{
     Error,
-    ErrorCode::{self, *},
+    ErrorCode::{self, EofWhileParsing, RecursionLimitExceeded},
     Result,
 };
 use crate::parser::{as_str, Parser};
@@ -106,11 +106,8 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     where
         V: de::Visitor<'de>,
     {
-        let peek = match self.parser.skip_space() {
-            Some(b) => b,
-            None => {
-                return Err(self.parser.error(EofWhileParsing));
-            }
+        let Some(peek) = self.parser.skip_space() else {
+            return Err(self.parser.error(EofWhileParsing));
         };
 
         let value = match peek {
@@ -260,11 +257,8 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
     where
         V: de::Visitor<'de>,
     {
-        let peek = match self.parser.skip_space() {
-            Some(b) => b,
-            None => {
-                return Err(self.parser.error(EofWhileParsing));
-            }
+        let Some(peek) = self.parser.skip_space() else {
+            return Err(self.parser.error(EofWhileParsing));
         };
 
         let value = match peek {
@@ -315,11 +309,8 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
     where
         V: de::Visitor<'de>,
     {
-        let peek = match self.parser.skip_space() {
-            Some(b) => b,
-            None => {
-                return Err(self.parser.error(ErrorCode::EofWhileParsing));
-            }
+        let Some(peek) = self.parser.skip_space() else {
+            return Err(self.parser.error(ErrorCode::EofWhileParsing));
         };
 
         let value = match peek {
@@ -423,11 +414,8 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
     where
         V: de::Visitor<'de>,
     {
-        let peek = match self.parser.skip_space() {
-            Some(b) => b,
-            None => {
-                return Err(self.parser.error(ErrorCode::EofWhileParsing));
-            }
+        let Some(peek) = self.parser.skip_space() else {
+            return Err(self.parser.error(ErrorCode::EofWhileParsing));
         };
 
         let value = match peek {
@@ -461,11 +449,8 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
     where
         V: de::Visitor<'de>,
     {
-        let peek = match self.parser.skip_space() {
-            Some(b) => b,
-            None => {
-                return Err(self.parser.error(ErrorCode::EofWhileParsing));
-            }
+        let Some(peek) = self.parser.skip_space() else {
+            return Err(self.parser.error(ErrorCode::EofWhileParsing));
         };
 
         let value = match peek {
@@ -511,11 +496,8 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
     where
         V: de::Visitor<'de>,
     {
-        let peek = match self.parser.skip_space() {
-            Some(b) => b,
-            None => {
-                return Err(self.parser.error(ErrorCode::EofWhileParsing));
-            }
+        let Some(peek) = self.parser.skip_space() else {
+            return Err(self.parser.error(ErrorCode::EofWhileParsing));
         };
 
         let value = match peek {
@@ -561,11 +543,8 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
     where
         V: de::Visitor<'de>,
     {
-        let peek = match self.parser.skip_space() {
-            Some(b) => b,
-            None => {
-                return Err(self.parser.error(ErrorCode::EofWhileParsing));
-            }
+        let Some(peek) = self.parser.skip_space() else {
+            return Err(self.parser.error(ErrorCode::EofWhileParsing));
         };
 
         let value = match peek {
@@ -611,11 +590,8 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
     where
         V: de::Visitor<'de>,
     {
-        let peek = match self.parser.skip_space() {
-            Some(b) => b,
-            None => {
-                return Err(self.parser.error(ErrorCode::EofWhileParsing));
-            }
+        let Some(peek) = self.parser.skip_space() else {
+            return Err(self.parser.error(ErrorCode::EofWhileParsing));
         };
 
         let value = match peek {
@@ -640,11 +616,8 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
     where
         V: de::Visitor<'de>,
     {
-        let peek = match self.parser.skip_space() {
-            Some(b) => b,
-            None => {
-                return Err(self.parser.error(ErrorCode::EofWhileParsing));
-            }
+        let Some(peek) = self.parser.skip_space() else {
+            return Err(self.parser.error(ErrorCode::EofWhileParsing));
         };
 
         let value = match peek {
