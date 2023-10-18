@@ -1,4 +1,4 @@
-use super::PointerTarit;
+use super::PointerTrait;
 use faststr::FastStr;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -17,7 +17,7 @@ impl PointerTree {
     // we build tree and return value according by the order of path
     pub fn add_path<Path: Iterator>(&mut self, path: Path)
     where
-        Path::Item: PointerTarit,
+        Path::Item: PointerTrait,
     {
         self.root.add_path(path, self.count);
         self.count += 1;
@@ -48,7 +48,7 @@ use PointerTreeInner::*;
 impl PointerTreeNode {
     pub fn add_path<Path: IntoIterator>(&mut self, path: Path, order: usize)
     where
-        Path::Item: PointerTarit,
+        Path::Item: PointerTrait,
     {
         let mut cur = self;
         let iter = path.into_iter();

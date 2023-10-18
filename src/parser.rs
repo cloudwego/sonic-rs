@@ -2,7 +2,7 @@ use super::reader::{Reader, Reference};
 use crate::error::ErrorCode::{self, *};
 use crate::error::{Error, Result};
 use crate::pointer::{
-    tree::MultiIndex, tree::MultiKey, tree::PointerTreeInner, tree::PointerTreeNode, PointerTarit,
+    tree::MultiIndex, tree::MultiKey, tree::PointerTreeInner, tree::PointerTreeNode, PointerTrait,
 };
 use crate::pointer::{JsonPointer, PointerTree};
 use crate::util::arch::{get_nonspace_bits, prefix_xor};
@@ -1137,7 +1137,7 @@ where
 
     pub(crate) fn get_from_with_iter<Iter: Iterator>(&mut self, iter: Iter) -> Result<&'de [u8]>
     where
-        Iter::Item: PointerTarit,
+        Iter::Item: PointerTrait,
     {
         // temp buf reused when parsing each escaped key
         let mut temp_buf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);

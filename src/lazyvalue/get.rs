@@ -2,7 +2,7 @@ use super::LazyValue;
 use crate::error::Result;
 use crate::input::JsonInput;
 use crate::parser::Parser;
-use crate::pointer::{PointerTarit, PointerTree};
+use crate::pointer::{PointerTrait, PointerTree};
 use crate::reader::SliceRead;
 use bytes::Bytes;
 use faststr::FastStr;
@@ -12,7 +12,7 @@ use faststr::FastStr;
 /// Note: the JSON must be valid and well-formed, otherwise it may return unexpected result.
 pub fn get_from_str<Path: Iterator>(json: &str, path: Path) -> Result<LazyValue<'_>>
 where
-    Path::Item: PointerTarit,
+    Path::Item: PointerTrait,
 {
     get_from(json, path)
 }
@@ -22,7 +22,7 @@ where
 /// Note: the JSON must be valid and well-formed, otherwise it may return unexpected result.
 pub fn get_from_slice<Path: Iterator>(json: &[u8], path: Path) -> Result<LazyValue<'_>>
 where
-    Path::Item: PointerTarit,
+    Path::Item: PointerTrait,
 {
     get_from(json, path)
 }
@@ -32,7 +32,7 @@ where
 /// Note: the JSON must be valid and well-formed, otherwise it may return unexpected result.
 pub fn get_from_bytes<Path: Iterator>(json: &Bytes, path: Path) -> Result<LazyValue<'_>>
 where
-    Path::Item: PointerTarit,
+    Path::Item: PointerTrait,
 {
     get_from(json, path)
 }
@@ -42,7 +42,7 @@ where
 /// Note: the JSON must be valid and well-formed, otherwise it may return unexpected result.
 pub fn get_from_faststr<Path: Iterator>(json: &FastStr, path: Path) -> Result<LazyValue<'_>>
 where
-    Path::Item: PointerTarit,
+    Path::Item: PointerTrait,
 {
     get_from(json, path)
 }
@@ -53,7 +53,7 @@ where
 pub fn get_from<'de, Input, Path: Iterator>(json: Input, path: Path) -> Result<LazyValue<'de>>
 where
     Input: JsonInput<'de>,
-    Path::Item: PointerTarit,
+    Path::Item: PointerTrait,
 {
     let slice = json.to_u8_slice();
     let reader = SliceRead::new(slice);

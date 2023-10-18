@@ -1,6 +1,7 @@
 use faststr::FastStr;
 
-pub trait PointerTarit {
+/// PointerTrait is a trait for the node in json pointer path.
+pub trait PointerTrait {
     fn key(&self) -> Option<&str>;
     fn index(&self) -> Option<usize>;
 }
@@ -27,7 +28,7 @@ pub enum PointerNode {
     Index(usize),
 }
 
-impl PointerTarit for &PointerNode {
+impl PointerTrait for &PointerNode {
     fn index(&self) -> Option<usize> {
         match self {
             PointerNode::Index(idx) => Some(*idx),
@@ -57,7 +58,7 @@ macro_rules! pointer {
     );
 }
 
-impl<'a> PointerTarit for &'a FastStr {
+impl<'a> PointerTrait for &'a FastStr {
     fn index(&self) -> Option<usize> {
         None
     }
@@ -67,7 +68,7 @@ impl<'a> PointerTarit for &'a FastStr {
     }
 }
 
-impl<'a> PointerTarit for &'a &str {
+impl<'a> PointerTrait for &'a &str {
     fn index(&self) -> Option<usize> {
         None
     }
@@ -77,7 +78,7 @@ impl<'a> PointerTarit for &'a &str {
     }
 }
 
-impl<'a> PointerTarit for &'a usize {
+impl<'a> PointerTrait for &'a usize {
     fn index(&self) -> Option<usize> {
         Some(**self)
     }
