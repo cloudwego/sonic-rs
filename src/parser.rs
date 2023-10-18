@@ -1043,11 +1043,12 @@ where
 
     #[inline(always)]
     pub(crate) fn parse_trailing(&mut self) -> Result<()> {
-        if self.read.remain() <= 0 {
+        let has_remain = self.read.remain() > 0;
+        if !has_remain {
             return Ok(());
         }
         match self.skip_space() {
-            Some(_) if self.read.remain() > 0 => perr!(self, TrailingCharacters),
+            Some(_) if has_remain => perr!(self, TrailingCharacters),
             _ => Ok(()),
         }
     }

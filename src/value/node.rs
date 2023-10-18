@@ -1146,6 +1146,8 @@ impl Document {
             parent,
         };
         parser.parse_value_goto(&mut visitor)?;
+        // check trailing spaces
+        parser.parse_trailing()?;
         self.root = unsafe { transmute(visitor.nodes[0].take()) };
         Ok(())
     }
@@ -1233,15 +1235,31 @@ mod test {
     use std::path::Path;
 
     fn test_value(data: &str) -> Result<()> {
-        let serde_value: serde_json::Value = serde_json::from_str(data).unwrap();
-        let dom = dom_from_slice(data.as_bytes())?;
-        let sonic_out = crate::to_string(&dom)?;
-        let serde_value2: serde_json::Value = serde_json::from_str(&sonic_out).unwrap();
-        if serde_value == serde_value2 {
-            Ok(())
+        let serde_value: serde_json::Result<serde_json::Value> = serde_json::from_str(data);
+        let dom = dom_from_slice(data.as_bytes());
+        if let Ok(serde_value) = serde_value {
+            let dom = dom.unwrap();
+            let sonic_out = crate::to_string(&dom)?;
+            let serde_value2: serde_json::Value = serde_json::from_str(&sonic_out).unwrap();
+            if serde_value == serde_value2 {
+                Ok(())
+            } else {
+                diff_json(data);
+                Err(make_error(format!(
+                    "invalid result for valid json {}",
+                    data
+                )))
+            }
         } else {
-            diff_json(data);
-            Err(make_error("invalid serde".to_string()))
+            if dom.is_err() {
+                return Ok(());
+            }
+            let dom = dom.unwrap();
+            Err(make_error(format!(
+                "invalid result for invalid json {}, got {}",
+                data,
+                crate::to_string(&dom).unwrap(),
+            )))
         }
     }
 
@@ -1337,6 +1355,16 @@ mod test {
                 );
                 test_value_file(&path)
             }
+        }
+    }
+
+    #[test]
+    fn test_json_tralings() {
+        let testdata = ["-0.99999999999999999xxx", "\"\"\"", "{} x"];
+
+        for data in testdata.iter() {
+            let ret = dom_from_slice(data.as_bytes());
+            assert!(ret.is_err(), "failed json is {}", data);
         }
     }
 

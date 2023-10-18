@@ -234,7 +234,9 @@ pub(crate) unsafe fn parse_number_unchecked(
         // parse significant digits
         let digit_start = i;
         while is_digit!(data, i) {
-            significant = significant * 10 + digit!(data, i);
+            // assume most number is not overflow here. When it overflow, we will check digits count
+            // and fallback into the slow path.
+            significant = significant.wrapping_mul(10).wrapping_add(digit!(data, i));
             i += 1;
         }
         let mut digits_cnt = i - digit_start;
@@ -401,7 +403,7 @@ fn parse_floating_normal_fast(exp10: i32, man: u64) -> Option<u64> {
         exp2 += 64;
 
         let round_up = (hi & (1u64 << (64 - 54))) > 0;
-        hi += if round_up { 1u64 << (64 - 54) } else { 0 };
+        hi = hi.wrapping_add(if round_up { 1u64 << (64 - 54) } else { 0 });
 
         if hi < (1u64 << (64 - 54)) {
             hi = 1u64 << 63;
@@ -511,6 +513,7 @@ mod test {
             "10000000149011612123.001e-123",
             1.000_000_014_901_161_2e-104,
         );
+        test_parse_ok("33333333333333333333", 3.333333333333333e19);
         test_parse_ok("135e-12", 135e-12);
     }
 }
