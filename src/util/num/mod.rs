@@ -431,10 +431,10 @@ fn parse_float_fast(exp10: i32, significant: u64) -> Option<f64> {
     if exp10 > 0 {
         if exp10 > 22 {
             d *= POW10_FLOAT[exp10 as usize - 22];
-            if !(-1e15..=1e15).contains(&d) {
-                None
-            } else {
+            if (-1e15..=1e15).contains(&d) {
                 Some(d * POW10_FLOAT[22])
+            } else {
+                None
             }
         } else {
             Some(d * POW10_FLOAT[exp10 as usize])
