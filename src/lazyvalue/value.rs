@@ -140,31 +140,30 @@ impl<'de> LazyValue<'de> {
         }
     }
 
-    pub fn into_cow_str(self) -> Option<Cow<'de, str>> {
+    pub fn into_cow_str(self) -> Result<Cow<'de, str>> {
         let mut parser = Parser::new(SliceRead::new(self.raw.as_ref()));
         parser.read.eat(1);
-        match parser.parse_string_raw(unsafe { &mut *self.own.get() }) {
-            Ok(Reference::Borrowed(u)) => match self.raw {
+        match parser.parse_string_raw(unsafe { &mut *self.own.get() })? {
+            Reference::Borrowed(u) => match self.raw {
                 JsonSlice::Raw(raw) => unsafe {
                     // u must be from raw
                     let len = u.len();
                     let ptr = u.as_ptr();
                     let offset = ptr.offset_from(raw.as_ptr()) as usize;
                     debug_assert!(offset + len <= raw.len());
-                    Some(Cow::Borrowed(from_utf8_unchecked(
+                    Ok(Cow::Borrowed(from_utf8_unchecked(
                         raw.get_unchecked(offset..offset + len),
                     )))
                 },
                 JsonSlice::FastStr(_) => {
-                    Some(Cow::Owned(String::from(unsafe { from_utf8_unchecked(u) })))
+                    Ok(Cow::Owned(String::from(unsafe { from_utf8_unchecked(u) })))
                 }
             },
-            Ok(Reference::Copied(_)) => unsafe {
-                Some(Cow::Owned(String::from_utf8_unchecked(
+            Reference::Copied(_) => unsafe {
+                Ok(Cow::Owned(String::from_utf8_unchecked(
                     self.own.into_inner(),
                 )))
             },
-            _ => None,
         }
     }
 }
@@ -183,6 +182,7 @@ mod test {
         "uint": 0,
         "float": 1.1,
         "string": "hello",
+        "string_escape": "\"hello\"",
         "array": [1,2,3],
         "object": {"a":"aaa"},
         "strempty": "",
@@ -243,5 +243,14 @@ mod test {
             value.get("string").unwrap().into_cow_str().unwrap(),
             "hello"
         );
+
+        let value = get_from(TEST_JSON, pointer![].iter()).unwrap();
+        assert_eq!(
+            value.get("string_escape").unwrap().into_cow_str().unwrap(),
+            "\"hello\""
+        );
+
+        let value = get_from(TEST_JSON, pointer![].iter()).unwrap();
+        assert!(value.get("int").unwrap().into_cow_str().is_err());
     }
 }
