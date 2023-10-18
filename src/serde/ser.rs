@@ -376,8 +376,9 @@ where
     #[inline]
     fn serialize_struct(self, name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
         match name {
-            crate::serde::raw::TOKEN => Ok(Compound::RawValue { ser: self }),
-            crate::serde::number::TOKEN => Ok(Compound::RawValue { ser: self }),
+            crate::serde::number::TOKEN | crate::serde::raw::TOKEN => {
+                Ok(Compound::RawValue { ser: self })
+            }
             _ => self.serialize_map(Some(len)),
         }
     }

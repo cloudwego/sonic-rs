@@ -200,7 +200,7 @@ impl<'i, 'de: 'i> Iterator for ObjectTryIter<'i, 'de> {
             Some(v) => Some(Ok(v)),
             // check errors
             None => match self.0.take_result() {
-                Ok(_) => None,
+                Ok(()) => None,
                 Err(e) => Some(Err(e)),
             },
         }
@@ -216,7 +216,7 @@ impl<'i, 'de: 'i> Iterator for ArrayTryIter<'i, 'de> {
             Some(v) => Some(Ok(v)),
             // check errors
             None => match self.0.take_result() {
-                Ok(_) => None,
+                Ok(()) => None,
                 Err(e) => Some(Err(e)),
             },
         }
