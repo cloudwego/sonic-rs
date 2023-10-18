@@ -181,7 +181,7 @@ pub(crate) unsafe fn parse_number_unchecked(
                     return Ok(ParserNumber::Float(0.0));
                 }
 
-                // we calucate the first digit here for two reasons:
+                // we calculate the first digit here for two reasons:
                 // 1. fastpath for samll float number
                 // 2. we only need parse at most 16 digits in parse_number_fraction
                 // and it is friendly for simd
