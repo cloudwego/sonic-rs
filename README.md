@@ -151,7 +151,7 @@ citm_catalog/serde_json::to_string
 ```
 
 ### Get from JSON
-` cargo bench --bench get_from -- --quiet`
+`cargo bench --bench get_from -- --quiet`
 
 ```
 twitter/sonic-rs::get_from_str
@@ -166,7 +166,7 @@ twitter/gjson::get      time:   [344.41 µs 351.36 µs 362.03 µs]
 
 Directly use the `Deserialize` or `Serialize` trait, recommended use `sonic_rs::{Deserialize, Serialize}`.
 
-```
+```rs
 use sonic_rs::{Deserialize, Serialize};
 // or use serde::{Deserialize, Serialize};
 
@@ -197,7 +197,7 @@ fn main() {
 
 Get a specific field from a JSON with the `pointer` path. The return is a `LazyValue`, which is a wrapper of a raw JSON slice. Note that the JSON must be valid and well-formed,  otherwise it may return unexpected result.
 
-```
+```rs
 use sonic_rs::{get_from_str, pointer, JsonValue, PointerNode};
 
 fn main() {
@@ -223,7 +223,7 @@ fn main() {
 
 Parse a JSON as a document, and the document is mutable. 
 
-```
+```rs
 use sonic_rs::value::{dom_from_slice, Value};
 use sonic_rs::PointerNode;
 use sonic_rs::{pointer, JsonValue};
@@ -263,14 +263,13 @@ fn main() {
     obj.insert("inserted", value);
     assert!(obj.contains_key("inserted"));
 }
-
 ```
 
 ### JSON Iterator
 
-Parse a object or array JSON into a iterator. The `item` of iterator is the LazyValue, which is wrapper of a raw JSON slice.
+Parse a object or array JSON into a iterator. The `item` of iterator is the `LazyValue`, which is wrapper of a raw JSON slice.
 
-```
+```rs
 use bytes::Bytes;
 use sonic_rs::{to_array_iter, JsonValue};
 
