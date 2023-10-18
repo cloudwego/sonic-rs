@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::str::from_utf8_unchecked;
 
@@ -138,6 +139,34 @@ impl<'de> LazyValue<'de> {
             own: UnsafeCell::new(Vec::new()),
         }
     }
+
+    pub fn into_cow_str(self) -> Option<Cow<'de, str>> {
+        let mut parser = Parser::new(SliceRead::new(self.raw.as_ref()));
+        parser.read.eat(1);
+        match parser.parse_string_raw(unsafe { &mut *self.own.get() }) {
+            Ok(Reference::Borrowed(u)) => match self.raw {
+                JsonSlice::Raw(raw) => unsafe {
+                    // u must be from raw
+                    let len = u.len();
+                    let ptr = u.as_ptr();
+                    let offset = ptr.offset_from(raw.as_ptr()) as usize;
+                    debug_assert!(offset + len <= raw.len());
+                    Some(Cow::Borrowed(from_utf8_unchecked(
+                        raw.get_unchecked(offset..offset + len),
+                    )))
+                },
+                JsonSlice::FastStr(_) => {
+                    Some(Cow::Owned(String::from(unsafe { from_utf8_unchecked(u) })))
+                }
+            },
+            Ok(Reference::Copied(_)) => unsafe {
+                Some(Cow::Owned(String::from_utf8_unchecked(
+                    self.own.into_inner(),
+                )))
+            },
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -210,5 +239,9 @@ mod test {
         assert_eq!(value.pointer(&pointer!["objempty", "a"]).as_str(), None);
         assert_eq!(value.pointer(&pointer!["arrempty", 1]).as_str(), None);
         assert!(!value.pointer(&pointer!["unknown"]).is_str());
+        assert_eq!(
+            value.get("string").unwrap().into_cow_str().unwrap(),
+            "hello"
+        );
     }
 }
