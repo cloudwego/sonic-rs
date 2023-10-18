@@ -622,7 +622,7 @@ pub fn quote(value: &str, dst: &mut [MaybeUninit<u8>]) -> usize {
                 nb -= cn;
                 dptr = dptr.add(cn);
                 sptr = sptr.add(cn);
-                escape_unchecked(&mut sptr, &mut nb, &mut dptr); 
+                escape_unchecked(&mut sptr, &mut nb, &mut dptr);
             }
         }
         *dptr = b'"';
