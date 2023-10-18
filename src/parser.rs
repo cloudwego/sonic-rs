@@ -1112,6 +1112,7 @@ where
                 Some(b'{') => self.skip_container(b'{', b'}')?,
                 Some(b'[') => self.skip_container(b'[', b']')?,
                 Some(b'"') => self.skip_string()?,
+                Some(b']') => return perr!(self, GetIndexOutOfArray),
                 None => return perr!(self, EofWhileParsing),
                 _ => {}
             };

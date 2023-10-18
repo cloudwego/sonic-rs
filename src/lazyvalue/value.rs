@@ -187,6 +187,7 @@ mod test {
         "object": {"a":"aaa"},
         "strempty": "",
         "objempty": {},
+        "arrempty": [],
         "arrempty": []
     }"#;
 
@@ -236,9 +237,13 @@ mod test {
             value.pointer(&pointer!["object", "a"]).as_str().unwrap(),
             "aaa"
         );
+        assert!(value.pointer(&pointer!["object", "b"]).is_none());
+        assert!(value.pointer(&pointer!["object", "strempty"]).is_none());
         assert_eq!(value.pointer(&pointer!["objempty", "a"]).as_str(), None);
+        assert!(value.pointer(&pointer!["arrempty", 1]).is_none());
+        assert!(value.pointer(&pointer!["array", 3]).is_none());
+        assert!(value.pointer(&pointer!["array", 4]).is_none());
         assert_eq!(value.pointer(&pointer!["arrempty", 1]).as_str(), None);
-        assert!(!value.pointer(&pointer!["unknown"]).is_str());
         assert_eq!(
             value.get("string").unwrap().into_cow_str().unwrap(),
             "hello"
