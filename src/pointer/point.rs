@@ -32,14 +32,14 @@ impl PointerTrait for &PointerNode {
     fn index(&self) -> Option<usize> {
         match self {
             PointerNode::Index(idx) => Some(*idx),
-            _ => None,
+            PointerNode::Key(_) => None,
         }
     }
 
     fn key(&self) -> Option<&str> {
         match self {
             PointerNode::Key(key) => Some(key),
-            _ => None,
+            PointerNode::Index(_) => None,
         }
     }
 }
