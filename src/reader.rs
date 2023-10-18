@@ -51,7 +51,8 @@ pub trait Reader<'de>: Sealed {
     fn slice_unchecked(&self, start: usize, end: usize) -> &'de [u8];
 
     #[cold]
-    fn position_of_index(&self, i: usize) -> Position {
+    fn position_of_index(&self, mut i: usize) -> Position {
+        i = i.min(self.as_u8_slice().len());
         let mut position = Position { line: 1, column: 0 };
         for ch in &self.as_u8_slice()[..i] {
             match *ch {

@@ -976,7 +976,7 @@ impl Document {
         let dst = alloc.try_alloc_layout(layout).map_err(Error::custom)?;
         let json_buf = unsafe {
             let dst = dst.as_ptr();
-            std::ptr::copy_nonoverlapping(json.as_ptr(), dst, real_size);
+            std::ptr::copy_nonoverlapping(json.as_ptr(), dst, len);
             *(dst.add(len)) = b'x';
             *(dst.add(len + 1)) = b'"';
             *(dst.add(len + 2)) = b'x';

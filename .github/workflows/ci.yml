@@ -33,7 +33,9 @@ jobs:
       run: |
         cargo check
         cargo test
-        cargo bench
+        cargo bench check
+        cargo fuzz check
+        cargo +nightly fuzz run fuzz_value 
 
   test-linux-aarch64:
     runs-on: [self-hosted, arm]

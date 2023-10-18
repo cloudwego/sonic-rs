@@ -3,5 +3,7 @@
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    _ = sonic_rs::value::to_dom(data);
+    if let Ok(dom) = sonic_rs::value::dom_from_slice(data) {
+        let _ = sonic_rs::to_string(&dom).unwrap();
+    }
 });
