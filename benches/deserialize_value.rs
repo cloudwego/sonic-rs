@@ -105,13 +105,7 @@ macro_rules! bench_file {
 bench_file!(book);
 bench_file!(canada);
 bench_file!(citm_catalog);
-bench_file!(fgo);
-bench_file!(lottie);
-bench_file!(otfcc);
 bench_file!(twitter);
-bench_file!(poet);
-bench_file!(twitterescaped);
-bench_file!(gsoc_2018);
 bench_file!(github_events);
 
 // criterion_group!(benches, canada, otfcc, citm_catalog, twitter, lottie, github_events, twitterescaped, book, poet, fgo);
