@@ -1006,10 +1006,10 @@ where
     pub(crate) fn parse_literal(&mut self, literal: &str) -> Result<()> {
         let reader = &mut self.read;
         if let Some(chunck) = reader.next_n(literal.len()) {
-            if chunck != literal.as_bytes() {
-                perr!(self, InvalidLiteral)
-            } else {
+            if chunck == literal.as_bytes() {
                 Ok(())
+            } else {
+                perr!(self, InvalidLiteral)
             }
         } else {
             perr!(self, EofWhileParsing)
@@ -1188,8 +1188,8 @@ where
 
         if !node.order.is_empty() {
             slice = self.read.slice_unchecked(start, self.read.index());
-            for p in node.order.iter() {
-                out[*p] = slice
+            for p in &node.order {
+                out[*p] = slice;
             }
             *remain -= node.order.len();
         }
