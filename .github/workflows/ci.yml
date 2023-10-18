@@ -28,13 +28,15 @@ jobs:
     - uses: dtolnay/rust-toolchain@nightly
       with:
         components: rustfmt
-    # - uses: Swatinem/rust-cache@v1
+    - uses: Swatinem/rust-cache@v1
     - name: Run tests
       run: |
         cargo check
         cargo test
         cargo bench check
-        cargo fuzz check
+        cargo install cargo-fuzz
+        cargo +nightly fuzz run fuzz_value -- -max_total_time=5m
+
 
   test-linux-aarch64:
     runs-on: [self-hosted, arm]
