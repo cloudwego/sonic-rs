@@ -43,7 +43,7 @@ pub(crate) struct PointerTreeNode {
     pub(crate) children: PointerTreeInner,
 }
 
-use PointerTreeInner::*;
+use PointerTreeInner::{Empty, Index, Key};
 
 impl PointerTreeNode {
     pub fn add_path<Path: IntoIterator>(&mut self, path: Path, order: usize)
