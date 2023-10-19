@@ -32,7 +32,7 @@ jobs:
     - name: Run tests
       run: |
         cargo check
-        cargo test
+        cargo test --features utf8
         cargo bench check
         cargo install cargo-fuzz
         cargo +nightly fuzz run fuzz_value -- -max_total_time=5m
@@ -50,7 +50,7 @@ jobs:
       - name: Run tests
         run: |
           cargo check 
-          cargo test
+          cargo test --features utf8
 
   lint:
     runs-on: [self-hosted, X64]

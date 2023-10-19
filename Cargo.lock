@@ -756,7 +756,7 @@ checksum = "942b4a808e05215192e39f4ab80813e599068285906cc91aa64f923db842bd5a"
 
 [[package]]
 name = "sonic-rs"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "arrayref",
  "bumpalo",
@@ -778,6 +778,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "simd-json",
+ "simdutf8",
  "smallvec",
  "thiserror",
 ]

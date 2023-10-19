@@ -1332,7 +1332,7 @@ where
 {
     let vec = tri!(to_vec(value));
     let string = unsafe {
-        // We do not emit invalid UTF-8.
+        // We do not emit Invalid UTF-8.
         String::from_utf8_unchecked(vec)
     };
     Ok(string)
@@ -1351,7 +1351,7 @@ where
 {
     let vec = tri!(to_vec_pretty(value));
     let string = unsafe {
-        // We do not emit invalid UTF-8.
+        // We do not emit Invalid UTF-8.
         String::from_utf8_unchecked(vec)
     };
     Ok(string)

@@ -14,7 +14,7 @@ A fast Rust JSON library based on SIMD. It has some references to other open-sou
 ## Requirements/Notes
 1. Support x86_64 or aarch64. Note that the performance in aarch64 is low and it need to optimize.
 2. Rust nightly version. Because we use the `packed_simd` crate.
-3. Not validating the UTF-8 in parsing. We will add a feature/option to enable it in the future.
+3. Not validating the UTF-8 when parsing from slice by default. You can add the `utf8` feature to enable the validation. The performance loss is about 3% ~ 10%.
 
 ## Features
 1. Serde into Rust struct as `serde_json` and `serde`
@@ -30,73 +30,73 @@ Model name:          Intel(R) Xeon(R) Platinum 8260 CPU @ 2.40GHz
 ```
 
 ### Deserialize Struct 
-`cargo bench --bench deserialize_struct  -- --quiet`
+`cargo bench --bench deserialize_struct --features utf8  -- --quiet`
 
 ```
 twitter/sonic_rs::from_slice
-                        time:   [668.73 µs 675.09 µs 681.94 µs]
+                        time:   [718.60 µs 724.47 µs 731.05 µs]
 twitter/simd_json::from_slice
-                        time:   [963.34 µs 972.64 µs 982.57 µs]
+                        time:   [1.0325 ms 1.0486 ms 1.0664 ms]
 twitter/serde_json::from_slice
-                        time:   [2.2711 ms 2.2930 ms 2.3176 ms]
+                        time:   [2.3070 ms 2.3271 ms 2.3506 ms]
 twitter/serde_json::from_str
-                        time:   [1.3854 ms 1.4056 ms 1.4286 ms]
+                        time:   [1.3797 ms 1.3996 ms 1.4237 ms]
 
 citm_catalog/sonic_rs::from_slice
-                        time:   [1.2461 ms 1.2740 ms 1.3062 ms]
+                        time:   [1.3413 ms 1.3673 ms 1.3985 ms]
 citm_catalog/simd_json::from_slice
-                        time:   [2.2162 ms 2.2696 ms 2.3288 ms]
+                        time:   [2.3324 ms 2.4122 ms 2.4988 ms]
 citm_catalog/serde_json::from_slice
-                        time:   [2.8963 ms 2.9163 ms 2.9374 ms]
+                        time:   [3.0485 ms 3.0965 ms 3.1535 ms]
 citm_catalog/serde_json::from_str
-                        time:   [2.4114 ms 2.4376 ms 2.4667 ms]
+                        time:   [2.4495 ms 2.4661 ms 2.4836 ms]
 
 canada/sonic_rs::from_slice
-                        time:   [3.8334 ms 3.8643 ms 3.9019 ms]
+                        time:   [4.3249 ms 4.4713 ms 4.6286 ms]
 canada/simd_json::from_slice
-                        time:   [8.0765 ms 8.1702 ms 8.2898 ms]
+                        time:   [8.3872 ms 8.5095 ms 8.6519 ms]
 canada/serde_json::from_slice
-                        time:   [6.4104 ms 6.4529 ms 6.4990 ms]
+                        time:   [6.5207 ms 6.5938 ms 6.6787 ms]
 canada/serde_json::from_str
-                        time:   [6.5044 ms 6.5687 ms 6.6476 ms]
+                        time:   [6.6534 ms 6.8373 ms 7.0402 ms]
 ```
 
 ### Deserialize Untyped
-`cargo bench --bench deserialize_value  -- --quiet`
+`cargo bench --bench deserialize_value  --features utf8  -- --quiet`
 
 ```
 twitter/sonic_rs_dom::from_slice
-                        time:   [608.82 µs 620.44 µs 633.70 µs]
+                        time:   [624.60 µs 631.67 µs 639.76 µs]
 twitter/simd_json::slice_to_borrowed_value
-                        time:   [1.2590 ms 1.2937 ms 1.3317 ms]
+                        time:   [1.2524 ms 1.2784 ms 1.3083 ms]
 twitter/serde_json::from_slice
-                        time:   [4.1013 ms 4.1890 ms 4.2840 ms]
+                        time:   [4.1991 ms 4.3552 ms 4.5264 ms]
 twitter/serde_json::from_str
-                        time:   [3.0287 ms 3.0771 ms 3.1319 ms]
+                        time:   [3.0258 ms 3.1086 ms 3.2005 ms]
 twitter/simd_json::slice_to_owned_value
-                        time:   [1.7877 ms 1.8202 ms 1.8573 ms]
+                        time:   [1.8195 ms 1.8382 ms 1.8583 ms]
 
 citm_catalog/sonic_rs_dom::from_slice
-                        time:   [1.8739 ms 1.9256 ms 1.9822 ms]
+                        time:   [1.8528 ms 1.8962 ms 1.9452 ms]
 citm_catalog/simd_json::slice_to_borrowed_value
-                        time:   [3.5107 ms 3.5864 ms 3.6763 ms]
+                        time:   [3.5543 ms 3.6127 ms 3.6814 ms]
 citm_catalog/serde_json::from_slice
-                        time:   [8.3670 ms 8.4982 ms 8.6585 ms]
+                        time:   [9.0163 ms 9.2052 ms 9.4167 ms]
 citm_catalog/serde_json::from_str
-                        time:   [8.1648 ms 8.3301 ms 8.5224 ms]
+                        time:   [8.0306 ms 8.1450 ms 8.2843 ms]
 citm_catalog/simd_json::slice_to_owned_value
-                        time:   [4.1098 ms 4.1530 ms 4.2017 ms]
+                        time:   [4.2538 ms 4.3171 ms 4.3990 ms]
 
 canada/sonic_rs_dom::from_slice
-                        time:   [5.2630 ms 5.4299 ms 5.6119 ms]
+                        time:   [5.2105 ms 5.2761 ms 5.3474 ms]
 canada/simd_json::slice_to_borrowed_value
-                        time:   [12.002 ms 12.135 ms 12.289 ms]
+                        time:   [12.557 ms 12.773 ms 13.031 ms]
 canada/serde_json::from_slice
-                        time:   [14.909 ms 15.148 ms 15.431 ms]
+                        time:   [14.875 ms 15.073 ms 15.315 ms]
 canada/serde_json::from_str
-                        time:   [15.277 ms 15.656 ms 16.089 ms]
+                        time:   [14.603 ms 14.868 ms 15.173 ms]
 canada/simd_json::slice_to_owned_value
-                        time:   [12.025 ms 12.137 ms 12.261 ms]
+                        time:   [12.548 ms 12.637 ms 12.737 ms]
 ```
 
 
@@ -152,6 +152,7 @@ citm_catalog/serde_json::to_string
 ```
 
 ### Get from JSON
+
 `cargo bench --bench get_from -- --quiet`
 
 ```

@@ -209,7 +209,9 @@ pub unsafe fn handle_unicode_codepoint_mut(src_ptr: &mut *mut u8, dst_ptr: &mut 
             return false;
         }
 
-        code_point = (((code_point - 0xD800) << 10) | (code_point_2 - 0xDC00)) + 0x10000;
+        code_point = (((code_point.wrapping_sub(0xD800)) << 10)
+            | (code_point_2.wrapping_sub(0xDC00)))
+        .wrapping_add(0x10000);
         *src_ptr = src_ptr.add(6);
     }
     let offset = codepoint_to_utf8(code_point, *dst_ptr);

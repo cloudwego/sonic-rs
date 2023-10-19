@@ -10,9 +10,29 @@ where
     Copied(&'c T),
 }
 
-pub struct Position {
+pub(crate) struct Position {
     pub line: usize,
     pub column: usize,
+}
+
+impl Position {
+    pub(crate) fn from_index(mut i: usize, data: &[u8]) -> Self {
+        // i must not exceed the length of data
+        i = i.min(data.len());
+        let mut position = Position { line: 1, column: 0 };
+        for ch in &data[..i] {
+            match *ch {
+                b'\n' => {
+                    position.line += 1;
+                    position.column = 0;
+                }
+                _ => {
+                    position.column += 1;
+                }
+            }
+        }
+        position
+    }
 }
 
 impl<'b, 'c, T> Deref for Reference<'b, 'c, T>
@@ -49,24 +69,6 @@ pub trait Reader<'de>: Sealed {
     unsafe fn cur_ptr(&mut self) -> *mut u8;
     unsafe fn set_ptr(&mut self, cur: *mut u8);
     fn slice_unchecked(&self, start: usize, end: usize) -> &'de [u8];
-
-    #[cold]
-    fn position_of_index(&self, mut i: usize) -> Position {
-        i = i.min(self.as_u8_slice().len());
-        let mut position = Position { line: 1, column: 0 };
-        for ch in &self.as_u8_slice()[..i] {
-            match *ch {
-                b'\n' => {
-                    position.line += 1;
-                    position.column = 0;
-                }
-                _ => {
-                    position.column += 1;
-                }
-            }
-        }
-        position
-    }
 
     fn as_u8_slice(&self) -> &'de [u8];
 }

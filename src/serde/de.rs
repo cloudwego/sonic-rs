@@ -10,6 +10,7 @@ use crate::error::{
 use crate::parser::{as_str, Parser};
 use crate::reader::{Reader, Reference, SliceRead};
 use crate::util::num::ParserNumber;
+
 use serde::de::{self, Expected, Unexpected};
 use serde::forward_to_deserialize_any;
 
@@ -1052,11 +1053,18 @@ where
 
 /// Deserialize an instance of type `T` from bytes of JSON text.
 ///
-pub fn from_slice<'a, T>(v: &'a [u8]) -> Result<T>
+pub fn from_slice<'a, T>(json: &'a [u8]) -> Result<T>
 where
     T: de::Deserialize<'a>,
 {
-    from_trait(SliceRead::new(v))
+    // validate the utf-8 at first for slice
+    #[cfg(feature = "utf8")]
+    let json = {
+        let json = crate::util::utf8::from_utf8(json)?;
+        json.as_bytes()
+    };
+
+    from_trait(SliceRead::new(json))
 }
 
 /// Deserialize an instance of type `T` from a string of JSON text.

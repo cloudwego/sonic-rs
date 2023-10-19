@@ -265,4 +265,15 @@ mod test {
         let got_value: TestJsonNumber = from_str(expect).expect("Failed to deserialize the data");
         assert_eq!(data, got_value);
     }
+
+    #[test]
+    #[cfg(feature = "utf8")]
+    fn test_invalid_utf8() {
+        let data = [b'"', 0, 0, 0, 0x80, 0x90, b'"'];
+        let value: crate::Result<String> = from_slice(&data);
+        assert_eq!(
+            value.err().unwrap().to_string(),
+            "Invalid UTF-8 characters in json at line 1 column 4"
+        );
+    }
 }
