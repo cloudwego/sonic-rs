@@ -14,7 +14,7 @@ A fast Rust JSON library based on SIMD. It has some references to other open-sou
 ## Requirements/Notes
 1. Support x86_64 or aarch64. Note that the performance in aarch64 is low and it need to optimize.
 2. Rust nightly version. Because we use the `packed_simd` crate.
-3. Not validating the UTF-8 in `from_slice`, `get` or `get_many` APIs. We will add a feature/option to enable it in the future.
+3. Not validating the UTF-8 in parsing. We will add a feature/option to enable it in the future.
 
 ## Features
 1. Serde into Rust struct as `serde_json` and `serde`
