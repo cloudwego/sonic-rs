@@ -832,6 +832,13 @@ pub fn dom_from_str(json: &str) -> Result<Document> {
 }
 
 pub fn dom_from_slice(json: &[u8]) -> Result<Document> {
+    // validate the utf-8 at first for slice
+    #[cfg(feature = "utf8")]
+    let json = {
+        let json = crate::util::utf8::from_utf8(json)?;
+        json.as_bytes()
+    };
+
     let mut dom = Document::new();
     dom.parse_bytes_impl(json)?;
     Ok(dom)
@@ -1360,7 +1367,13 @@ mod test {
 
     #[test]
     fn test_json_tralings() {
-        let testdata = ["-0.99999999999999999xxx", "\"\"\"", "{} x"];
+        let testdata = [
+            "-0.99999999999999999xxx",
+            "\"\"\"",
+            "{} x",
+            "\"xxxxx",
+            r#""\uDBDD\u1DD000"#,
+        ];
 
         for data in testdata.iter() {
             let ret = dom_from_slice(data.as_bytes());
@@ -1516,5 +1529,30 @@ mod test {
         assert!(empty.pop().is_true());
         let value = empty.get_mut(0).unwrap().take();
         assert!(value.as_str().unwrap() == "new inserted");
+    }
+
+    #[test]
+    #[cfg(feature = "utf8")]
+    fn test_invalid_utf8() {
+        let data = [b'"', 0, 0, 0, 0x80, 0x90, b'"'];
+        let dom = dom_from_slice(&data);
+        assert_eq!(
+            dom.err().unwrap().to_string(),
+            "Invalid UTF-8 characters in json at line 1 column 4"
+        );
+
+        let data = [b'"', b'"', 0x80];
+        let dom = dom_from_slice(&data);
+        assert_eq!(
+            dom.err().unwrap().to_string(),
+            "Invalid UTF-8 characters in json at line 1 column 2"
+        );
+
+        let data = [0x80, b'"', b'"'];
+        let dom = dom_from_slice(&data);
+        assert_eq!(
+            dom.err().unwrap().to_string(),
+            "Invalid UTF-8 characters in json at line 1 column 0"
+        );
     }
 }

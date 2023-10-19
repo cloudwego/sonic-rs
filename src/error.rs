@@ -54,6 +54,12 @@ impl Error {
             None
         }
     }
+
+    pub(crate) fn new(code: ErrorCode, line: usize, column: usize) -> Self {
+        Error {
+            err: Box::new(ErrorImpl { code, line, column }),
+        }
+    }
 }
 
 #[allow(clippy::fallible_impl_from)]
@@ -121,6 +127,9 @@ pub(crate) enum ErrorCode {
 
     #[error("Invalid unicode code point")]
     InvalidUnicodeCodePoint,
+
+    #[error("Invalid UTF-8 characters in json")]
+    InvalidUTF8,
 
     #[error("Control character found while parsing a string")]
     ControlCharacterWhileParsingString,

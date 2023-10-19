@@ -5,6 +5,7 @@ use crate::pointer::{
     tree::MultiIndex, tree::MultiKey, tree::PointerTreeInner, tree::PointerTreeNode, PointerTrait,
 };
 use crate::pointer::{JsonPointer, PointerTree};
+use crate::reader::Position;
 use crate::util::arch::{get_nonspace_bits, prefix_xor};
 use crate::util::num::{parse_number_unchecked, ParserNumber};
 use crate::util::string::parse_valid_escaped_string;
@@ -157,8 +158,16 @@ where
 
     /// Error caused by a byte from next_char().
     #[cold]
-    pub(crate) fn error(&self, reason: ErrorCode) -> Error {
-        let position = self.read.position_of_index(self.error_index());
+    pub(crate) fn error(&self, mut reason: ErrorCode) -> Error {
+        // check errors, if exceed, the reason must be eof, and begin parsing the padding chars
+        let mut index = self.error_index();
+        let len = self.read.as_u8_slice().len();
+        if index > len {
+            reason = EofWhileParsing;
+            index = len;
+        }
+
+        let position = Position::from_index(index, self.read.as_u8_slice());
         Error::syntax(reason, position.line, position.column)
     }
 
@@ -1043,6 +1052,12 @@ where
 
     #[inline(always)]
     pub(crate) fn parse_trailing(&mut self) -> Result<()> {
+        // check exceed
+        let exceed = self.read.index() > self.read.as_u8_slice().len();
+        if exceed {
+            return perr!(self, EofWhileParsing);
+        }
+
         // has_main should marked before skip_space
         let remain = self.read.remain() > 0;
         if !remain {
