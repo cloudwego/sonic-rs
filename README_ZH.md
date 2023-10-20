@@ -9,66 +9,65 @@
 [actions-badge]: https://github.com/cloudwego/sonic-rs/actions/workflows/ci.yaml/badge.svg
 [actions-url]: https://github.com/cloudwego/sonic-rs/actions
 
-English | [中文](README_ZH.md)
+中文 | [English](README.md)
 
-A fast Rust JSON library based on SIMD. It has some references to other open-source libraries like [sonic_cpp](https://github.com/bytedance/sonic-cpp), [serde_json](https://github.com/serde-rs/json), [sonic](https://github.com/bytedance/sonic), [simdjson](https://github.com/simdjson/simdjson), [rust-std](https://github.com/rust-lang/rust/tree/master/library/core/src/num) and more.
+sonic-rs 是一个基于 SIMD 的高性能 JSON 库。它参考了其他开源库如 [sonic_cpp](https://github.com/bytedance/sonic-cpp)，[serde_json](https://github.com/serde-rs/json)，[sonic](https://github.com/bytedance/sonic)，[simdjson](https://github.com/simdjson/simdjson)，[rust-std](https://github.com/rust-lang/rust/tree/master/library/core/src/num) 等。
 
-The main optimization in sonic-rs is the use of SIMD. However, we do not use the two-stage SIMD algorithms from `simd-json`. We primarily use SIMD in the following scenarios:
-1. parsing/serialize long JSON strings
-2. parsing the fraction of float number
-3. Getting a specific elem or field from JSON
-4. Skipping white spaces when parsing JSON
+sonic-rs 的主要优化是使用 SIMD。然而，sonic-rs 没有使用来自`simd-json`的两阶段SIMD算法。sonic-rs 主要在以下场景中使用 SIMD：
+1. 解析/序列化长 JSON 字符串
+2. 解析浮点数的小数部分
+3. 从 JSON 中获取特定元素或字段
+4. 在解析JSON时跳过空格
 
-More details about optimization can be found in [performance.md](docs/performance.md).
+有关优化的更多细节，请参见 [performance_zh.md](docs/performance_zh.md)。
 
-## Requirements/Notes
+## ***要求/注意事项***
 
-1. Support x86_64 or aarch64. Note that the performance in aarch64 is lower and needs optimization.
-2. Requires Rust nightly version, as we use the `packed_simd` crate.
-3. Does NOT validate the UTF-8 when parsing from a slice by default. You can use the `utf8` feature to enable validation. The performance loss is about 3% ~ 10%.
-4. When using `get_from`, `get_many`, `JsonIter` or `RawValue`, ***Warn:*** the JSON should be well-formed and valid.
+1. 支持 x86_64 或 aarch64，aarch64 的性能较低，需要优化。
+2. 需要 Rust nightly 版本，因为 sonic-rs 使用了 `packed_simd` 包。
+3. 默认情况下，当 JSON 是slice 时， sonic-rs 并不校验 UTF-8。用户可以使用 `utf8` feature 来开启 utf-8 校验，性能损失约为 3% ~ 10% 不等。
+4. 使用 `get_from`、`get_many`、`JsonIter` 或 `RawValue` 时，JSON 应该是格式正确且有效的。
 
-## Features
-1. Serde into Rust struct as `serde_json` and `serde`.
+## 功能
 
-2. Parse/Serialize JSON for untyped document, which can be mutable.
+1. JSON 与 Rust 结构体之间的序列化，基于兼容 `serde_json` 和 `serde`。
+2. JSON 与 document 之间的序列化，document是可变数据结构
+3. 从 JSON 中获取特定字段
+4. 将 JSON 解析为惰性迭代器
+5. 在默认情况下支持 `RawValue`，`Number` 和 `RawNumber`（就像 Golang 的 `JsonNumber`）。
 
-3. Get specific fields from a JSON with the blazing performance.
+## 如何使用 sonic-rs
 
-4. Use JSON as a lazy array or object iterator with the blazing performance.
+要确保在 sonic-rs 中使用 SIMD 指令，您需要添加 rustflags `-C target-cpu=native` 并在主机上进行编译。例如，Rust 标志可以在 Cargo [config](.cargo/config) 中配置。
 
-5. Supprt `RawValue`, `Number` and `RawNumber`(just like Golang's `JsonNumber`) in default.
+如何选择features？
 
-## Quick to use sonic-rs
+`default`：在解析时，不校验 UTF-8，性能更好。
 
-To ensure that SIMD instruction is used in sonic-rs, you need to add rustflags `-C target-cpu=native` and compile on the host machine. For example, Rust flags can be configured in Cargo [config](.cargo/config).
+`utf8`：当 JSON 是slice 时，开启 UTF-8校验。
 
-Choose what features?
-`default`: the fast version that does not validate UTF-8 when parsing for performance. 
-`utf8`: provides UTF-8 validation when parsing JSON from a slice.
+## 基准测试
 
-## Benchmark
-
-Benchmarks environemnt:
+基准测试环境:
 
 ```
 Architecture:        x86_64
 Model name:          Intel(R) Xeon(R) Platinum 8260 CPU @ 2.40GHz
 ```
-Benchmarks:
 
-- Deserialize Struct: Deserialize the JSON into Rust struct. The defined struct and testdata is from [json-benchmark][https://github.com/serde-rs/json-benchmark]
+基准测试主要有两个方面：
 
-- Deseirlize Untyped: Deseialize the JSON into a document
+- 解析到结构体：定义的结构体和测试数据来自 [json-benchmark][https://github.com/serde-rs/json-benchmark]
 
-The serialize benchmarks work in the opposite way.
+- 解析到 document
 
+序列化基准测试也是如此。
 
-### Deserialize Struct (Enabled utf8 validation)
+### 解析到结构体（启用 utf8 验证）
 
-The benchmark will parse JSON into a Rust struct, and there are no unknown fields in JSON text. All fields are parsed into struct fields in the JSON. 
+基准测试将把 JSON 解析成 Rust 结构体，JSON 文本中没有未知字段。JSON 中的所有字段都被解析为结构体字段。
 
-Sonic-rs is faster than simd-json because simd-json (Rust) first parses the JSON into a `tape`, then parses the `tape` into a Rust struct. Sonic-rs directly parses the JSON into a Rust struct, and there are no temporary data structures. The [flamegraph](assets/pngs/) is profiled in the citm_catalog case.
+Sonic-rs 比 simd-json 更快，因为 simd-json (Rust) 首先将 JSON 解析成 `tape`，然后将 `tape` 解析成 Rust 结构体。Sonic-rs 直接将 JSON 解析成 Rust 结构体，没有临时数据结构。在 citm_catalog 案例中对 [flamegraph](assets/pngs/) 进行了分析。
 
 `cargo bench --bench deserialize_struct --features utf8  -- --quiet`
 
@@ -102,12 +101,12 @@ canada/serde_json::from_str
 ```
 
 
-### Deserialize Untyped (Enabled utf8 validation)
+### 解析到 document（启用 utf8 验证）
 
-The benchmark will parse JSON into a document. Sonic-rs seems faster for several reasons:
-- There are also no temporary data structures in sonic-rs, as detailed above.
-- Sonic-rs uses a memory arena for the whole document, resulting in fewer memory allocations, better cache-friendliness, and mutability.
-- The JSON object in sonic-rs's document is actually a vector. Sonic-rs does not build a hashmap.
+该测试将把 JSON 解析成 document。由于以下几个原因，Sonic-rs 会看起来更快一些：
+- 如上所述，在 sonic-rs 中没有临时数据结构，例如 `tape`。
+- Sonic-rs 为整个 document 使用内存区，从而减少内存分配、提高缓存友好性和可变性。
+- sonic-rs document中的 JSON 对象实际上是一个向量。Sonic-rs 不会构建 hashmap。
 
 `cargo bench --bench deserialize_value  --features utf8  -- --quiet`
 
@@ -147,11 +146,12 @@ canada/simd_json::slice_to_owned_value
 ```
 
 
-### Serialize Untyped
+
+### 序列化 document
 
 `cargo bench --bench serialize_value  -- --quiet`
 
-We serialize the document into a string. In the following benchmarks, sonic-rs appears faster for the `twitter` JSON. The `twitter` JSON contains many long JSON strings, which fit well with sonic-rs's SIMD optimization.
+在以下基准测试中，对于 `twitter` JSON，sonic-rs 看似更快。 因为 `twitter` JSON 包含许多长 JSON 字符串，这非常适合 sonic-rs 的 SIMD 优化。
 
 ```
 twitter/sonic_rs::to_string
@@ -176,10 +176,10 @@ canada/simd_json::to_string
                         time:   [7.3751 ms 7.5690 ms 7.7944 ms]
 ```
 
-### Serialize Struct
+### 序列化 Rust 结构体
 `cargo bench --bench serialize_struct  -- --quiet`
 
-The explanation is as mentioned above.
+解释如上所述。
 
 ```
 twitter/sonic_rs::to_string
@@ -204,11 +204,11 @@ citm_catalog/serde_json::to_string
                         time:   [802.10 µs 814.15 µs 828.10 µs]
 ```
 
-### Get from JSON
+### 从 JSON 中获取
 
 `cargo bench --bench get_from -- --quiet`
 
-The benchmark is getting a specific field from the twitter JSON. In both sonic-rs and gjson, the JSON should be well-formed and valid when using get or get_from. Sonic-rs utilize SIMD to quickly skip unnecessary fields, thus enhancing the performance.
+基准测试是从 twitter JSON 中获取特定字段。在 sonic-rs 和 gjson 中，使用 get 或 get_from 时，JSON 应该格式正确且有效。Sonic-rs 利用 SIMD 快速跳过不必要的字段，从而提高性能。
 
 ```
 twitter/sonic-rs::get_from_str
@@ -216,11 +216,11 @@ twitter/sonic-rs::get_from_str
 twitter/gjson::get      time:   [344.41 µs 351.36 µs 362.03 µs]
 ```
 
-## Usage
+## 用法
 
-### Serde into Rust Type
+### 对 Rust 类型解析/序列化
 
-Directly use the `Deserialize` or `Serialize` trait.
+直接使用 `Deserialize` 或 `Serialize` trait。
 
 ```rs
 use sonic_rs::{Deserialize, Serialize}; 
@@ -250,9 +250,9 @@ fn main() {
 }
 ```
 
-### Get a field from JSON
+### 从 JSON 中获取字段
 
-Get a specific field from a JSON with the `pointer` path. The return is a `LazyValue`, which is a wrapper of a raw JSON slice. Note that the JSON must be valid and well-formed, otherwise it may return unexpected result.
+使用 `pointer` 路径从 JSON 中获取特定字段。返回的是 `LazyValue`，本质上是一段未解析的 JSON 切片。请注意，使用该 API 需要保证 JSON 是格式良好且有效的，否则可能返回非预期结果。
 
 ```rs
 use sonic_rs::{get_from_str, pointer, JsonValue, PointerNode};
@@ -276,9 +276,10 @@ fn main() {
 }
 ```
 
-### Parse and Serialize into untyped Value
 
-Parse a JSON into a document, which is mutable. Be aware that the document is managed by a `bump` allocator. It is recommended to convert documents into `Object/ObjectMut` or `Array/ArrayMut` to make them typed and easier to use.
+# 解析/序列化 document
+
+在 sonic-rs 中，JSON 可以被解析未可修改的document。需要注意，document 是由 bump 分配器管理。建议将 document 转换为 Object/ObjectMut 或 Array/ArrayMut。这样能够确保强类型，同时在使用时可以对 allocator 无感知。
 
 ```rs
 use sonic_rs::value::{dom_from_slice, Value};
@@ -324,7 +325,7 @@ fn main() {
 
 ### JSON Iterator
 
-Parse a object or array JSON into a iterator. The `item` of iterator is the `LazyValue`, which is wrapper of a raw JSON slice.
+将 JSON object 或 Array 解析为惰性迭代器。迭代器的 Item 是 `LazyValue` 或 `Result<LazyValue>`。
 
 ```rs
 use bytes::Bytes;
@@ -351,17 +352,17 @@ fn main() {
 
 ### JSON RawValue & Number & RawNumber
 
-If we need parse a JSON value as a raw string, we can use `RawValue`.
-If we need parse a JSON number into a untyped type, we can use `Number`.
-If we need parse a JSON number ***without loss of percision***, we can use `RawNumber`. It likes `JsonNumber` in Golang, and can also be parsed from a JSON string.
+如果我们需要得到原始的 JSON 文本，可以使用 RawValue。 如果我们需要将 JSON 数字解析为 untyped number，可以使用 Number。 如果我们需要解析 JSON 数字时***不丢失精度**，可以使用 RawNumber，它类似于 Golang 中的 JsonNumber。
 
-Detailed examples can be found in [raw_value.rs](examples/raw_value.rs) and [json_number.rs](examples/json_number.rs).
+详细示例可以在[raw_value.rs](examples/raw_value.rs) 和 [json_number.rs](examples/json_number.rs) 中找到。
 
-## Acknowledgement
+
+## 致谢
 
 Thanks the following open-source libraries. sonic-rs has some references to other open-source libraries like [sonic_cpp](https://github.com/bytedance/sonic-cpp), [serde_json](https://github.com/serde-rs/json), [sonic](https://github.com/bytedance/sonic), [simdjson](https://github.com/simdjson/simdjson), [yyjson](https://github.com/ibireme/yyjson), [rust-std](https://github.com/rust-lang/rust/tree/master/library/core/src/num) and so on.
 
-We rewrote many SIMD algorithms from sonic-cpp/sonic/simdjson/yyjson for performance. We reused the de/ser codes and modified necessary parts from serde_json to make high compatibility with `serde`. We resued part codes about floating parsing from rust-std to make it more accurate.
+我们为了性能重写了来自 sonic-cpp/sonic/simdjson/yyjson 的许多 SIMD 算法。我们重用了来自 serde_json 的反/序列化代码，并修改了必要的部分以与 serde 高度兼容。我们重用了来自 rust-std 的部分浮点解析代码，使其结构更准确。
 
-## Contributing
+## 如何贡献
+
 Please read `CONTRIBUTING.md` for information on contributing to sonic-rs.
