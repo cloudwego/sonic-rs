@@ -95,16 +95,19 @@ fn get_string_bits(data: &[u8; 64], prev_instring: &mut u64, prev_escaped: &mut 
 
 #[inline(always)]
 fn skip_container_loop(
-    input: &[u8; 64],
-    prev_instring: &mut u64,
+    input: &[u8; 64],        /* a 64-bytes slice from json */
+    prev_instring: &mut u64, /* the bitmap of last string */
     prev_escaped: &mut u64,
     lbrace_num: &mut usize,
     rbrace_num: &mut usize,
     left: u8,
     right: u8,
 ) -> Option<NonZeroU8> {
+    // get the bitmao
     let instring = get_string_bits(input, prev_instring, prev_escaped);
-    let v = u8x64::from_slice_unaligned(input);
+    // #Safety
+    // the input is 64 bytes, so the v is always valid.
+    let v = unsafe { u8x64::from_slice_unaligned_unchecked(input) };
     let last_lbrace_num = *lbrace_num;
     let mut rbrace = (v.eq(u8x64::splat(right))).bitmask() & !instring;
     let lbrace = (v.eq(u8x64::splat(left))).bitmask() & !instring;

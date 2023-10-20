@@ -383,6 +383,11 @@ impl RawNumber {
     pub(crate) fn new(s: &str) -> Self {
         Self { n: s.to_string() }
     }
+
+    /// as_str returns the underlying string representation of the number.
+    pub fn as_str(&self) -> &str {
+        self.n.as_str()
+    }
 }
 
 pub(crate) const TOKEN: &str = "$sonic_rs::private::JsonNumber";
@@ -420,7 +425,7 @@ impl<'de> Deserialize<'de> for RawNumber {
     }
 }
 
-pub struct JsonNumberString;
+pub(crate) struct JsonNumberString;
 
 impl<'de> de::DeserializeSeed<'de> for JsonNumberString {
     type Value = RawNumber;

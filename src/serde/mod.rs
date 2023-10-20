@@ -4,7 +4,7 @@ mod raw;
 mod ser;
 
 pub use self::de::{from_slice, from_str, Deserializer};
-pub use self::number::{JsonNumberString, JsonNumberTrait, Number, RawNumber};
+pub use self::number::{JsonNumberTrait, Number, RawNumber};
 pub use self::raw::{to_raw_value, RawValue};
 pub use self::ser::{
     to_string, to_string_pretty, to_vec, to_vec_pretty, to_writer, to_writer_pretty, Serializer,
