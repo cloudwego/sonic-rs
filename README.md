@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/crates/l/sonic-rs)](#license)
 [![Build Status][actions-badge]][actions-url]
 
-[actions-badge]: https://github.com/cloudwego/sonic-rs/actions/workflows/ci.yaml/badge.svg
+[actions-badge]: https://github.com/cloudwego/sonic-rs/actions/workflows/ci.yml/badge.svg
 [actions-url]: https://github.com/cloudwego/sonic-rs/actions
 
 English | [中文](README_ZH.md)
