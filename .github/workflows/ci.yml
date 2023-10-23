@@ -33,7 +33,6 @@ jobs:
       run: |
         cargo check
         cargo test
-        cargo bench check
         cargo install cargo-fuzz
         cargo +nightly fuzz run fuzz_value -- -max_total_time=5m
 
