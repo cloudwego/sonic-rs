@@ -5,7 +5,7 @@ fn main() {
     let json = r#"
         {"u": 123, "a": {"b" : {"c": [null, "found"]}}}
     "#;
-    let target = unsafe { get_from_str(json, path.iter()).unwrap() };
+    let target = unsafe { get_from_str(json, &path).unwrap() };
     assert_eq!(target.as_raw_str(), r#""found""#);
     assert_eq!(target.as_str().unwrap(), "found");
 
@@ -14,6 +14,6 @@ fn main() {
         {"u": 123, "a": {"b" : {"c": [null, "found"]}}}
     "#;
     // not found from json
-    let target = unsafe { get_from_str(json, path.iter()) };
+    let target = unsafe { get_from_str(json, &path) };
     assert!(target.is_err());
 }
