@@ -1,7 +1,3 @@
-#[cfg(target_arch = "aarch64")]
-use std::arch::aarch64::*;
-use std::mem::transmute;
-
 // Not use PMULL instructions, but it is apparently slow.
 // This is copied from simdjson.
 pub fn prefix_xor(bitmask: u64) -> u64 {
