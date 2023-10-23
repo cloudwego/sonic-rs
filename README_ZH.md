@@ -75,32 +75,38 @@ Sonic-rs 比 simd-json 更快，因为 simd-json (Rust) 首先将 JSON 解析成
 `cargo bench --bench deserialize_struct -- --quiet`
 
 ```
+twitter/sonic_rs::from_slice_unchecked
+                        time:   [694.74 µs 707.83 µs 723.19 µs]
 twitter/sonic_rs::from_slice
-                        time:   [721.80 µs 747.81 µs 776.19 µs]
+                        time:   [796.44 µs 827.74 µs 861.30 µs]
 twitter/simd_json::from_slice
-                        time:   [1.0909 ms 1.1225 ms 1.1561 ms]
+                        time:   [1.0615 ms 1.0872 ms 1.1153 ms]
 twitter/serde_json::from_slice
-                        time:   [2.3218 ms 2.3491 ms 2.3787 ms]
+                        time:   [2.2659 ms 2.2895 ms 2.3167 ms]
 twitter/serde_json::from_str
-                        time:   [1.4123 ms 1.4460 ms 1.4842 ms]
+                        time:   [1.3504 ms 1.3842 ms 1.4246 ms]
 
+citm_catalog/sonic_rs::from_slice_unchecked
+                        time:   [1.2271 ms 1.2467 ms 1.2711 ms]
 citm_catalog/sonic_rs::from_slice
-                        time:   [1.2133 ms 1.2447 ms 1.2827 ms]
+                        time:   [1.3344 ms 1.3671 ms 1.4050 ms]
 citm_catalog/simd_json::from_slice
-                        time:   [2.0556 ms 2.0822 ms 2.1126 ms]
+                        time:   [2.0648 ms 2.0970 ms 2.1352 ms]
 citm_catalog/serde_json::from_slice
-                        time:   [2.9939 ms 3.0271 ms 3.0674 ms]
+                        time:   [2.9391 ms 2.9870 ms 3.0481 ms]
 citm_catalog/serde_json::from_str
-                        time:   [2.4043 ms 2.4604 ms 2.5283 ms]
+                        time:   [2.5736 ms 2.6079 ms 2.6518 ms]
 
+canada/sonic_rs::from_slice_unchecked
+                        time:   [3.7779 ms 3.8059 ms 3.8368 ms]
 canada/sonic_rs::from_slice
-                        time:   [3.8612 ms 3.9070 ms 3.9574 ms]
+                        time:   [3.9676 ms 4.0212 ms 4.0906 ms]
 canada/simd_json::from_slice
-                        time:   [8.8144 ms 8.9206 ms 9.0317 ms]
+                        time:   [7.9582 ms 8.0932 ms 8.2541 ms]
 canada/serde_json::from_slice
-                        time:   [8.8703 ms 8.9586 ms 9.0555 ms]
+                        time:   [9.2184 ms 9.3560 ms 9.5299 ms]
 canada/serde_json::from_str
-                        time:   [9.2865 ms 9.4272 ms 9.6032 ms]
+                        time:   [9.0383 ms 9.2563 ms 9.5048 ms]
 ```
 
 
@@ -115,37 +121,43 @@ canada/serde_json::from_str
 
 ```
 twitter/sonic_rs_dom::from_slice
-                        time:   [589.34 µs 593.81 µs 599.02 µs]
+                        time:   [621.16 µs 624.89 µs 628.91 µs]
+twitter/sonic_rs_dom::from_slice_unchecked
+                        time:   [588.34 µs 594.28 µs 601.36 µs]
 twitter/simd_json::slice_to_borrowed_value
-                        time:   [1.2174 ms 1.2281 ms 1.2406 ms]
+                        time:   [1.3001 ms 1.3400 ms 1.3853 ms]
 twitter/serde_json::from_slice
-                        time:   [3.9370 ms 3.9658 ms 3.9960 ms]
+                        time:   [3.9263 ms 3.9822 ms 4.0463 ms]
 twitter/serde_json::from_str
-                        time:   [2.8013 ms 2.8278 ms 2.8584 ms]
+                        time:   [2.8608 ms 2.9187 ms 2.9907 ms]
 twitter/simd_json::slice_to_owned_value
-                        time:   [1.7537 ms 1.7857 ms 1.8220 ms]
+                        time:   [1.7870 ms 1.8044 ms 1.8230 ms]
 
 citm_catalog/sonic_rs_dom::from_slice
-                        time:   [1.7779 ms 1.8326 ms 1.8942 ms]
+                        time:   [1.8024 ms 1.8234 ms 1.8469 ms]
+citm_catalog/sonic_rs_dom::from_slice_unchecked
+                        time:   [1.7280 ms 1.7731 ms 1.8235 ms]
 citm_catalog/simd_json::slice_to_borrowed_value
-                        time:   [4.0278 ms 4.1167 ms 4.2103 ms]
+                        time:   [3.5792 ms 3.6082 ms 3.6386 ms]
 citm_catalog/serde_json::from_slice
-                        time:   [9.4022 ms 9.5598 ms 9.7242 ms]
+                        time:   [8.4606 ms 8.5654 ms 8.6896 ms]
 citm_catalog/serde_json::from_str
-                        time:   [7.7487 ms 7.9720 ms 8.2212 ms]
+                        time:   [9.3020 ms 9.4903 ms 9.6760 ms]
 citm_catalog/simd_json::slice_to_owned_value
-                        time:   [4.1156 ms 4.1760 ms 4.2489 ms]
+                        time:   [4.3144 ms 4.4268 ms 4.5604 ms]
 
 canada/sonic_rs_dom::from_slice
-                        time:   [4.9905 ms 5.0650 ms 5.1539 ms]
+                        time:   [5.1103 ms 5.1784 ms 5.2654 ms]
+canada/sonic_rs_dom::from_slice_unchecked
+                        time:   [4.8870 ms 4.9165 ms 4.9499 ms]
 canada/simd_json::slice_to_borrowed_value
-                        time:   [11.931 ms 12.142 ms 12.384 ms]
+                        time:   [12.583 ms 12.866 ms 13.178 ms]
 canada/serde_json::from_slice
-                        time:   [17.262 ms 17.433 ms 17.634 ms]
+                        time:   [17.054 ms 17.218 ms 17.414 ms]
 canada/serde_json::from_str
-                        time:   [16.579 ms 16.773 ms 17.025 ms]
+                        time:   [17.140 ms 17.363 ms 17.614 ms]
 canada/simd_json::slice_to_owned_value
-                        time:   [12.024 ms 12.209 ms 12.423 ms]
+                        time:   [12.351 ms 12.503 ms 12.666 ms]
 ```
 
 
@@ -265,7 +277,7 @@ fn main() {
     let json = r#"
         {"u": 123, "a": {"b" : {"c": [null, "found"]}}}
     "#;
-    let target = unsafe { get_from_str(json, path.iter()).unwrap() };
+    let target = unsafe { get_from_str(json, &path).unwrap() };
     assert_eq!(target.as_raw_str(), r#""found""#);
     assert_eq!(target.as_str().unwrap(), "found");
 
@@ -274,7 +286,7 @@ fn main() {
         {"u": 123, "a": {"b" : {"c": [null, "found"]}}}
     "#;
     // not found from json
-    let target = unsafe { get_from_str(json, path.iter()) };
+    let target = unsafe { get_from_str(json, &path) };
     assert!(target.is_err());
 }
 ```
@@ -342,14 +354,16 @@ fn main() {
     }
 
     let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6"#);
-    let mut iter = unsafe { to_array_iter(&json) };
-    for _ in iter.iter() {}
-    // deal with errors when invalid json
-    let ret = iter.take_result();
-    assert_eq!(
-        ret.as_ref().err().unwrap().to_string(),
-        "Expected this character to be either a ',' or a ']' while parsing at line 1 column 17"
-    );
+    let iter = unsafe { to_array_iter(&json) };
+    for elem in iter {
+        // deal with errors when invalid json
+        if elem.is_err() {
+            assert_eq!(
+                elem.err().unwrap().to_string(),
+                "Expected this character to be either a ',' or a ']' while parsing at line 1 column 17"
+            );
+        }
+    }
 }
 ```
 

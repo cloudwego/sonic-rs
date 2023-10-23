@@ -1149,13 +1149,13 @@ where
         self.get_from_with_iter(path.iter())
     }
 
-    pub(crate) fn get_from_with_iter<Iter: Iterator>(&mut self, iter: Iter) -> Result<&'de [u8]>
+    pub(crate) fn get_from_with_iter<P: IntoIterator>(&mut self, path: P) -> Result<&'de [u8]>
     where
-        Iter::Item: PointerTrait,
+        P::Item: PointerTrait,
     {
         // temp buf reused when parsing each escaped key
         let mut temp_buf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);
-        for jp in iter {
+        for jp in path.into_iter() {
             if let Some(key) = jp.key() {
                 self.get_from_object(key, &mut temp_buf)
             } else if let Some(index) = jp.index() {

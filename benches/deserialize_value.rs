@@ -119,5 +119,5 @@ bench_file!(twitter);
 bench_file!(github_events);
 
 // criterion_group!(benches, canada, otfcc, citm_catalog, twitter, lottie, github_events, twitterescaped, book, poet, fgo);
-criterion_group!(benches, canada);
+criterion_group!(benches, twitter, citm_catalog, canada);
 criterion_main!(benches);

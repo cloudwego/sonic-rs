@@ -3,18 +3,25 @@ use faststr::FastStr;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
+/// PointerTree is designed for `get_many`.
+/// It is recommended to use `get_many` when you need to get multiple values from json.
+/// Instead of using `get` multiple times.
 #[derive(Debug, Default)]
 pub struct PointerTree {
-    count: usize, // the count of path
+    // the count of path
+    count: usize,
+    // the root of tree
     pub(crate) root: PointerTreeNode,
 }
 
 impl PointerTree {
+    /// Creat a empty tree. If `get_many` from empty tree, it will return the whole json.
     pub fn new() -> Self {
         Self::default()
     }
 
-    // we build tree and return value according by the order of path
+    /// we build tree and return value according by the order of path.
+    /// Allow the repeated path.
     pub fn add_path<Path: Iterator>(&mut self, path: Path)
     where
         Path::Item: PointerTrait,
@@ -23,6 +30,7 @@ impl PointerTree {
         self.count += 1;
     }
 
+    /// the count of nodes
     pub fn count(&self) -> usize {
         self.count
     }
