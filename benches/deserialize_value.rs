@@ -31,6 +31,10 @@ fn sonic_rs_dom_from_slice(data: &[u8]) {
     let _ = sonic_rs::value::dom_from_slice(data).unwrap();
 }
 
+fn sonic_rs_dom_from_slice_unchecked(data: &[u8]) {
+    let _ = unsafe { sonic_rs::value::dom_from_slice_unchecked(data).unwrap() };
+}
+
 macro_rules! bench_file {
     ($name:ident) => {
         #[allow(unused)]
@@ -60,6 +64,14 @@ macro_rules! bench_file {
                 b.iter_batched(
                     || data,
                     |bytes| sonic_rs_dom_from_slice(&bytes),
+                    BatchSize::SmallInput,
+                )
+            });
+
+            group.bench_with_input("sonic_rs_dom::from_slice_unchecked", &vec, |b, data| {
+                b.iter_batched(
+                    || data,
+                    |bytes| sonic_rs_dom_from_slice_unchecked(&bytes),
                     BatchSize::SmallInput,
                 )
             });

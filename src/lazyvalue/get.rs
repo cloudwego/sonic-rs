@@ -9,8 +9,9 @@ use faststr::FastStr;
 
 /// get_from_str returns the raw value from json path.
 ///
-/// Note: the JSON must be valid and well-formed, otherwise it may return unexpected result.
-pub fn get_from_str<Path: Iterator>(json: &str, path: Path) -> Result<LazyValue<'_>>
+/// # Safety
+/// The JSON must be valid and well-formed, otherwise it may return unexpected result.
+pub unsafe fn get_from_str<Path: Iterator>(json: &str, path: Path) -> Result<LazyValue<'_>>
 where
     Path::Item: PointerTrait,
 {
@@ -19,8 +20,9 @@ where
 
 /// get_from_slice returns the raw value from json path.
 ///
-/// Note: the JSON must be valid and well-formed, otherwise it may return unexpected result.
-pub fn get_from_slice<Path: Iterator>(json: &[u8], path: Path) -> Result<LazyValue<'_>>
+/// # Safety
+/// The JSON must be valid and well-formed, otherwise it may return unexpected result.
+pub unsafe fn get_from_slice<Path: Iterator>(json: &[u8], path: Path) -> Result<LazyValue<'_>>
 where
     Path::Item: PointerTrait,
 {
@@ -29,8 +31,9 @@ where
 
 /// get_from_bytes returns the raw value from json path.
 ///
-/// Note: the JSON must be valid and well-formed, otherwise it may return unexpected result.
-pub fn get_from_bytes<Path: Iterator>(json: &Bytes, path: Path) -> Result<LazyValue<'_>>
+/// # Safety
+/// The JSON must be valid and well-formed, otherwise it may return unexpected result.
+pub unsafe fn get_from_bytes<Path: Iterator>(json: &Bytes, path: Path) -> Result<LazyValue<'_>>
 where
     Path::Item: PointerTrait,
 {
@@ -39,8 +42,9 @@ where
 
 /// get_from_bytes returns the raw value from json path.
 ///
-/// Note: the JSON must be valid and well-formed, otherwise it may return unexpected result.
-pub fn get_from_faststr<Path: Iterator>(json: &FastStr, path: Path) -> Result<LazyValue<'_>>
+/// # Safety
+/// The JSON must be valid and well-formed, otherwise it may return unexpected result.
+pub unsafe fn get_from_faststr<Path: Iterator>(json: &FastStr, path: Path) -> Result<LazyValue<'_>>
 where
     Path::Item: PointerTrait,
 {
@@ -49,8 +53,12 @@ where
 
 /// get_from returns the raw value from json path.
 ///
-/// Note: the JSON must be valid and well-formed, otherwise it may return unexpected result.
-pub fn get_from<'de, Input, Path: Iterator>(json: Input, path: Path) -> Result<LazyValue<'de>>
+/// # Safety
+/// The JSON must be valid and well-formed, otherwise it may return unexpected result.
+pub unsafe fn get_from<'de, Input, Path: Iterator>(
+    json: Input,
+    path: Path,
+) -> Result<LazyValue<'de>>
 where
     Input: JsonInput<'de>,
     Path::Item: PointerTrait,
@@ -65,8 +73,9 @@ where
 
 /// get_many returns the raw value from the PointerTree.
 ///
-/// Note: the JSON must be valid and well-formed, otherwise it may return unexpected result.
-pub fn get_many<'de, Input>(json: Input, tree: &PointerTree) -> Result<Vec<LazyValue<'de>>>
+/// # Safety
+/// The JSON must be valid and well-formed, otherwise it may return unexpected result.
+pub unsafe fn get_many<'de, Input>(json: Input, tree: &PointerTree) -> Result<Vec<LazyValue<'de>>>
 where
     Input: JsonInput<'de>,
 {
@@ -89,25 +98,27 @@ mod test {
     #[test]
     fn test_get_from_json() {
         fn test_get(json: &str, path: &JsonPointer, expect: &str) {
-            let out = get_from_str(json, path.iter()).unwrap();
-            assert_eq!(out.as_raw_str(), expect);
+            unsafe {
+                let out = unsafe { get_from_str(json, path.iter()).unwrap() };
+                assert_eq!(out.as_raw_str(), expect);
 
-            let bytes = Bytes::copy_from_slice(json.as_bytes());
-            let out = get_from_bytes(&bytes, path.iter()).unwrap();
-            assert_eq!(out.as_raw_str(), expect);
+                let bytes = Bytes::copy_from_slice(json.as_bytes());
+                let out = unsafe { get_from_bytes(&bytes, path.iter()).unwrap() };
+                assert_eq!(out.as_raw_str(), expect);
 
-            let fstr = faststr::FastStr::from_str(json).unwrap();
-            let out = get_from_faststr(&fstr, path.iter()).unwrap();
-            assert_eq!(out.as_raw_str(), expect);
-            let out = get_from(&fstr, path.iter()).unwrap();
-            assert_eq!(out.as_raw_str(), expect);
+                let fstr = faststr::FastStr::from_str(json).unwrap();
+                let out = unsafe { get_from_faststr(&fstr, path.iter()).unwrap() };
+                assert_eq!(out.as_raw_str(), expect);
+                let out = unsafe { get_from(&fstr, path.iter()).unwrap() };
+                assert_eq!(out.as_raw_str(), expect);
 
-            let bytes = Bytes::copy_from_slice(json.as_bytes());
-            let out = get_from(&bytes, path.iter()).unwrap();
-            assert_eq!(out.as_raw_str(), expect);
+                let bytes = Bytes::copy_from_slice(json.as_bytes());
+                let out = unsafe { get_from(&bytes, path.iter()).unwrap() };
+                assert_eq!(out.as_raw_str(), expect);
 
-            let out = get_from(json, path.iter()).unwrap();
-            assert_eq!(out.as_raw_str(), expect);
+                let out = unsafe { get_from(json, path.iter()).unwrap() };
+                assert_eq!(out.as_raw_str(), expect);
+            }
         }
 
         test_get(
@@ -137,17 +148,17 @@ mod test {
     #[test]
     fn test_get_from_json_with_iter() {
         fn test_str_path(json: &str, path: &[&str], expect: &str) {
-            let out = get_from(json, path.iter()).unwrap();
+            let out = unsafe { get_from(json, path.iter()).unwrap() };
             assert_eq!(out.as_raw_str(), expect);
         }
 
         fn test_faststr_path(json: FastStr, path: &[FastStr], expect: FastStr) {
-            let out = get_from(&json, path.iter()).unwrap();
+            let out = unsafe { get_from(&json, path.iter()).unwrap() };
             assert_eq!(out.as_raw_str(), expect);
         }
 
         fn test_index_path(json: &str, path: &[usize], expect: &str) {
-            let out = get_from(json, path.iter()).unwrap();
+            let out = unsafe { get_from(json, path.iter()).unwrap() };
             assert_eq!(out.as_raw_str(), expect);
         }
         test_str_path(
@@ -198,7 +209,7 @@ mod test {
         );
 
         let tree = build_tree();
-        let many = get_many(&json, &tree).unwrap();
+        let many = unsafe { get_many(&json, &tree).unwrap() };
         assert_eq!(many[0].as_raw_slice(), b"\"hello, world!\"");
         assert_eq!(
             many[1].as_raw_slice(),
