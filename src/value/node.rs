@@ -1375,9 +1375,24 @@ mod test {
             r#""\uDBDD\u1DD000"#,
         ];
 
-        for data in testdata.iter() {
+        for data in testdata {
             let ret = dom_from_slice(data.as_bytes());
             assert!(ret.is_err(), "failed json is {}", data);
+        }
+    }
+
+    #[test]
+    fn test_max_numbrs() {
+        let testdata = [
+            // &f64::MAX.to_string(),
+            // &f64::MIN.to_string(),
+            &u64::MAX.to_string(),
+            &u64::MIN.to_string(),
+            &i64::MIN.to_string(),
+            &i64::MAX.to_string(),
+        ];
+        for data in testdata {
+            test_value(data).unwrap();
         }
     }
 

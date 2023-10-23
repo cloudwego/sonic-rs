@@ -284,7 +284,9 @@ pub(crate) unsafe fn parse_number_unchecked(
                     if significant > (1u64 << 63) {
                         return Ok(ParserNumber::Float(-(significant as f64)));
                     } else {
-                        return Ok(ParserNumber::Signed(-(significant as i64)));
+                        // if significant is 0x8000_0000_0000_0000, it will overflow here.
+                        // so, we must use wrapping_sub here.
+                        return Ok(ParserNumber::Signed(0_i64.wrapping_sub(significant as i64)));
                     }
                 } else {
                     return Ok(ParserNumber::Unsigned(significant));
