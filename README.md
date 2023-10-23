@@ -25,8 +25,7 @@ More details about optimization can be found in [performance.md](docs/performanc
 
 1. Support x86_64 or aarch64. Note that the performance in aarch64 is lower and needs optimization.
 2. Requires Rust nightly version, as we use the `packed_simd` crate.
-3. Does NOT validate the UTF-8 when parsing from a slice by default. You can use the `utf8` feature to enable validation. The performance loss is about 3% ~ 10%.
-4. When using `get_from`, `get_many`, `JsonIter` or `RawValue`, ***Warn:*** the JSON should be well-formed and valid.
+3. When using `get_from`, `get_many`, `JsonIter` or `RawValue`, ***Warn:*** the JSON should be well-formed and valid.
 
 ## Features
 1. Serde into Rust struct as `serde_json` and `serde`.
@@ -45,12 +44,11 @@ More details about optimization can be found in [performance.md](docs/performanc
 
 To ensure that SIMD instruction is used in sonic-rs, you need to add rustflags `-C target-cpu=native` and compile on the host machine. For example, Rust flags can be configured in Cargo [config](.cargo/config).
 
-Choose what features?
-
-`default`: the fast version that does not validate UTF-8 when parsing for performance. 
-
-`utf8`: provides UTF-8 validation when parsing JSON from a slice.
-
+Add sonic-rs in `Cargo.toml`
+```
+[dependencies]
+sonic-rs = 0.2.0
+```
 
 ## Benchmark
 
@@ -70,13 +68,13 @@ The serialize benchmarks work in the opposite way.
 
 All deserialized benchmark enabled utf-8, and enabled `float_roundtrip` in `serde-json` to get sufficient precision as Rust std. 
 
-### Deserialize Struct (Enabled utf8 validation)
+### Deserialize Struct
 
 The benchmark will parse JSON into a Rust struct, and there are no unknown fields in JSON text. All fields are parsed into struct fields in the JSON. 
 
 Sonic-rs is faster than simd-json because simd-json (Rust) first parses the JSON into a `tape`, then parses the `tape` into a Rust struct. Sonic-rs directly parses the JSON into a Rust struct, and there are no temporary data structures. The [flamegraph](assets/pngs/) is profiled in the citm_catalog case.
 
-`cargo bench --bench deserialize_struct --features utf8  -- --quiet`
+`cargo bench --bench deserialize_struct -- --quiet`
 
 ```
 twitter/sonic_rs::from_slice
@@ -108,14 +106,14 @@ canada/serde_json::from_str
 ```
 
 
-### Deserialize Untyped (Enabled utf8 validation)
+### Deserialize Untyped
 
 The benchmark will parse JSON into a document. Sonic-rs seems faster for several reasons:
 - There are also no temporary data structures in sonic-rs, as detailed above.
 - Sonic-rs uses a memory arena for the whole document, resulting in fewer memory allocations, better cache-friendliness, and mutability.
 - The JSON object in sonic-rs's document is actually a vector. Sonic-rs does not build a hashmap.
 
-`cargo bench --bench deserialize_value  --features utf8  -- --quiet`
+`cargo bench --bench deserialize_value -- --quiet`
 
 ```
 twitter/sonic_rs_dom::from_slice
@@ -368,7 +366,7 @@ Detailed examples can be found in [raw_value.rs](examples/raw_value.rs) and [jso
 
 By default, sonic-rs does not enable UTF-8 validation. This is a trade-off to achieve the fastest performance.
 
-- For the `from_slice` and `dom_from_slice` interfaces, if you need to validate UTF-8 for the parsed JSON, please use the `utf8` feature.
+- For the `from_slice` and `dom_from_slice` interfaces, validate UTF-8 in default. If users make sure that the json is utf-8 valid, recommended use the `from_slice_unchecked` and `dom_from_slice_unchecked`.
 
 - For the `get` and `lazyvalue` related interfaces, due to the algorithm design, these interfaces are ***only suitable for use in valid-json scenarios***, and we will not provide UTF-8 validation in the future.
 

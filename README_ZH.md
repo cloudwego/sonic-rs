@@ -25,8 +25,7 @@ sonic-rs 的主要优化是使用 SIMD。然而，sonic-rs 没有使用来自`si
 
 1. 支持 x86_64 或 aarch64，aarch64 的性能较低，需要优化。
 2. 需要 Rust nightly 版本，因为 sonic-rs 使用了 `packed_simd` 包。
-3. 默认情况下，当 JSON 是slice 时， sonic-rs 并不校验 UTF-8。用户可以使用 `utf8` feature 来开启 utf-8 校验，性能损失约为 3% ~ 10% 不等。
-4. 使用 `get_from`、`get_many`、`JsonIter` 或 `RawValue` 时，JSON 应该是格式正确且有效的。
+3. 使用 `get_from`、`get_many`、`JsonIter` 或 `RawValue` 时，JSON 应该是格式正确且有效的。
 
 ## 功能
 
@@ -41,11 +40,12 @@ sonic-rs 的主要优化是使用 SIMD。然而，sonic-rs 没有使用来自`si
 
 要确保在 sonic-rs 中使用 SIMD 指令，您需要添加 rustflags `-C target-cpu=native` 并在主机上进行编译。例如，Rust 标志可以在 Cargo [config](.cargo/config) 中配置。
 
-如何选择features？
+在 Cargo 依赖中添加 sonic-rs:
+```
+[dependencies]
+sonic-rs = 0.2.0
+```
 
-`default`：在解析时，不校验 UTF-8，性能更好。
-
-`utf8`：当 JSON 是slice 时，开启 UTF-8校验。
 
 ## 基准测试
 
@@ -66,13 +66,13 @@ Model name:          Intel(R) Xeon(R) Platinum 8260 CPU @ 2.40GHz
 
 解析相关 benchmark 都开启了 UTF-8 校验，同时 `serde-json` 开启了 `float_roundtrip` feature, 以便解析浮点数具有足够精度，和 Rust 标准库对齐。
 
-### 解析到结构体（启用 utf8 验证）
+### 解析到结构体
 
 基准测试将把 JSON 解析成 Rust 结构体，JSON 文本中没有未知字段。JSON 中的所有字段都被解析为结构体字段。
 
 Sonic-rs 比 simd-json 更快，因为 simd-json (Rust) 首先将 JSON 解析成 `tape`，然后将 `tape` 解析成 Rust 结构体。Sonic-rs 直接将 JSON 解析成 Rust 结构体，没有临时数据结构。在 citm_catalog 案例中对 [flamegraph](assets/pngs/) 进行了分析。
 
-`cargo bench --bench deserialize_struct --features utf8  -- --quiet`
+`cargo bench --bench deserialize_struct -- --quiet`
 
 ```
 twitter/sonic_rs::from_slice
@@ -104,14 +104,14 @@ canada/serde_json::from_str
 ```
 
 
-### 解析到 document（启用 utf8 验证）
+### 解析到 document
 
 该测试将把 JSON 解析成 document。由于以下几个原因，Sonic-rs 会看起来更快一些：
 - 如上所述，在 sonic-rs 中没有临时数据结构，例如 `tape`。
 - Sonic-rs 为整个 document 使用内存区，从而减少内存分配、提高缓存友好性和可变性。
 - sonic-rs document中的 JSON 对象实际上是一个向量。Sonic-rs 不会构建 hashmap。
 
-`cargo bench --bench deserialize_value  --features utf8  -- --quiet`
+`cargo bench --bench deserialize_value -- --quiet`
 
 ```
 twitter/sonic_rs_dom::from_slice
@@ -365,7 +365,7 @@ fn main() {
 
 sonic-rs 默认并不开启 utf-8 校验，这是为了性能做出的权衡。
 
-- 对于 `from_slice` 和 `dom_from_slice` 接口，需要对解析的 JSON 校验UTF-8，请使用 `utf8` feature. 
+- 对于 `from_slice` 和 `dom_from_slice` 接口，默认开启了 `utf8` 校验。如果用户确保是 `utf-8`, 也可以使用 `from_slice_unchecked` 和 `dom_from_slice_unchecked`。
 
 - 对于 `get` 和 `lazyvaue` 相关接口，由于实现算法设计的原因，这些接口***只适合在 valid-json 场景下使用***，我们后续也不会提供 utf-8 校验。
 
