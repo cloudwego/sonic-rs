@@ -1384,8 +1384,8 @@ mod test {
     #[test]
     fn test_max_numbrs() {
         let testdata = [
-            // &f64::MAX.to_string(),
-            // &f64::MIN.to_string(),
+            &f64::MAX.to_string(),
+            &f64::MIN.to_string(),
             &u64::MAX.to_string(),
             &u64::MIN.to_string(),
             &i64::MIN.to_string(),

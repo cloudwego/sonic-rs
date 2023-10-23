@@ -30,7 +30,7 @@ simdutf8 = { version = "0.1", optional = true}
 [dev-dependencies]
 jemallocator =  "0.5"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
 simd-json = "0.12"
 core_affinity = "0.8"
 criterion = { version = "0.5", features = ["html_reports"] }
