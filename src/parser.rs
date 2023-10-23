@@ -377,19 +377,8 @@ where
         }
     }
 
-    // parse single json raw value, use simd skip.
     #[inline]
-    fn parse_elem_lazy(&mut self) -> Result<(&'de [u8], JsonType)> {
-        let typ = self.get_json_type()?;
-        let raw = self.skip_one()?;
-        Ok((raw, typ))
-    }
-
-    #[inline]
-    pub(crate) fn parse_array_elem_lazy(
-        &mut self,
-        first: &mut bool,
-    ) -> Result<Option<(&'de [u8], JsonType)>> {
+    pub(crate) fn parse_array_elem_lazy(&mut self, first: &mut bool) -> Result<Option<&'de [u8]>> {
         if *first && self.skip_space() != Some(b'[') {
             return perr!(self, ExpectedArrayStart);
         }
@@ -406,8 +395,8 @@ where
             }
             _ => return perr!(self, ExpectedArrayCommaOrEnd),
         };
-        let ret = self.parse_elem_lazy()?;
-        Ok(Some(ret))
+        let raw = self.skip_one()?;
+        Ok(Some(raw))
     }
 
     #[inline]
@@ -415,7 +404,7 @@ where
         &mut self,
         strbuf: &mut Vec<u8>,
         first: &mut bool,
-    ) -> Result<Option<(FastStr, &'de [u8], JsonType)>> {
+    ) -> Result<Option<(FastStr, &'de [u8])>> {
         if *first && self.skip_space() != Some(b'{') {
             return perr!(self, ExpectedObjectStart);
         }
@@ -435,9 +424,8 @@ where
             Reference::Copied(s) => FastStr::new(s),
         };
         self.parse_object_clo()?;
-        let typ = self.get_json_type()?;
         let raw = self.skip_one()?;
-        Ok(Some((key, raw, typ)))
+        Ok(Some((key, raw)))
     }
 
     fn parse_value<V>(&mut self, visitor: &mut V, strbuf: &mut Vec<u8>) -> Result<()>

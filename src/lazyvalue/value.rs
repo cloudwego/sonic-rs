@@ -19,6 +19,7 @@ use crate::JsonType;
 use crate::{from_str, JsonValue};
 
 /// LazyValue is a raw text value from json. Mainly used for get few values from json fastly.
+/// LazyValue is only generated when using `get` for `Iterator`.
 #[derive(Debug)]
 pub struct LazyValue<'de> {
     // the raw slice from origin json
@@ -73,8 +74,8 @@ impl<'de> JsonValue for LazyValue<'de> {
 
     fn pointer(&self, path: &crate::JsonPointer) -> Option<Self::ValueType<'_>> {
         match &self.raw {
-            JsonSlice::Raw(r) => get_from(*r, path.iter()).ok(),
-            JsonSlice::FastStr(f) => get_from(f, path.iter()).ok(),
+            JsonSlice::Raw(r) => unsafe { get_from(*r, path.iter()).ok() },
+            JsonSlice::FastStr(f) => unsafe { get_from(f, path.iter()).ok() },
         }
     }
 }
@@ -119,8 +120,8 @@ impl<'de> LazyValue<'de> {
     pub fn get_index(&'de self, index: usize) -> Option<Self> {
         let path = [index];
         match &self.raw {
-            JsonSlice::Raw(r) => get_from(*r, path.iter()).ok(),
-            JsonSlice::FastStr(f) => get_from(f, path.iter()).ok(),
+            JsonSlice::Raw(r) => unsafe { get_from(*r, path.iter()).ok() },
+            JsonSlice::FastStr(f) => unsafe { get_from(f, path.iter()).ok() },
         }
     }
 
@@ -128,8 +129,8 @@ impl<'de> LazyValue<'de> {
     pub fn get_key(&'de self, key: &str) -> Option<Self> {
         let path = [key];
         match &self.raw {
-            JsonSlice::Raw(r) => get_from(*r, path.iter()).ok(),
-            JsonSlice::FastStr(f) => get_from(f, path.iter()).ok(),
+            JsonSlice::Raw(r) => unsafe { get_from(*r, path.iter()).ok() },
+            JsonSlice::FastStr(f) => unsafe { get_from(f, path.iter()).ok() },
         }
     }
 
@@ -194,7 +195,7 @@ mod test {
     #[test]
     fn test_lazyvalue_export() {
         let f = FastStr::new(TEST_JSON);
-        let value = get_from(&f, pointer![].iter()).unwrap();
+        let value = unsafe { get_from(&f, pointer![].iter()).unwrap() };
         assert_eq!(value.get("int").unwrap().as_raw_str(), "-1");
         assert_eq!(
             value.get("array").unwrap().as_raw_faststr().as_str(),
@@ -213,7 +214,7 @@ mod test {
 
     #[test]
     fn test_lazyvalue_is() {
-        let value = get_from(TEST_JSON, pointer![].iter()).unwrap();
+        let value = unsafe { get_from(TEST_JSON, pointer![].iter()).unwrap() };
         assert!(value.get("bool").is_boolean());
         assert!(value.get("bool").is_true());
         assert!(value.get("uint").is_u64());
@@ -230,7 +231,7 @@ mod test {
 
     #[test]
     fn test_lazyvalue_get() {
-        let value = get_from(TEST_JSON, pointer![].iter()).unwrap();
+        let value = unsafe { get_from(TEST_JSON, pointer![].iter()).unwrap() };
         assert_eq!(value.get("int").as_i64().unwrap(), -1);
         assert_eq!(value.pointer(&pointer!["array", 2]).as_u64().unwrap(), 3);
         assert_eq!(
@@ -249,13 +250,13 @@ mod test {
             "hello"
         );
 
-        let value = get_from(TEST_JSON, pointer![].iter()).unwrap();
+        let value = unsafe { get_from(TEST_JSON, pointer![].iter()).unwrap() };
         assert_eq!(
             value.get("string_escape").unwrap().into_cow_str().unwrap(),
             "\"hello\""
         );
 
-        let value = get_from(TEST_JSON, pointer![].iter()).unwrap();
+        let value = unsafe { get_from(TEST_JSON, pointer![].iter()).unwrap() };
         assert!(value.get("int").unwrap().into_cow_str().is_err());
     }
 }

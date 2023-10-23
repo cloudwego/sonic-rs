@@ -3,7 +3,7 @@ mod number;
 mod raw;
 mod ser;
 
-pub use self::de::{from_slice, from_str, Deserializer};
+pub use self::de::{from_slice, from_slice_unchecked, from_str, Deserializer};
 pub use self::number::{JsonNumberTrait, Number, RawNumber};
 pub use self::raw::{to_raw_value, RawValue};
 pub use self::ser::{

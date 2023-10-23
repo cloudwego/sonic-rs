@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::input::JsonInput;
 use crate::input::JsonSlice;
 use crate::lazyvalue::LazyValue;
@@ -14,32 +14,17 @@ pub struct ObjectIntoIter<'de> {
     strbuf: Vec<u8>,
     first: bool,
     ending: bool,
-    error: Option<Error>,
 }
 
 /// A lazied iterator for JSON array.
-// ArrayIterator can be used as `into_iter` directly.
+/// ArrayIterator can be used as `into_iter` directly.
 pub struct ArrayIntoIter<'de> {
     json: JsonSlice<'de>,
     parser: Option<Parser<SliceRead<'static>>>,
     first: bool,
     ending: bool,
-    error: Option<Error>,
 }
 
-/// ObjectTryIter return the result as Item.
-pub struct ObjectTryIter<'i, 'de: 'i>(&'i mut ObjectIntoIter<'de>);
-
-/// ArrayTryIter return the result as Item.
-pub struct ArrayTryIter<'i, 'de: 'i>(&'i mut ArrayIntoIter<'de>);
-
-/// ObjectIter return the LazyValue as Item.
-pub struct ObjectIter<'i, 'de: 'i>(&'i mut ObjectIntoIter<'de>);
-
-/// ArrayIter return the LazyValue as Item.
-pub struct ArrayIter<'i, 'de: 'i>(&'i mut ArrayIntoIter<'de>);
-
-/// ObjectTryIter return the LazyValue as Item.
 impl<'de> ObjectIntoIter<'de> {
     fn new(json: JsonSlice<'de>) -> Self {
         Self {
@@ -48,11 +33,10 @@ impl<'de> ObjectIntoIter<'de> {
             strbuf: Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY),
             first: true,
             ending: false,
-            error: None,
         }
     }
 
-    fn next_entry_impl(&mut self) -> Option<(FastStr, LazyValue<'de>)> {
+    fn next_entry_impl(&mut self) -> Option<Result<(FastStr, LazyValue<'de>)>> {
         if self.ending {
             return None;
         }
@@ -70,7 +54,7 @@ impl<'de> ObjectIntoIter<'de> {
                 if let Some(ret) = ret {
                     let key = ret.0;
                     let val = self.json.slice_ref(ret.1);
-                    Some((key, LazyValue::new(val)))
+                    Some(Ok((key, LazyValue::new(val))))
                 } else {
                     self.ending = true;
                     None
@@ -78,26 +62,12 @@ impl<'de> ObjectIntoIter<'de> {
             }
             Err(err) => {
                 self.ending = true;
-                self.error = Some(err);
-                None
+                Some(Err(err))
             }
         }
     }
-
-    pub fn try_iter<'i>(&'i mut self) -> ObjectTryIter<'i, 'de> {
-        ObjectTryIter(self)
-    }
-
-    pub fn iter<'i>(&'i mut self) -> ObjectIter<'i, 'de> {
-        ObjectIter(self)
-    }
-
-    pub fn take_result(&mut self) -> Result<()> {
-        self.error.take().map_or(Ok(()), Err)
-    }
 }
 
-/// ArrayTryIter return the LazyValue as Item.
 impl<'de> ArrayIntoIter<'de> {
     fn new(json: JsonSlice<'de>) -> Self {
         Self {
@@ -105,11 +75,10 @@ impl<'de> ArrayIntoIter<'de> {
             parser: None,
             first: true,
             ending: false,
-            error: None,
         }
     }
 
-    fn next_elem_impl(&mut self) -> Option<LazyValue<'de>> {
+    fn next_elem_impl(&mut self) -> Option<Result<LazyValue<'de>>> {
         if self.ending {
             return None;
         }
@@ -125,101 +94,52 @@ impl<'de> ArrayIntoIter<'de> {
         match parser.parse_array_elem_lazy(&mut self.first) {
             Ok(ret) => {
                 if let Some(ret) = ret {
-                    let val = self.json.slice_ref(ret.0);
-                    Some(LazyValue::new(val))
+                    let val = self.json.slice_ref(ret);
+                    Some(Ok(LazyValue::new(val)))
                 } else {
                     self.ending = true;
                     None
                 }
             }
             Err(err) => {
-                self.error = Some(err);
                 self.ending = true;
-                None
+                Some(Err(err))
             }
         }
     }
-
-    pub fn try_iter<'i>(&'i mut self) -> ArrayTryIter<'i, 'de> {
-        ArrayTryIter(self)
-    }
-
-    pub fn iter<'i>(&'i mut self) -> ArrayIter<'i, 'de> {
-        ArrayIter(self)
-    }
-
-    pub fn take_result(&mut self) -> Result<()> {
-        self.error.take().map_or(Ok(()), Err)
-    }
 }
 
-pub fn to_object_iter<'de, I: JsonInput<'de>>(json: I) -> ObjectIntoIter<'de> {
+/// Convert a json to a lazy ObjectIntoIter. The iterator is lazied and the parsing will doing when iterating.
+/// The item of the iterator is a Result. If parse error, it will return Err.
+/// # Safety
+/// The caller must ensure that the input is a well-formed JSON object.
+/// Otherwise, it will return unexpected results in next().
+pub unsafe fn to_object_iter<'de, I: JsonInput<'de>>(json: I) -> ObjectIntoIter<'de> {
     ObjectIntoIter::new(json.to_json_slice())
 }
 
-pub fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayIntoIter<'de> {
+/// Convert a json to a lazy ArrayIntoIter. The iterator is lazied and the parsing will doing when iterating.
+/// The item of the iterator is a Result. If parse error, it will return Err.
+/// # Safety
+/// The caller must ensure that the input is a well-formed JSON array.
+/// Otherwise, it will return unexpected results in next().
+pub unsafe fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayIntoIter<'de> {
     ArrayIntoIter::new(json.to_json_slice())
 }
 
-// A iterator for fields in JSON object. It will return none if parsing errors.
 impl<'de> Iterator for ObjectIntoIter<'de> {
-    type Item = (FastStr, LazyValue<'de>);
+    type Item = Result<(FastStr, LazyValue<'de>)>;
+
     fn next(&mut self) -> Option<Self::Item> {
         self.next_entry_impl()
     }
 }
 
 impl<'de> Iterator for ArrayIntoIter<'de> {
-    type Item = LazyValue<'de>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next_elem_impl()
-    }
-}
-
-// A iterator for fields in JSON object. It will return none if parsing errors.
-impl<'i, 'de: 'i> Iterator for ObjectIter<'i, 'de> {
-    type Item = (FastStr, LazyValue<'de>);
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next_entry_impl()
-    }
-}
-
-impl<'i, 'de: 'i> Iterator for ArrayIter<'i, 'de> {
-    type Item = LazyValue<'de>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next_elem_impl()
-    }
-}
-
-// A iterator for fields in JSON object. It will return result if parsing errors.
-impl<'i, 'de: 'i> Iterator for ObjectTryIter<'i, 'de> {
-    type Item = Result<(FastStr, LazyValue<'de>)>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.0.next_entry_impl() {
-            Some(v) => Some(Ok(v)),
-            // check errors
-            None => match self.0.take_result() {
-                Ok(()) => None,
-                Err(e) => Some(Err(e)),
-            },
-        }
-    }
-}
-
-// A iterator for fields in JSON array. It will return result if parsing errors.
-impl<'i, 'de: 'i> Iterator for ArrayTryIter<'i, 'de> {
     type Item = Result<LazyValue<'de>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.0.next_elem_impl() {
-            Some(v) => Some(Ok(v)),
-            // check errors
-            None => match self.0.take_result() {
-                Ok(()) => None,
-                Err(e) => Some(Err(e)),
-            },
-        }
+        self.next_elem_impl()
     }
 }
 
@@ -244,16 +164,10 @@ mod test {
             "escaped\"": "\"\""
         }"#,
         );
-        let mut iter = to_object_iter(&json);
-        let mut iter2 = to_object_iter(&json);
-        let mut try_iter = iter2.try_iter();
-        let mut test_ok = |key: &str, val: &str, typ: JsonType| {
-            let ret = iter.next().unwrap();
-            assert_eq!(ret.0.as_str(), key);
-            assert_eq!(ret.1.as_raw_slice(), val.as_bytes(), "key is {} ", key);
-            assert_eq!(ret.1.get_type(), typ);
+        let mut iter = unsafe { to_object_iter(&json) };
 
-            let ret = try_iter.next().unwrap().unwrap();
+        let mut test_ok = |key: &str, val: &str, typ: JsonType| {
+            let ret = iter.next().unwrap().unwrap();
             assert_eq!(ret.0.as_str(), key);
             assert_eq!(ret.1.as_raw_slice(), val.as_bytes(), "key is {} ", key);
             assert_eq!(ret.1.get_type(), typ);
@@ -269,33 +183,17 @@ mod test {
         test_ok("escaped\"", r#""\"\"""#, JsonType::String);
         assert!(iter.next().is_none());
         assert!(iter.next().is_none());
-        assert!(iter.take_result().is_ok());
-        assert!(try_iter.next().is_none());
-        assert!(try_iter.next().is_none());
 
         let json = Bytes::from("{}");
-        let mut iter2 = to_object_iter(&json);
-        let mut try_iter = iter2.try_iter();
-        let mut iter = to_object_iter(&json);
+        let mut iter = unsafe { to_object_iter(&json) };
         assert!(iter.next().is_none());
         assert!(iter.next().is_none());
-        assert!(iter.take_result().is_ok());
         assert!(iter.next().is_none());
-        assert!(try_iter.next().is_none());
-        assert!(try_iter.next().is_none());
 
         let json = Bytes::from("{xxxxxx");
-        let mut iter2 = to_object_iter(&json);
-        let mut try_iter = iter2.try_iter();
-        let mut iter = to_object_iter(&json);
-
+        let mut iter = unsafe { to_object_iter(&json) };
+        assert!(iter.next().unwrap().is_err());
         assert!(iter.next().is_none());
-        assert!(iter.take_result().is_err());
-        assert!(iter.next().is_none());
-
-        assert!(try_iter.next().unwrap().is_err());
-        assert!(try_iter.next().is_none());
-        assert!(try_iter.next().is_none());
     }
 
     #[test]
@@ -312,15 +210,9 @@ mod test {
             {}
         ]"#,
         );
-        let mut iter = to_array_iter(&json);
-        let mut iter2 = to_array_iter(&json);
-        let mut try_iter = iter2.try_iter();
+        let mut iter = unsafe { to_array_iter(&json) };
         let mut test_ok = |val: &str, typ: JsonType| {
-            let ret = iter.next().unwrap();
-            assert_eq!(ret.as_raw_slice(), val.as_bytes());
-            assert_eq!(ret.get_type(), typ);
-
-            let ret = try_iter.next().unwrap().unwrap();
+            let ret = iter.next().unwrap().unwrap();
             assert_eq!(ret.as_raw_slice(), val.as_bytes());
             assert_eq!(ret.get_type(), typ);
         };
@@ -335,65 +227,32 @@ mod test {
         test_ok(r#"{}"#, JsonType::Object);
         assert!(iter.next().is_none());
         assert!(iter.next().is_none());
-        assert!(iter.take_result().is_ok());
-        assert!(try_iter.next().is_none());
-        assert!(try_iter.next().is_none());
 
         let json = Bytes::from("[]");
-        let mut iter = to_array_iter(&json);
-        let mut iter2 = to_array_iter(&json);
-        let mut try_iter = iter2.try_iter();
+        let mut iter = unsafe { to_array_iter(&json) };
         assert!(iter.next().is_none());
         assert!(iter.next().is_none());
-        assert!(iter.take_result().is_ok());
         assert!(iter.next().is_none());
-
-        assert!(try_iter.next().is_none());
-        assert!(try_iter.next().is_none());
 
         let json = Bytes::from("[xxxxxx");
-        let mut iter = to_array_iter(&json);
-        let mut iter2 = to_array_iter(&json);
-        let mut try_iter = iter2.try_iter();
-
+        let mut iter = unsafe { to_array_iter(&json) };
+        assert!(iter.next().unwrap().is_err());
         assert!(iter.next().is_none());
-        assert!(iter.take_result().is_err());
-        assert!(iter.next().is_none());
-
-        assert!(try_iter.next().unwrap().is_err());
-        assert!(try_iter.next().is_none());
-        assert!(try_iter.next().is_none());
     }
 
     #[test]
     fn test_iter_deserialize() {
         let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6]"#);
-        let iter = to_array_iter(&json);
+        let iter = unsafe { to_array_iter(&json) };
         let out: Vec<u8> = iter
+            .flatten()
             .map(|e| e.deserialize::<u8>().unwrap_or_default())
             .collect();
         assert_eq!(out.as_slice(), &[1, 2, 3, 4, 5, 6]);
 
         let json = Bytes::from(r#"[1, true, "hello", null, 5, 6]"#);
-        let iter = to_array_iter(&json);
+        let iter = unsafe { to_array_iter(&json) };
         let out: Vec<JsonType> = iter.map(|e| e.get_type()).collect();
         println!("array elem type is {:?}", out);
-    }
-
-    #[test]
-    fn test_iter_take_result() {
-        let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6]"#);
-        let mut iter = to_array_iter(&json);
-        for _ in iter.iter() {}
-        assert!(iter.take_result().is_ok());
-
-        let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6"#);
-        let mut iter = to_array_iter(&json);
-        for _ in iter.iter() {}
-        let ret = iter.take_result();
-        assert_eq!(
-            ret.as_ref().err().unwrap().to_string(),
-            "Expected this character to be either a ',' or a ']' while parsing at line 1 column 17"
-        );
     }
 }

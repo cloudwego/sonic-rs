@@ -32,6 +32,13 @@ where
     sonic_rs::from_slice::<T>(data)
 }
 
+fn sonic_rs_parse_struct_unchecked<'de, T>(data: &'de [u8]) -> sonic_rs::Result<T>
+where
+    T: serde::Deserialize<'de>,
+{
+    unsafe { sonic_rs::from_slice_unchecked::<T>(data) }
+}
+
 fn simd_json_parse_struct<'de, T>(data: &'de mut [u8]) -> simd_json::Result<T>
 where
     T: serde::Deserialize<'de>,
@@ -84,6 +91,14 @@ macro_rules! bench_file {
 
                 let mut group = c.benchmark_group(stringify!($name));
                 group.sampling_mode(SamplingMode::Flat);
+
+                group.bench_with_input("sonic_rs::from_slice_unchecked", &vec, |b, data| {
+                    b.iter_batched(
+                        || data,
+                        |bytes| sonic_rs_parse_struct_unchecked::<$structure>(&bytes),
+                        BatchSize::SmallInput,
+                    )
+                });
 
                 group.bench_with_input("sonic_rs::from_slice", &vec, |b, data| {
                     b.iter_batched(
