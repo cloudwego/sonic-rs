@@ -1,8 +1,10 @@
+use super::value_trait::{JsonType, JsonValue};
 use crate::error::Result;
 use crate::parser::Parser;
 use crate::pointer::{JsonPointer, PointerNode};
 use crate::reader::UncheckedSliceRead;
 use crate::serde::tri;
+use crate::util::utf8::from_utf8;
 use crate::value::Index;
 use crate::visitor::JsonVisitor;
 use crate::{to_string, IndexMut, Number};
@@ -15,8 +17,6 @@ use std::mem::transmute;
 use std::ops;
 use std::ptr::NonNull;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
-
-use super::value_trait::{JsonType, JsonValue};
 
 /// Value is a node in the DOM tree.
 pub struct Value<'dom> {
@@ -825,20 +825,33 @@ impl Default for Document {
     }
 }
 
+/// Parse a json into a document.
 pub fn dom_from_str(json: &str) -> Result<Document> {
     let mut dom = Document::new();
     dom.parse_bytes_impl(json.as_bytes())?;
     Ok(dom)
 }
 
+/// Parse a json into a document.
+///
+/// If the json is valid utf-8, recommend to use `dom_from_slice_unchecked` instead.
 pub fn dom_from_slice(json: &[u8]) -> Result<Document> {
     // validate the utf-8 at first for slice
-    #[cfg(feature = "utf8")]
     let json = {
-        let json = crate::util::utf8::from_utf8(json)?;
+        let json = from_utf8(json)?;
         json.as_bytes()
     };
 
+    let mut dom = Document::new();
+    dom.parse_bytes_impl(json)?;
+    Ok(dom)
+}
+
+/// Parse a json into a document.
+///
+/// # Safety
+/// The json must be valid utf-8.
+pub unsafe fn dom_from_slice_unchecked(json: &[u8]) -> Result<Document> {
     let mut dom = Document::new();
     dom.parse_bytes_impl(json)?;
     Ok(dom)
@@ -1547,14 +1560,15 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "utf8")]
     fn test_invalid_utf8() {
-        let data = [b'"', 0, 0, 0, 0x80, 0x90, b'"'];
+        let data = [b'"', 0x80, 0x90, b'"'];
         let dom = dom_from_slice(&data);
         assert_eq!(
             dom.err().unwrap().to_string(),
-            "Invalid UTF-8 characters in json at line 1 column 4"
+            "Invalid UTF-8 characters in json at line 1 column 1"
         );
+        let dom = unsafe { dom_from_slice_unchecked(&data) };
+        assert!(dom.is_ok());
 
         let data = [b'"', b'"', 0x80];
         let dom = dom_from_slice(&data);

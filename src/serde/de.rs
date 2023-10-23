@@ -1052,18 +1052,28 @@ where
 }
 
 /// Deserialize an instance of type `T` from bytes of JSON text.
-///
+/// If user can guarantee the JSON is valid UTF-8, recommend to use `from_slice_unchecked` instead.
 pub fn from_slice<'a, T>(json: &'a [u8]) -> Result<T>
 where
     T: de::Deserialize<'a>,
 {
     // validate the utf-8 at first for slice
-    #[cfg(feature = "utf8")]
     let json = {
         let json = crate::util::utf8::from_utf8(json)?;
         json.as_bytes()
     };
 
+    from_trait(SliceRead::new(json))
+}
+
+/// Deserialize an instance of type `T` from bytes of JSON text.
+///
+/// # Safety
+/// The json passed in must be valid UTF-8.
+pub unsafe fn from_slice_unchecked<'a, T>(json: &'a [u8]) -> Result<T>
+where
+    T: de::Deserialize<'a>,
+{
     from_trait(SliceRead::new(json))
 }
 
