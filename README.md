@@ -39,13 +39,18 @@ More details about optimization can be found in [performance.md](docs/performanc
 
 5. Supprt `RawValue`, `Number` and `RawNumber`(just like Golang's `JsonNumber`) in default.
 
+6. The floating parsing percision is as Rust std in default.
+
 ## Quick to use sonic-rs
 
 To ensure that SIMD instruction is used in sonic-rs, you need to add rustflags `-C target-cpu=native` and compile on the host machine. For example, Rust flags can be configured in Cargo [config](.cargo/config).
 
 Choose what features?
+
 `default`: the fast version that does not validate UTF-8 when parsing for performance. 
+
 `utf8`: provides UTF-8 validation when parsing JSON from a slice.
+
 
 ## Benchmark
 
@@ -63,6 +68,7 @@ Benchmarks:
 
 The serialize benchmarks work in the opposite way.
 
+All deserialized benchmark enabled utf-8, and enabled `float_roundtrip` in `serde-json` to get sufficient precision as Rust std. 
 
 ### Deserialize Struct (Enabled utf8 validation)
 
@@ -74,31 +80,31 @@ Sonic-rs is faster than simd-json because simd-json (Rust) first parses the JSON
 
 ```
 twitter/sonic_rs::from_slice
-                        time:   [718.60 µs 724.47 µs 731.05 µs]
+                        time:   [721.80 µs 747.81 µs 776.19 µs]
 twitter/simd_json::from_slice
-                        time:   [1.0325 ms 1.0486 ms 1.0664 ms]
+                        time:   [1.0909 ms 1.1225 ms 1.1561 ms]
 twitter/serde_json::from_slice
-                        time:   [2.3070 ms 2.3271 ms 2.3506 ms]
+                        time:   [2.3218 ms 2.3491 ms 2.3787 ms]
 twitter/serde_json::from_str
-                        time:   [1.3797 ms 1.3996 ms 1.4237 ms]
+                        time:   [1.4123 ms 1.4460 ms 1.4842 ms]
 
 citm_catalog/sonic_rs::from_slice
-                        time:   [1.3413 ms 1.3673 ms 1.3985 ms]
+                        time:   [1.2133 ms 1.2447 ms 1.2827 ms]
 citm_catalog/simd_json::from_slice
-                        time:   [2.3324 ms 2.4122 ms 2.4988 ms]
+                        time:   [2.0556 ms 2.0822 ms 2.1126 ms]
 citm_catalog/serde_json::from_slice
-                        time:   [3.0485 ms 3.0965 ms 3.1535 ms]
+                        time:   [2.9939 ms 3.0271 ms 3.0674 ms]
 citm_catalog/serde_json::from_str
-                        time:   [2.4495 ms 2.4661 ms 2.4836 ms]
+                        time:   [2.4043 ms 2.4604 ms 2.5283 ms]
 
 canada/sonic_rs::from_slice
-                        time:   [4.3249 ms 4.4713 ms 4.6286 ms]
+                        time:   [3.8612 ms 3.9070 ms 3.9574 ms]
 canada/simd_json::from_slice
-                        time:   [8.3872 ms 8.5095 ms 8.6519 ms]
+                        time:   [8.8144 ms 8.9206 ms 9.0317 ms]
 canada/serde_json::from_slice
-                        time:   [6.5207 ms 6.5938 ms 6.6787 ms]
+                        time:   [8.8703 ms 8.9586 ms 9.0555 ms]
 canada/serde_json::from_str
-                        time:   [6.6534 ms 6.8373 ms 7.0402 ms]
+                        time:   [9.2865 ms 9.4272 ms 9.6032 ms]
 ```
 
 
@@ -113,39 +119,38 @@ The benchmark will parse JSON into a document. Sonic-rs seems faster for several
 
 ```
 twitter/sonic_rs_dom::from_slice
-                        time:   [624.60 µs 631.67 µs 639.76 µs]
+                        time:   [589.34 µs 593.81 µs 599.02 µs]
 twitter/simd_json::slice_to_borrowed_value
-                        time:   [1.2524 ms 1.2784 ms 1.3083 ms]
+                        time:   [1.2174 ms 1.2281 ms 1.2406 ms]
 twitter/serde_json::from_slice
-                        time:   [4.1991 ms 4.3552 ms 4.5264 ms]
+                        time:   [3.9370 ms 3.9658 ms 3.9960 ms]
 twitter/serde_json::from_str
-                        time:   [3.0258 ms 3.1086 ms 3.2005 ms]
+                        time:   [2.8013 ms 2.8278 ms 2.8584 ms]
 twitter/simd_json::slice_to_owned_value
-                        time:   [1.8195 ms 1.8382 ms 1.8583 ms]
+                        time:   [1.7537 ms 1.7857 ms 1.8220 ms]
 
 citm_catalog/sonic_rs_dom::from_slice
-                        time:   [1.8528 ms 1.8962 ms 1.9452 ms]
+                        time:   [1.7779 ms 1.8326 ms 1.8942 ms]
 citm_catalog/simd_json::slice_to_borrowed_value
-                        time:   [3.5543 ms 3.6127 ms 3.6814 ms]
+                        time:   [4.0278 ms 4.1167 ms 4.2103 ms]
 citm_catalog/serde_json::from_slice
-                        time:   [9.0163 ms 9.2052 ms 9.4167 ms]
+                        time:   [9.4022 ms 9.5598 ms 9.7242 ms]
 citm_catalog/serde_json::from_str
-                        time:   [8.0306 ms 8.1450 ms 8.2843 ms]
+                        time:   [7.7487 ms 7.9720 ms 8.2212 ms]
 citm_catalog/simd_json::slice_to_owned_value
-                        time:   [4.2538 ms 4.3171 ms 4.3990 ms]
+                        time:   [4.1156 ms 4.1760 ms 4.2489 ms]
 
 canada/sonic_rs_dom::from_slice
-                        time:   [5.2105 ms 5.2761 ms 5.3474 ms]
+                        time:   [4.9905 ms 5.0650 ms 5.1539 ms]
 canada/simd_json::slice_to_borrowed_value
-                        time:   [12.557 ms 12.773 ms 13.031 ms]
+                        time:   [11.931 ms 12.142 ms 12.384 ms]
 canada/serde_json::from_slice
-                        time:   [14.875 ms 15.073 ms 15.315 ms]
+                        time:   [17.262 ms 17.433 ms 17.634 ms]
 canada/serde_json::from_str
-                        time:   [14.603 ms 14.868 ms 15.173 ms]
+                        time:   [16.579 ms 16.773 ms 17.025 ms]
 canada/simd_json::slice_to_owned_value
-                        time:   [12.548 ms 12.637 ms 12.737 ms]
+                        time:   [12.024 ms 12.209 ms 12.423 ms]
 ```
-
 
 ### Serialize Untyped
 
@@ -356,6 +361,22 @@ If we need parse a JSON number into a untyped type, we can use `Number`.
 If we need parse a JSON number ***without loss of percision***, we can use `RawNumber`. It likes `JsonNumber` in Golang, and can also be parsed from a JSON string.
 
 Detailed examples can be found in [raw_value.rs](examples/raw_value.rs) and [json_number.rs](examples/json_number.rs).
+
+## FAQs
+
+### About UTF-8
+
+By default, sonic-rs does not enable UTF-8 validation. This is a trade-off to achieve the fastest performance.
+
+- For the `from_slice` and `dom_from_slice` interfaces, if you need to validate UTF-8 for the parsed JSON, please use the `utf8` feature.
+
+- For the `get` and `lazyvalue` related interfaces, due to the algorithm design, these interfaces are ***only suitable for use in valid-json scenarios***, and we will not provide UTF-8 validation in the future.
+
+### About floating point precision
+
+By default, sonic-rs uses floating point precision consistent with the Rust standard library, and there is no need to add an extra `float_roundtrip` feature like `serde-json` to ensure floating point precision.
+
+If you want to achieve lossless precision when parsing floating-point numbers, such as Golang `JsonNumber` and `serde-json arbitrary_precision`, you can use `RawNumber`.
 
 ## Acknowledgement
 
