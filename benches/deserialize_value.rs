@@ -46,14 +46,12 @@ macro_rules! bench_file {
                 .unwrap();
 
             // verify sonic-rs parse
-            if stringify!($name) != "canada" {
-                let serde_out: serde_json::Value = serde_json::from_slice(&vec).unwrap();
+            let serde_out: serde_json::Value = serde_json::from_slice(&vec).unwrap();
 
-                let value = sonic_rs::value::dom_from_slice(&vec).unwrap();
-                let out = sonic_rs::to_string(&value).unwrap();
-                let rs_out1: serde_json::Value = serde_json::from_str(&out).unwrap();
-                assert_eq!(rs_out1, serde_out);
-            }
+            let value = sonic_rs::value::dom_from_slice(&vec).unwrap();
+            let out = sonic_rs::to_string(&value).unwrap();
+            let rs_out1: serde_json::Value = serde_json::from_str(&out).unwrap();
+            assert_eq!(rs_out1, serde_out);
 
             let mut group = c.benchmark_group(stringify!($name));
             group.sampling_mode(SamplingMode::Flat);
@@ -109,5 +107,5 @@ bench_file!(twitter);
 bench_file!(github_events);
 
 // criterion_group!(benches, canada, otfcc, citm_catalog, twitter, lottie, github_events, twitterescaped, book, poet, fgo);
-criterion_group!(benches, twitter, citm_catalog, canada);
+criterion_group!(benches, canada);
 criterion_main!(benches);

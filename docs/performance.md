@@ -1,4 +1,4 @@
-# Some deatils of sonic-rs optimization
+# Some details of sonic-rs optimization
 
 This document will introduce some performance optimization details of sonic-rs (commit `631411b`). Here are four main sections of optimization:
 

@@ -75,14 +75,12 @@ macro_rules! bench_file {
                     .unwrap();
 
                 // verify sonic-rs parse
-                if stringify!($name) != "canada" {
-                    let serde_val: $structure = serde_json::from_slice(&vec).unwrap();
-                    let serde_out = serde_json::to_string_pretty(&serde_val).unwrap();
+                let serde_val: $structure = serde_json::from_slice(&vec).unwrap();
+                let serde_out = serde_json::to_string_pretty(&serde_val).unwrap();
 
-                    let value : $structure = sonic_rs::from_slice(&vec).unwrap();
-                    let out = sonic_rs::to_string_pretty(&value).unwrap();
-                    assert!(diff_json(&out, &serde_out));
-                }
+                let value : $structure = sonic_rs::from_slice(&vec).unwrap();
+                let out = sonic_rs::to_string_pretty(&value).unwrap();
+                assert!(diff_json(&out, &serde_out));
 
                 let mut group = c.benchmark_group(stringify!($name));
                 group.sampling_mode(SamplingMode::Flat);

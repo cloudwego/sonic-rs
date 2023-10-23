@@ -35,6 +35,7 @@ sonic-rs 的主要优化是使用 SIMD。然而，sonic-rs 没有使用来自`si
 3. 从 JSON 中获取特定字段
 4. 将 JSON 解析为惰性迭代器
 5. 在默认情况下支持 `RawValue`，`Number` 和 `RawNumber`（就像 Golang 的 `JsonNumber`）。
+6. 浮点数精度默认和 Rust 标准库对齐
 
 ## 如何使用 sonic-rs
 
@@ -63,6 +64,8 @@ Model name:          Intel(R) Xeon(R) Platinum 8260 CPU @ 2.40GHz
 
 序列化基准测试也是如此。
 
+解析相关 benchmark 都开启了 UTF-8 校验，同时 `serde-json` 开启了 `float_roundtrip` feature, 以便解析浮点数具有足够精度，和 Rust 标准库对齐。
+
 ### 解析到结构体（启用 utf8 验证）
 
 基准测试将把 JSON 解析成 Rust 结构体，JSON 文本中没有未知字段。JSON 中的所有字段都被解析为结构体字段。
@@ -73,31 +76,31 @@ Sonic-rs 比 simd-json 更快，因为 simd-json (Rust) 首先将 JSON 解析成
 
 ```
 twitter/sonic_rs::from_slice
-                        time:   [718.60 µs 724.47 µs 731.05 µs]
+                        time:   [721.80 µs 747.81 µs 776.19 µs]
 twitter/simd_json::from_slice
-                        time:   [1.0325 ms 1.0486 ms 1.0664 ms]
+                        time:   [1.0909 ms 1.1225 ms 1.1561 ms]
 twitter/serde_json::from_slice
-                        time:   [2.3070 ms 2.3271 ms 2.3506 ms]
+                        time:   [2.3218 ms 2.3491 ms 2.3787 ms]
 twitter/serde_json::from_str
-                        time:   [1.3797 ms 1.3996 ms 1.4237 ms]
+                        time:   [1.4123 ms 1.4460 ms 1.4842 ms]
 
 citm_catalog/sonic_rs::from_slice
-                        time:   [1.3413 ms 1.3673 ms 1.3985 ms]
+                        time:   [1.2133 ms 1.2447 ms 1.2827 ms]
 citm_catalog/simd_json::from_slice
-                        time:   [2.3324 ms 2.4122 ms 2.4988 ms]
+                        time:   [2.0556 ms 2.0822 ms 2.1126 ms]
 citm_catalog/serde_json::from_slice
-                        time:   [3.0485 ms 3.0965 ms 3.1535 ms]
+                        time:   [2.9939 ms 3.0271 ms 3.0674 ms]
 citm_catalog/serde_json::from_str
-                        time:   [2.4495 ms 2.4661 ms 2.4836 ms]
+                        time:   [2.4043 ms 2.4604 ms 2.5283 ms]
 
 canada/sonic_rs::from_slice
-                        time:   [4.3249 ms 4.4713 ms 4.6286 ms]
+                        time:   [3.8612 ms 3.9070 ms 3.9574 ms]
 canada/simd_json::from_slice
-                        time:   [8.3872 ms 8.5095 ms 8.6519 ms]
+                        time:   [8.8144 ms 8.9206 ms 9.0317 ms]
 canada/serde_json::from_slice
-                        time:   [6.5207 ms 6.5938 ms 6.6787 ms]
+                        time:   [8.8703 ms 8.9586 ms 9.0555 ms]
 canada/serde_json::from_str
-                        time:   [6.6534 ms 6.8373 ms 7.0402 ms]
+                        time:   [9.2865 ms 9.4272 ms 9.6032 ms]
 ```
 
 
@@ -112,37 +115,37 @@ canada/serde_json::from_str
 
 ```
 twitter/sonic_rs_dom::from_slice
-                        time:   [624.60 µs 631.67 µs 639.76 µs]
+                        time:   [589.34 µs 593.81 µs 599.02 µs]
 twitter/simd_json::slice_to_borrowed_value
-                        time:   [1.2524 ms 1.2784 ms 1.3083 ms]
+                        time:   [1.2174 ms 1.2281 ms 1.2406 ms]
 twitter/serde_json::from_slice
-                        time:   [4.1991 ms 4.3552 ms 4.5264 ms]
+                        time:   [3.9370 ms 3.9658 ms 3.9960 ms]
 twitter/serde_json::from_str
-                        time:   [3.0258 ms 3.1086 ms 3.2005 ms]
+                        time:   [2.8013 ms 2.8278 ms 2.8584 ms]
 twitter/simd_json::slice_to_owned_value
-                        time:   [1.8195 ms 1.8382 ms 1.8583 ms]
+                        time:   [1.7537 ms 1.7857 ms 1.8220 ms]
 
 citm_catalog/sonic_rs_dom::from_slice
-                        time:   [1.8528 ms 1.8962 ms 1.9452 ms]
+                        time:   [1.7779 ms 1.8326 ms 1.8942 ms]
 citm_catalog/simd_json::slice_to_borrowed_value
-                        time:   [3.5543 ms 3.6127 ms 3.6814 ms]
+                        time:   [4.0278 ms 4.1167 ms 4.2103 ms]
 citm_catalog/serde_json::from_slice
-                        time:   [9.0163 ms 9.2052 ms 9.4167 ms]
+                        time:   [9.4022 ms 9.5598 ms 9.7242 ms]
 citm_catalog/serde_json::from_str
-                        time:   [8.0306 ms 8.1450 ms 8.2843 ms]
+                        time:   [7.7487 ms 7.9720 ms 8.2212 ms]
 citm_catalog/simd_json::slice_to_owned_value
-                        time:   [4.2538 ms 4.3171 ms 4.3990 ms]
+                        time:   [4.1156 ms 4.1760 ms 4.2489 ms]
 
 canada/sonic_rs_dom::from_slice
-                        time:   [5.2105 ms 5.2761 ms 5.3474 ms]
+                        time:   [4.9905 ms 5.0650 ms 5.1539 ms]
 canada/simd_json::slice_to_borrowed_value
-                        time:   [12.557 ms 12.773 ms 13.031 ms]
+                        time:   [11.931 ms 12.142 ms 12.384 ms]
 canada/serde_json::from_slice
-                        time:   [14.875 ms 15.073 ms 15.315 ms]
+                        time:   [17.262 ms 17.433 ms 17.634 ms]
 canada/serde_json::from_str
-                        time:   [14.603 ms 14.868 ms 15.173 ms]
+                        time:   [16.579 ms 16.773 ms 17.025 ms]
 canada/simd_json::slice_to_owned_value
-                        time:   [12.548 ms 12.637 ms 12.737 ms]
+                        time:   [12.024 ms 12.209 ms 12.423 ms]
 ```
 
 
@@ -356,6 +359,21 @@ fn main() {
 
 详细示例可以在[raw_value.rs](examples/raw_value.rs) 和 [json_number.rs](examples/json_number.rs) 中找到。
 
+## 常见问题
+
+### 关于 UTF-8
+
+sonic-rs 默认并不开启 utf-8 校验，这是为了性能做出的权衡。
+
+- 对于 `from_slice` 和 `dom_from_slice` 接口，需要对解析的 JSON 校验UTF-8，请使用 `utf8` feature. 
+
+- 对于 `get` 和 `lazyvaue` 相关接口，由于实现算法设计的原因，这些接口***只适合在 valid-json 场景下使用***，我们后续也不会提供 utf-8 校验。
+
+### 关于浮点数精度
+
+sonic-rs 默认使用和 Rust 标准库一致的浮点数精度，无需像 `serde-json` 那样添加额外的 `float_roundtrip` feature 来保证浮点数精度。
+
+如果想在解析浮点数时，做到精度无损失，例如 Golang `JsonNumber` 和 `serde-json arbitrary_precision`，可以使用 `RawNumber`。
 
 ## 致谢
 
