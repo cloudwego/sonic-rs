@@ -111,19 +111,13 @@ impl<'de> ArrayIntoIter<'de> {
 
 /// Convert a json to a lazy ObjectIntoIter. The iterator is lazied and the parsing will doing when iterating.
 /// The item of the iterator is a Result. If parse error, it will return Err.
-/// # Safety
-/// The caller must ensure that the input is a well-formed JSON object.
-/// Otherwise, it will return unexpected results in next().
-pub unsafe fn to_object_iter<'de, I: JsonInput<'de>>(json: I) -> ObjectIntoIter<'de> {
+pub fn to_object_iter<'de, I: JsonInput<'de>>(json: I) -> ObjectIntoIter<'de> {
     ObjectIntoIter::new(json.to_json_slice())
 }
 
 /// Convert a json to a lazy ArrayIntoIter. The iterator is lazied and the parsing will doing when iterating.
 /// The item of the iterator is a Result. If parse error, it will return Err.
-/// # Safety
-/// The caller must ensure that the input is a well-formed JSON array.
-/// Otherwise, it will return unexpected results in next().
-pub unsafe fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayIntoIter<'de> {
+pub fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayIntoIter<'de> {
     ArrayIntoIter::new(json.to_json_slice())
 }
 
@@ -164,7 +158,7 @@ mod test {
             "escaped\"": "\"\""
         }"#,
         );
-        let mut iter = unsafe { to_object_iter(&json) };
+        let mut iter = to_object_iter(&json);
 
         let mut test_ok = |key: &str, val: &str, typ: JsonType| {
             let ret = iter.next().unwrap().unwrap();
@@ -185,13 +179,13 @@ mod test {
         assert!(iter.next().is_none());
 
         let json = Bytes::from("{}");
-        let mut iter = unsafe { to_object_iter(&json) };
+        let mut iter = to_object_iter(&json);
         assert!(iter.next().is_none());
         assert!(iter.next().is_none());
         assert!(iter.next().is_none());
 
         let json = Bytes::from("{xxxxxx");
-        let mut iter = unsafe { to_object_iter(&json) };
+        let mut iter = to_object_iter(&json);
         assert!(iter.next().unwrap().is_err());
         assert!(iter.next().is_none());
     }
@@ -210,7 +204,7 @@ mod test {
             {}
         ]"#,
         );
-        let mut iter = unsafe { to_array_iter(&json) };
+        let mut iter = to_array_iter(&json);
         let mut test_ok = |val: &str, typ: JsonType| {
             let ret = iter.next().unwrap().unwrap();
             assert_eq!(ret.as_raw_slice(), val.as_bytes());
@@ -229,13 +223,13 @@ mod test {
         assert!(iter.next().is_none());
 
         let json = Bytes::from("[]");
-        let mut iter = unsafe { to_array_iter(&json) };
+        let mut iter = to_array_iter(&json);
         assert!(iter.next().is_none());
         assert!(iter.next().is_none());
         assert!(iter.next().is_none());
 
         let json = Bytes::from("[xxxxxx");
-        let mut iter = unsafe { to_array_iter(&json) };
+        let mut iter = to_array_iter(&json);
         assert!(iter.next().unwrap().is_err());
         assert!(iter.next().is_none());
     }
@@ -243,7 +237,7 @@ mod test {
     #[test]
     fn test_iter_deserialize() {
         let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6]"#);
-        let iter = unsafe { to_array_iter(&json) };
+        let iter = to_array_iter(&json);
         let out: Vec<u8> = iter
             .flatten()
             .map(|e| e.deserialize::<u8>().unwrap_or_default())
@@ -251,7 +245,7 @@ mod test {
         assert_eq!(out.as_slice(), &[1, 2, 3, 4, 5, 6]);
 
         let json = Bytes::from(r#"[1, true, "hello", null, 5, 6]"#);
-        let iter = unsafe { to_array_iter(&json) };
+        let iter = to_array_iter(&json);
         let out: Vec<JsonType> = iter.map(|e| e.get_type()).collect();
         println!("array elem type is {:?}", out);
     }

@@ -1,6 +1,6 @@
 use sonic_rs::{Deserialize, Serialize};
 
-use sonic_rs::RawValue;
+use serde_json::value::RawValue;
 
 #[derive(Serialize, Deserialize)]
 struct Message {

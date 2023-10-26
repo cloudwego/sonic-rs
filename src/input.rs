@@ -44,6 +44,12 @@ impl<'de> From<&'de str> for JsonSlice<'de> {
     }
 }
 
+impl<'de> From<&'de String> for JsonSlice<'de> {
+    fn from(value: &'de String) -> Self {
+        JsonSlice::Raw(value.as_bytes())
+    }
+}
+
 impl<'de> AsRef<[u8]> for JsonSlice<'de> {
     fn as_ref(&self) -> &[u8] {
         match self {
@@ -115,5 +121,19 @@ impl<'de> JsonInput<'de> for &'de FastStr {
 
     fn to_u8_slice(&self) -> &'de [u8] {
         (*self).as_ref()
+    }
+}
+
+impl<'de> JsonInput<'de> for &'de String {
+    fn to_json_slice(&self) -> JsonSlice<'de> {
+        JsonSlice::Raw(self.as_bytes())
+    }
+
+    fn from_subset(&self, sub: &'de [u8]) -> JsonSlice<'de> {
+        sub.into()
+    }
+
+    fn to_u8_slice(&self) -> &'de [u8] {
+        (*self).as_bytes()
     }
 }

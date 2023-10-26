@@ -19,6 +19,7 @@ pub use serde::{Deserialize, Serialize};
 #[allow(clippy::mutable_key_type)]
 mod test {
     use super::*;
+    use crate::Result;
     use faststr::FastStr;
     use serde::{Deserialize, Serialize};
     use std::borrow::Cow;
@@ -215,19 +216,63 @@ mod test {
     }
 
     #[test]
-    fn test_raw_value() {
-        let data = TestRawValue {
-            rawvalue: RawValue::from_json_str("\"raw value1\"").unwrap(),
-            rawvalue2: RawValue::from_string("\"raw value2\"".to_string()).unwrap(),
-        };
+    fn test_raw_value_ok() {
+        fn test_json_ok(json: &str) {
+            let data = TestRawValue {
+                rawvalue: from_str(json).expect(json),
+                rawvalue2: from_str(json).expect(json),
+            };
 
-        let expect = r#"{"rawvalue":"raw value1","rawvalue2":"raw value2"}"#;
-        let got = to_string(&data).expect("Failed to serialize the data");
-        assert_eq!(expect, got);
-        println!("serialized json is {}", got);
+            // test long json for SIMD
+            let json2 = json.to_string() + &" ".repeat(1000);
+            let data2 = TestRawValue {
+                rawvalue: from_str(json).expect(&json2),
+                rawvalue2: from_str(json).expect(&json2),
+            };
+            assert_eq!(data, data2);
+            let json = json.trim();
+            let expect: String = format!("{{\"rawvalue\":{},\"rawvalue2\":{}}}", json, json);
+            let serialized = to_string(&data).expect(json);
+            assert_eq!(expect, serialized);
+            assert_eq!(from_str::<TestRawValue>(&serialized).expect(json), data);
+        }
+        test_json_ok(r#""""#);
+        test_json_ok(r#""raw value""#);
+        test_json_ok(r#""哈哈哈☺""#);
+        test_json_ok(r#"true"#);
+        test_json_ok(r#"false"#);
+        test_json_ok(r#"0"#);
+        test_json_ok(r#"-1"#);
+        test_json_ok(r#"-1e+1111111111111"#);
+        test_json_ok(r#"-1e-1111111111111"#);
+        test_json_ok(r#"{}"#);
+        test_json_ok(r#"[]"#);
+        test_json_ok(r#"{"":[], "": ["", "", []]}"#);
+        test_json_ok(r#"{"":[], "": ["", "", []]}"#);
+    }
 
-        let got_value: TestRawValue = from_str(expect).expect("Failed to deserialize the data");
-        assert_eq!(data, got_value);
+    #[test]
+    fn test_raw_value_failed() {
+        fn test_json_failed(json: &str) {
+            let ret: Result<Box<RawValue>> = from_str(json);
+            assert!(ret.is_err(), "invalid json is {}", json);
+        }
+        test_json_failed(r#"""#);
+        test_json_failed(r#""raw " value""#);
+        test_json_failed(r#"哈哈哈""#);
+        test_json_failed(r#""\x""#);
+        test_json_failed("\"\x00\"");
+        test_json_failed(r#"tru"#);
+        test_json_failed(r#"fals"#);
+        test_json_failed(r#"0."#);
+        test_json_failed(r#"-"#);
+        test_json_failed(r#"-1e"#);
+        test_json_failed(r#"-1e-"#);
+        test_json_failed(r#"-1e-1.111"#);
+        test_json_failed(r#"-1e-1,"#);
+        test_json_failed(r#"{"#);
+        test_json_failed(r#" ]"#);
+        test_json_failed(r#"{"":[], ["", "", []]}"#);
     }
 
     #[derive(Debug, Deserialize, Serialize, PartialEq)]
@@ -267,7 +312,25 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "utf8")]
+    fn test_json_number_invalid() {
+        fn test_json_failed(json: &str) {
+            let ret: Result<RawNumber> = from_str(json);
+            assert!(ret.is_err(), "invalid json is {}", json);
+        }
+        test_json_failed(r#"0."#);
+        test_json_failed(r#"-"#);
+        test_json_failed(r#"-1e"#);
+        test_json_failed(r#"-1e-"#);
+        test_json_failed(r#"-1e-1.111"#);
+        test_json_failed(r#"-1e-1,"#);
+        test_json_failed(
+            r#""0.123#);
+        test_json_failed(r#""-""#,
+        );
+        test_json_failed(r#""-1e""#);
+    }
+
+    #[test]
     fn test_invalid_utf8() {
         let data = [b'"', 0, 0, 0, 0x80, 0x90, b'"'];
         let value: crate::Result<String> = from_slice(&data);
