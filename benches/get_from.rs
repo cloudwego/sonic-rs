@@ -19,7 +19,7 @@ fn bench_get(c: &mut Criterion) {
     let rpath = ["search_metadata", "count"];
     let gpath = "search_metadata.count";
     let gout = gjson::get(data, gpath);
-    let rout = unsafe { sonic_rs::get_from(data, &rpath) };
+    let rout = unsafe { sonic_rs::get_unchecked(data, &rpath) };
     assert_eq!(rout.unwrap().as_raw_str(), gout.str());
 
     let mut group = c.benchmark_group("twitter");
@@ -27,7 +27,7 @@ fn bench_get(c: &mut Criterion) {
     group.bench_with_input("sonic-rs::get_from_str", data, |b, data| {
         b.iter_batched(
             || data,
-            |json| unsafe { sonic_rs::get_from(json, &rpath) },
+            |json| unsafe { sonic_rs::get_unchecked(json, &rpath) },
             BatchSize::SmallInput,
         )
     });

@@ -760,15 +760,12 @@ where
             let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunck) };
             let bs_bits = (v.eq(u8x32::splat(b'\\'))).bitmask();
             quote_bits = (v.eq(u8x32::splat(b'"'))).bitmask();
-            //
             // maybe has escaped quotes
             if ((quote_bits.wrapping_sub(1)) & bs_bits) != 0 || prev_escaped != 0 {
                 escaped = get_escaped_branchless_u32(&mut prev_escaped, bs_bits);
                 status = ParseStatus::HasEsacped;
-                //
                 quote_bits &= !escaped;
             }
-            //
             // real quote bits
             if quote_bits != 0 {
                 // eat the ending quote mark
@@ -802,10 +799,74 @@ where
     }
 
     #[inline(always)]
-    fn skip_string(&mut self) -> Result<()> {
+    fn skip_string_unchecked(&mut self) -> Result<()> {
         let _ = self.skip_string_impl()?;
         // ignore the status of hasesacped
         Ok(())
+    }
+
+    // skip_string skips a JSON string with validation.
+    #[inline(always)]
+    fn skip_string(&mut self) -> Result<()> {
+        const LANS: usize = u8x32::lanes();
+        let r = &mut self.read;
+
+        while let Some(chunck) = r.peek_n(LANS) {
+            let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunck) };
+            let v_bs = v.eq(u8x32::splat(b'\\'));
+            let v_quote = v.eq(u8x32::splat(b'"'));
+            let v_cc = v.lt(u8x32::splat(0x20));
+            let mask = (v_bs | v_quote | v_cc).bitmask();
+
+            // check the mask
+            if mask != 0 {
+                let cnt = mask.trailing_zeros() as usize;
+                r.eat(cnt + 1);
+
+                let ch = chunck[cnt];
+                if ch == b'\\' {
+                    // at leaset need two bytes, such as `"\""`
+                    if r.remain() < 2 {
+                        return perr!(self, EofWhileParsing);
+                    }
+
+                    // we check the remain bytes at first
+                    let second = unsafe { r.peek().unwrap_unchecked() };
+                    if ESCAPED_TAB[second as usize] == 0 {
+                        return perr!(self, InvalidEscape);
+                    }
+                    r.eat(1);
+                    continue;
+                } else if ch == b'"' {
+                    return Ok(());
+                } else {
+                    return perr!(self, ControlCharacterWhileParsingString);
+                }
+            } else {
+                r.eat(LANS)
+            }
+        }
+
+        // found quote for remaining bytes
+        while let Some(ch) = r.next() {
+            match ch {
+                b'\\' => {
+                    if r.remain() < 2 {
+                        break;
+                    }
+
+                    let second = unsafe { r.peek().unwrap_unchecked() };
+                    if ESCAPED_TAB[second as usize] == 0 {
+                        return perr!(self, InvalidEscape);
+                    }
+                    r.eat(1);
+                }
+                b'"' => return Ok(()),
+                0..=0x1f => return perr!(self, ControlCharacterWhileParsingString),
+                _ => {}
+            }
+        }
+        perr!(self, EofWhileParsing)
     }
 
     // parse the Colon :
@@ -825,6 +886,54 @@ where
             Some(b']') => Ok(()),
             Some(_) => perr!(self, ExpectedArrayCommaOrEnd),
             None => perr!(self, EofWhileParsing),
+        }
+    }
+
+    #[inline(always)]
+    fn skip_object(&mut self) -> Result<()> {
+        match self.skip_space() {
+            Some(b'}') => return Ok(()),
+            Some(b'"') => {}
+            None => return perr!(self, EofWhileParsing),
+            Some(_) => return perr!(self, ExpectObjectKeyOrEnd),
+        }
+
+        loop {
+            self.skip_string()?;
+            self.parse_object_clo()?;
+            self.skip_one()?;
+
+            match self.skip_space() {
+                Some(b'}') => return Ok(()),
+                Some(b',') => match self.skip_space() {
+                    Some(b'"') => continue,
+                    _ => return perr!(self, ExpectObjectKeyOrEnd),
+                },
+                None => return perr!(self, EofWhileParsing),
+                Some(_) => return perr!(self, ExpectedObjectCommaOrEnd),
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn skip_array(&mut self) -> Result<()> {
+        match self.skip_space_peek() {
+            Some(b']') => {
+                self.read.eat(1);
+                return Ok(());
+            }
+            None => return perr!(self, EofWhileParsing),
+            _ => {}
+        }
+
+        loop {
+            self.skip_one()?;
+            match self.skip_space() {
+                Some(b']') => return Ok(()),
+                Some(b',') => continue,
+                None => return perr!(self, EofWhileParsing),
+                _ => return perr!(self, ExpectedArrayCommaOrEnd),
+            }
         }
     }
 
@@ -1023,12 +1132,166 @@ where
     }
 
     #[inline(always)]
+    fn skip_exponent(&mut self) -> Result<()> {
+        if let Some(ch) = self.read.next() {
+            if ch == b'-' || ch == b'+' {
+                self.read.eat(1);
+            }
+        }
+        self.skip_single_digit()?;
+
+        // skip the remaining digits
+        while matches!(self.read.peek(), Some(b'0'..=b'9')) {
+            self.read.eat(1);
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn skip_single_digit(&mut self) -> Result<u8> {
+        if let Some(ch) = self.read.next() {
+            if !ch.is_ascii_digit() {
+                perr!(self, InvalidNumber)
+            } else {
+                Ok(ch)
+            }
+        } else {
+            perr!(self, EofWhileParsing)
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn skip_number(&mut self, mut first: u8) -> Result<()> {
+        // check eof after the sign
+        if first == b'-' {
+            first = self.skip_single_digit()?;
+        }
+
+        // check the leading zeros
+        let second = self.read.peek();
+        if first == b'0' && matches!(second, Some(b'0'..=b'9')) {
+            return perr!(self, InvalidNumber);
+        }
+
+        // fast path for the single digit
+        let mut is_float: bool = false;
+        match second {
+            Some(b'0'..=b'9') => {
+                self.read.eat(1);
+            }
+            Some(b'.') => {
+                is_float = true;
+                self.read.eat(1);
+                self.skip_single_digit()?;
+            }
+            Some(b'e' | b'E') => {
+                self.read.eat(1);
+                return self.skip_exponent();
+            }
+            _ => return Ok(()),
+        }
+
+        // SIMD path for long number
+        while let Some(chunck) = self.read.peek_n(32) {
+            let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunck) };
+            let less0 = u8x32::splat(b'0' - 1);
+            let nine = u8x32::splat(b'9');
+            let nondigits = !(v.gt(less0) & v.le(nine)).bitmask();
+
+            if nondigits != 0 {
+                let cnt = nondigits.trailing_zeros() as usize;
+                let ch = chunck[cnt];
+                if ch == b'.' && !is_float {
+                    self.read.eat(cnt + 1);
+                    // check the first digit after the dot
+                    self.skip_single_digit()?;
+
+                    // check the remainig digits
+                    let nondigts = nondigits >> (cnt + 1);
+                    if nondigts != 0 {
+                        let cnt = nondigts.trailing_zeros() as usize;
+                        let ch = chunck[cnt];
+                        if ch == b'e' || ch == b'E' {
+                            self.read.eat(cnt + 1);
+                            return self.skip_exponent();
+                        } else {
+                            self.read.eat(cnt);
+                            return Ok(());
+                        }
+                    } else {
+                        // long digits
+                        self.read.eat(32 - cnt - 1);
+                        is_float = true;
+                        continue;
+                    }
+                } else if ch == b'e' || ch == b'E' {
+                    self.read.eat(cnt + 1);
+                    return self.skip_exponent();
+                } else {
+                    self.read.eat(cnt);
+                    return Ok(());
+                }
+            } else {
+                // long digits
+                self.read.eat(32);
+            }
+        }
+
+        // has less than 32 bytes
+        while matches!(self.read.peek(), Some(b'0'..=b'9')) {
+            self.read.eat(1);
+        }
+
+        match self.read.peek() {
+            Some(b'.') if !is_float => {
+                self.read.eat(1);
+                self.skip_single_digit()?;
+                while matches!(self.read.peek(), Some(b'0'..=b'9')) {
+                    self.read.eat(1);
+                }
+                match self.read.peek() {
+                    Some(b'e' | b'E') => {
+                        self.read.eat(1);
+                        return self.skip_exponent();
+                    }
+                    _ => return Ok(()),
+                }
+            }
+            Some(b'e' | b'E') => {
+                self.read.eat(1);
+                return self.skip_exponent();
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
     pub(crate) fn skip_one(&mut self) -> Result<&'de [u8]> {
         let ch = self.skip_space();
         let start = self.read.index() - 1;
         match ch {
-            Some(b'-' | b'0'..=b'9') => self.skip_number_unsafe(),
+            Some(c @ b'-' | c @ b'0'..=b'9') => self.skip_number(c),
             Some(b'"') => self.skip_string(),
+            Some(b'{') => self.skip_object(),
+            Some(b'[') => self.skip_array(),
+            Some(b't') => self.parse_literal("rue"),
+            Some(b'f') => self.parse_literal("alse"),
+            Some(b'n') => self.parse_literal("ull"),
+            Some(_) => perr!(self, InvalidJsonValue),
+            None => perr!(self, EofWhileParsing),
+        }?;
+        let slice = self.read.slice_unchecked(start, self.read.index());
+        Ok(slice)
+    }
+
+    #[inline(always)]
+    pub(crate) fn skip_one_unchecked(&mut self) -> Result<&'de [u8]> {
+        let ch = self.skip_space();
+        let start = self.read.index() - 1;
+        match ch {
+            Some(b'-' | b'0'..=b'9') => self.skip_number_unsafe(),
+            Some(b'"') => self.skip_string_unchecked(),
             Some(b'{') => self.skip_container(b'{', b'}'),
             Some(b'[') => self.skip_container(b'[', b']'),
             Some(b't') => self.parse_literal("rue"),
@@ -1095,7 +1358,7 @@ where
             match self.skip_space() {
                 Some(b'{') => self.skip_container(b'{', b'}')?,
                 Some(b'[') => self.skip_container(b'[', b']')?,
-                Some(b'"') => self.skip_string()?,
+                Some(b'"') => self.skip_string_unchecked()?,
                 None => return perr!(self, EofWhileParsing),
                 _ => {}
             };
@@ -1108,6 +1371,79 @@ where
                 Some(_) => unreachable!(),
             }
         }
+    }
+
+    // get_from_object will make reader at the position after target key in JSON object.
+    #[inline(always)]
+    fn get_from_object_checked(&mut self, target_key: &str, temp_buf: &mut Vec<u8>) -> Result<()> {
+        // we assume parsed_key has always
+        debug_assert!(temp_buf.is_empty());
+        match self.skip_space() {
+            Some(b'{') => {}
+            Some(_) => return perr!(self, ExpectedObjectStart),
+            None => return perr!(self, EofWhileParsing),
+        }
+
+        // deal with the empty object
+        match self.get_next_token([b'"', b'}'], 1) {
+            Some(b'"') => {}
+            Some(b'}') => return perr!(self, GetInEmptyObj),
+            None => return perr!(self, EofWhileParsing),
+            Some(_) => unreachable!(),
+        }
+
+        loop {
+            let key = self.parse_string_raw(temp_buf)?;
+            self.parse_object_clo()?;
+            if key.len() == target_key.len() && key.as_ref() == target_key.as_bytes() {
+                return Ok(());
+            }
+
+            self.skip_one()?;
+
+            match self.skip_space() {
+                Some(b'}') => return perr!(self, GetUnknownKeyInObj),
+                Some(b',') => match self.skip_space() {
+                    Some(b'"') => continue,
+                    _ => return perr!(self, ExpectObjectKeyOrEnd),
+                },
+                None => return perr!(self, EofWhileParsing),
+                _ => return perr!(self, ExpectedObjectCommaOrEnd),
+            };
+        }
+    }
+
+    #[inline(always)]
+    fn get_from_array_checked(&mut self, index: usize) -> Result<()> {
+        let mut count = index;
+        match self.skip_space() {
+            Some(b'[') => {}
+            Some(_) => return perr!(self, ExpectedArrayStart),
+            None => return perr!(self, EofWhileParsing),
+        }
+
+        while count > 0 {
+            match self.skip_space_peek() {
+                Some(b']') => return perr!(self, GetIndexOutOfArray),
+                Some(_) => {}
+                None => return perr!(self, EofWhileParsing),
+            }
+
+            self.skip_one()?;
+
+            match self.skip_space() {
+                Some(b']') => return perr!(self, GetIndexOutOfArray),
+                Some(b',') => {
+                    count -= 1;
+                    continue;
+                }
+                Some(_) => return perr!(self, ExpectedArrayCommaOrEnd),
+                None => return perr!(self, EofWhileParsing),
+            }
+        }
+
+        // index is 0, just skipped '[' and return
+        Ok(())
     }
 
     // get_from_array will make reader at the position after target index in JSON array.
@@ -1124,7 +1460,7 @@ where
             match self.skip_space() {
                 Some(b'{') => self.skip_container(b'{', b'}')?,
                 Some(b'[') => self.skip_container(b'[', b']')?,
-                Some(b'"') => self.skip_string()?,
+                Some(b'"') => self.skip_string_unchecked()?,
                 Some(b']') => return perr!(self, GetIndexOutOfArray),
                 None => return perr!(self, EofWhileParsing),
                 _ => {}
@@ -1164,7 +1500,28 @@ where
                 unreachable!();
             }?;
         }
-        // TODO: optimize not need skip the latest field. return the remain JSON.
+        let slice = self.skip_one()?;
+        Ok(slice)
+    }
+
+    pub(crate) fn get_from_with_iter_checked<P: IntoIterator>(
+        &mut self,
+        path: P,
+    ) -> Result<&'de [u8]>
+    where
+        P::Item: PointerTrait,
+    {
+        // temp buf reused when parsing each escaped key
+        let mut temp_buf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);
+        for jp in path.into_iter() {
+            if let Some(key) = jp.key() {
+                self.get_from_object_checked(key, &mut temp_buf)
+            } else if let Some(index) = jp.index() {
+                self.get_from_array_checked(index)
+            } else {
+                unreachable!();
+            }?;
+        }
         let slice = self.skip_one()?;
         Ok(slice)
     }
@@ -1175,6 +1532,7 @@ where
         out: &mut Vec<&'de [u8]>,
         strbuf: &mut Vec<u8>,
         remain: &mut usize,
+        is_safe: bool,
     ) -> Result<()> {
         // all path has parsed
         if *remain == 0 {
@@ -1195,8 +1553,20 @@ where
             PointerTreeInner::Empty => {
                 self.skip_one()?;
             }
-            PointerTreeInner::Index(midxs) => self.get_many_index(midxs, strbuf, out, remain)?,
-            PointerTreeInner::Key(mkeys) => self.get_many_keys(mkeys, strbuf, out, remain)?,
+            PointerTreeInner::Index(midxs) => {
+                if is_safe {
+                    self.get_many_index(midxs, strbuf, out, remain)?
+                } else {
+                    self.get_many_index_unchecked(midxs, strbuf, out, remain)?
+                }
+            }
+            PointerTreeInner::Key(mkeys) => {
+                if is_safe {
+                    self.get_many_keys(mkeys, strbuf, out, remain)?
+                } else {
+                    self.get_many_keys_unchecked(mkeys, strbuf, out, remain)?
+                }
+            }
         };
 
         if !node.order.is_empty() {
@@ -1207,6 +1577,67 @@ where
             *remain -= node.order.len();
         }
         Ok(())
+    }
+
+    #[allow(clippy::mutable_key_type)]
+    fn get_many_keys_unchecked(
+        &mut self,
+        mkeys: &MultiKey,
+        strbuf: &mut Vec<u8>,
+        out: &mut Vec<&'de [u8]>,
+        remain: &mut usize,
+    ) -> Result<()> {
+        debug_assert!(strbuf.is_empty());
+        match self.skip_space() {
+            Some(b'{') => {}
+            Some(_) => return perr!(self, ExpectedObjectStart),
+            None => return perr!(self, EofWhileParsing),
+        }
+
+        // deal with the empty object
+        match self.get_next_token([b'"', b'}'], 1) {
+            Some(b'"') => {}
+            Some(b'}') => return perr!(self, GetInEmptyObj),
+            None => return perr!(self, EofWhileParsing),
+            Some(_) => unreachable!(),
+        }
+
+        let mut visited = 0;
+        loop {
+            let key = self.parse_str(strbuf)?;
+            self.parse_object_clo()?;
+            if let Some(val) = mkeys.get(key.deref()) {
+                self.get_many_rec(val, out, strbuf, remain, false)?;
+                visited += 1;
+                if *remain == 0 {
+                    break;
+                }
+            } else {
+                // skip object,array,string at first
+                match self.skip_space() {
+                    Some(b'{') => self.skip_container(b'{', b'}')?,
+                    Some(b'[') => self.skip_container(b'[', b']')?,
+                    Some(b'"') => self.skip_string_unchecked()?,
+                    None => return perr!(self, EofWhileParsing),
+                    _ => {}
+                };
+            }
+
+            // optimze: direct find the next quote of key. or object ending
+            match self.get_next_token([b'"', b'}'], 1) {
+                Some(b'"') => {}
+                Some(b'}') => break,
+                None => return perr!(self, EofWhileParsing),
+                Some(_) => unreachable!(),
+            }
+        }
+
+        // check wheter remaining unknown keys
+        if visited < mkeys.len() {
+            perr!(self, GetUnknownKeyInObj)
+        } else {
+            Ok(())
+        }
     }
 
     #[allow(clippy::mutable_key_type)]
@@ -1237,28 +1668,24 @@ where
             let key = self.parse_str(strbuf)?;
             self.parse_object_clo()?;
             if let Some(val) = mkeys.get(key.deref()) {
-                self.get_many_rec(val, out, strbuf, remain)?;
+                // parse the child point tree
+                self.get_many_rec(val, out, strbuf, remain, true)?;
                 visited += 1;
                 if *remain == 0 {
                     break;
                 }
             } else {
-                // skip object,array,string at first
-                match self.skip_space() {
-                    Some(b'{') => self.skip_container(b'{', b'}')?,
-                    Some(b'[') => self.skip_container(b'[', b']')?,
-                    Some(b'"') => self.skip_string()?,
-                    None => return perr!(self, EofWhileParsing),
-                    _ => {}
-                };
+                self.skip_one()?;
             }
 
-            // optimze: direct find the next quote of key. or object ending
-            match self.get_next_token([b'"', b'}'], 1) {
-                Some(b'"') => {}
+            match self.skip_space() {
+                Some(b',') => match self.skip_space() {
+                    Some(b'"') => continue,
+                    _ => return perr!(self, ExpectObjectKeyOrEnd),
+                },
                 Some(b'}') => break,
+                Some(_) => return perr!(self, ExpectedObjectCommaOrEnd),
                 None => return perr!(self, EofWhileParsing),
-                Some(_) => unreachable!(),
             }
         }
 
@@ -1281,7 +1708,7 @@ where
         reader.slice_unchecked(start, start + len)
     }
 
-    fn get_many_index(
+    fn get_many_index_unchecked(
         &mut self,
         midx: &MultiIndex,
         strbuf: &mut Vec<u8>,
@@ -1297,7 +1724,7 @@ where
         let mut visited = 0;
         loop {
             if let Some(val) = midx.get(&index) {
-                self.get_many_rec(val, out, strbuf, remain)?;
+                self.get_many_rec(val, out, strbuf, remain, false)?;
                 visited += 1;
                 if *remain == 0 {
                     break;
@@ -1307,7 +1734,7 @@ where
                 match self.skip_space() {
                     Some(b'{') => self.skip_container(b'{', b'}')?,
                     Some(b'[') => self.skip_container(b'[', b']')?,
-                    Some(b'"') => self.skip_string()?,
+                    Some(b'"') => self.skip_string_unchecked()?,
                     None => return perr!(self, EofWhileParsing),
                     _ => {}
                 };
@@ -1333,15 +1760,67 @@ where
         }
     }
 
-    pub(crate) fn get_many(&mut self, tree: &PointerTree) -> Result<Vec<&'de [u8]>> {
+    fn get_many_index(
+        &mut self,
+        midx: &MultiIndex,
+        strbuf: &mut Vec<u8>,
+        out: &mut Vec<&'de [u8]>,
+        remain: &mut usize,
+    ) -> Result<()> {
+        match self.skip_space() {
+            Some(b'[') => {}
+            Some(_) => return perr!(self, ExpectedArrayStart),
+            None => return perr!(self, EofWhileParsing),
+        }
+        let mut index = 0;
+        let mut visited = 0;
+
+        // check empty array
+        match self.skip_space_peek() {
+            Some(b']') => return perr!(self, GetIndexOutOfArray),
+            Some(_) => {}
+            None => return perr!(self, EofWhileParsing),
+        }
+
+        loop {
+            if let Some(val) = midx.get(&index) {
+                self.get_many_rec(val, out, strbuf, remain, true)?;
+                visited += 1;
+                if *remain == 0 {
+                    break;
+                }
+            } else {
+                self.skip_one()?;
+            }
+
+            match self.skip_space() {
+                Some(b']') => break,
+                Some(b',') => {
+                    index += 1;
+                    continue;
+                }
+                Some(_) => return perr!(self, ExpectedArrayCommaOrEnd),
+                None => return perr!(self, EofWhileParsing),
+            }
+        }
+
+        // check wheter remaining unknown keys
+        if visited < midx.len() {
+            perr!(self, GetIndexOutOfArray)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn get_many(&mut self, tree: &PointerTree, is_safe: bool) -> Result<Vec<&'de [u8]>> {
         let mut strbuf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);
-        let mut remain = tree.count();
-        let mut out: Vec<&'de [u8]> = Vec::with_capacity(tree.count());
-        for _i in 0..tree.count() {
+        let mut remain = tree.size();
+        let mut out: Vec<&'de [u8]> = Vec::with_capacity(tree.size());
+        for _i in 0..tree.size() {
             out.push(&[])
         }
         let cur = &tree.root;
-        self.get_many_rec(cur, &mut out, &mut strbuf, &mut remain)?;
+        self.get_many_rec(cur, &mut out, &mut strbuf, &mut remain, is_safe)?;
         Ok(out)
     }
 }

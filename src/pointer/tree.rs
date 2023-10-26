@@ -9,7 +9,7 @@ use std::collections::HashMap;
 #[derive(Debug, Default)]
 pub struct PointerTree {
     // the count of path
-    count: usize,
+    size: usize,
     // the root of tree
     pub(crate) root: PointerTreeNode,
 }
@@ -26,13 +26,13 @@ impl PointerTree {
     where
         Path::Item: PointerTrait,
     {
-        self.root.add_path(path, self.count);
-        self.count += 1;
+        self.root.add_path(path, self.size);
+        self.size += 1;
     }
 
     /// the count of nodes
-    pub fn count(&self) -> usize {
-        self.count
+    pub fn size(&self) -> usize {
+        self.size
     }
 }
 
@@ -120,7 +120,7 @@ mod test {
         tree.add_path(pointer!["a"].iter());
         tree.add_path(pointer!["b", 2].iter());
         tree.add_path(pointer![].iter());
-        assert_eq!(tree.count(), 7);
+        assert_eq!(tree.size(), 7);
         println!("tree is {:#?}", tree);
     }
 }

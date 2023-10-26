@@ -7,7 +7,7 @@ use faststr::FastStr;
 use serde::Deserialize;
 
 use crate::error::Result;
-use crate::get_from;
+use crate::get_unchecked;
 use crate::input::JsonSlice;
 use crate::parser::Parser;
 use crate::reader::Reader;
@@ -18,7 +18,7 @@ use crate::serde::Number;
 use crate::JsonType;
 use crate::{from_str, JsonValue};
 
-/// LazyValue is a raw text value from json. Mainly used for get few values from json fastly.
+/// LazyValue is a raw value from json text. Mainly used for get few values from json fastly.
 /// LazyValue is only generated when using `get` for `Iterator`.
 #[derive(Debug)]
 pub struct LazyValue<'de> {
@@ -74,8 +74,8 @@ impl<'de> JsonValue for LazyValue<'de> {
 
     fn pointer(&self, path: &crate::JsonPointer) -> Option<Self::ValueType<'_>> {
         match &self.raw {
-            JsonSlice::Raw(r) => unsafe { get_from(*r, path.iter()).ok() },
-            JsonSlice::FastStr(f) => unsafe { get_from(f, path.iter()).ok() },
+            JsonSlice::Raw(r) => unsafe { get_unchecked(*r, path.iter()).ok() },
+            JsonSlice::FastStr(f) => unsafe { get_unchecked(f, path.iter()).ok() },
         }
     }
 }
@@ -120,8 +120,10 @@ impl<'de> LazyValue<'de> {
     pub fn get_index(&'de self, index: usize) -> Option<Self> {
         let path = [index];
         match &self.raw {
-            JsonSlice::Raw(r) => unsafe { get_from(*r, path.iter()).ok() },
-            JsonSlice::FastStr(f) => unsafe { get_from(f, path.iter()).ok() },
+            // #Safety
+            // LazyValue is built with JSON validation, so we can use get_unchecked here.
+            JsonSlice::Raw(r) => unsafe { get_unchecked(*r, path.iter()).ok() },
+            JsonSlice::FastStr(f) => unsafe { get_unchecked(f, path.iter()).ok() },
         }
     }
 
@@ -129,8 +131,10 @@ impl<'de> LazyValue<'de> {
     pub fn get_key(&'de self, key: &str) -> Option<Self> {
         let path = [key];
         match &self.raw {
-            JsonSlice::Raw(r) => unsafe { get_from(*r, path.iter()).ok() },
-            JsonSlice::FastStr(f) => unsafe { get_from(f, path.iter()).ok() },
+            // #Safety
+            // LazyValue is built with JSON validation, so we can use get_unchecked here.
+            JsonSlice::Raw(r) => unsafe { get_unchecked(*r, path.iter()).ok() },
+            JsonSlice::FastStr(f) => unsafe { get_unchecked(f, path.iter()).ok() },
         }
     }
 
@@ -173,7 +177,7 @@ impl<'de> LazyValue<'de> {
 mod test {
     use crate::value::JsonValue;
     use crate::PointerNode;
-    use crate::{get_from, pointer};
+    use crate::{get_unchecked, pointer};
 
     use super::*;
 
@@ -195,7 +199,7 @@ mod test {
     #[test]
     fn test_lazyvalue_export() {
         let f = FastStr::new(TEST_JSON);
-        let value = unsafe { get_from(&f, pointer![].iter()).unwrap() };
+        let value = unsafe { get_unchecked(&f, pointer![].iter()).unwrap() };
         assert_eq!(value.get("int").unwrap().as_raw_str(), "-1");
         assert_eq!(
             value.get("array").unwrap().as_raw_faststr().as_str(),
@@ -214,7 +218,7 @@ mod test {
 
     #[test]
     fn test_lazyvalue_is() {
-        let value = unsafe { get_from(TEST_JSON, pointer![].iter()).unwrap() };
+        let value = unsafe { get_unchecked(TEST_JSON, pointer![].iter()).unwrap() };
         assert!(value.get("bool").is_boolean());
         assert!(value.get("bool").is_true());
         assert!(value.get("uint").is_u64());
@@ -231,7 +235,7 @@ mod test {
 
     #[test]
     fn test_lazyvalue_get() {
-        let value = unsafe { get_from(TEST_JSON, pointer![].iter()).unwrap() };
+        let value = unsafe { get_unchecked(TEST_JSON, pointer![].iter()).unwrap() };
         assert_eq!(value.get("int").as_i64().unwrap(), -1);
         assert_eq!(value.pointer(&pointer!["array", 2]).as_u64().unwrap(), 3);
         assert_eq!(
@@ -250,13 +254,13 @@ mod test {
             "hello"
         );
 
-        let value = unsafe { get_from(TEST_JSON, pointer![].iter()).unwrap() };
+        let value = unsafe { get_unchecked(TEST_JSON, pointer![].iter()).unwrap() };
         assert_eq!(
             value.get("string_escape").unwrap().into_cow_str().unwrap(),
             "\"hello\""
         );
 
-        let value = unsafe { get_from(TEST_JSON, pointer![].iter()).unwrap() };
+        let value = unsafe { get_unchecked(TEST_JSON, pointer![].iter()).unwrap() };
         assert!(value.get("int").unwrap().into_cow_str().is_err());
     }
 }

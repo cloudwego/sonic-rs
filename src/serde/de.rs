@@ -231,19 +231,34 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         V: de::Visitor<'de>,
     {
         match self.parser.skip_space_peek() {
-            Some(b'-') | Some(b'0'..=b'9') => {
-                let raw = as_str(self.parser.skip_one()?);
+            Some(c @ b'-' | c @ b'0'..=b'9') => {
+                let start = self.parser.read.index();
+                self.parser.read.eat(1);
+                self.parser.skip_number(c)?;
+                let end = self.parser.read.index();
+                let raw = as_str(self.parser.read.slice_unchecked(start, end));
                 return visitor.visit_map(BorrowedJsonNumberDeserializer {
                     raw_value: Some(raw),
                 });
             }
             Some(b'"') => {
-                let raw = self.parser.skip_one()?;
-                if !matches!(raw.get(1), Some(b'-') | Some(b'0'..=b'9')) {
+                self.parser.read.eat(1);
+                let start = self.parser.read.index();
+                match self.parser.read.next() {
+                    Some(c @ b'-' | c @ b'0'..=b'9') => {
+                        self.parser.skip_number(c)?;
+                    }
+                    _ => return Err(self.parser.error(ErrorCode::InvalidNumber)),
+                }
+                let end = self.parser.read.index();
+                let raw = as_str(self.parser.read.slice_unchecked(start, end));
+                // macth the right quote
+                if self.parser.read.next() != Some(b'"') {
                     return Err(self.parser.error(ErrorCode::InvalidNumber));
                 }
+
                 return visitor.visit_map(BorrowedJsonNumberDeserializer {
-                    raw_value: Some(as_str(&raw[1..raw.len() - 1])),
+                    raw_value: Some(raw),
                 });
             }
             _ => Err(self.parser.error(ErrorCode::InvalidNumber)),

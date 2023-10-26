@@ -72,15 +72,8 @@ impl Display for RawValue {
 }
 
 impl RawValue {
-    /// Convert an owned `String` of JSON data to an owned `RawValue`.
-    ///
-    /// This function is equivalent to `sonic_rs::from_str::<Box<RawValue>>`
-    /// except that we avoid an allocation and memcpy if both of the following
-    /// are true:
-    ///
-    /// - the input has no leading or trailing whitespace, and
-    /// - the input has capacity equal to its length.
-    pub fn from_string(json: String) -> Result<Box<Self>, Error> {
+    // RawValue can be get by deserialize from a json.
+    pub(crate) fn from_string(json: String) -> Result<Box<Self>, Error> {
         {
             let borrowed = crate::from_str::<&Self>(&json)?;
             if borrowed.json.len() < json.len() {
@@ -90,7 +83,7 @@ impl RawValue {
         Ok(Self::from_owned(json.into_boxed_str()))
     }
 
-    pub fn from_json_str(json: &str) -> Result<&Self, Error> {
+    pub(crate) fn from_json_str(json: &str) -> Result<&Self, Error> {
         crate::from_str::<&Self>(json)
     }
 
