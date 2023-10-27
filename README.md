@@ -60,7 +60,7 @@ Model name:          Intel(R) Xeon(R) Platinum 8260 CPU @ 2.40GHz
 ```
 Benchmarks:
 
-- Deserialize Struct: Deserialize the JSON into Rust struct. The defined struct and testdata is from [json-benchmark][https://github.com/serde-rs/json-benchmark]
+- Deserialize Struct: Deserialize the JSON into Rust struct. The defined struct and testdata is from [json-benchmark](https://github.com/serde-rs/json-benchmark)
 
 - Deseirlize Untyped: Deseialize the JSON into a document
 
@@ -223,12 +223,21 @@ citm_catalog/serde_json::to_string
 
 `cargo bench --bench get_from -- --quiet`
 
-The benchmark is getting a specific field from the twitter JSON. In both sonic-rs and gjson, the JSON should be well-formed and valid when using get or get_from. Sonic-rs utilize SIMD to quickly skip unnecessary fields, thus enhancing the performance.
+The benchmark is getting a specific field from the twitter JSON. 
+
+- sonic-rs::get_unchecked_from_str: without validate
+- sonic-rs::get_from_str: with validate
+- gjson::get_from_str: without validate
+
+Sonic-rs utilize SIMD to quickly skip unnecessary fields in the unchecked case, thus enhancing the performance.
 
 ```
+twitter/sonic-rs::get_unchecked_from_str
+                        time:   [67.390 µs 68.121 µs 69.028 µs]
 twitter/sonic-rs::get_from_str
-                        time:   [79.432 µs 80.008 µs 80.738 µs]
-twitter/gjson::get      time:   [344.41 µs 351.36 µs 362.03 µs]
+                        time:   [428.33 µs 437.55 µs 448.50 µs]
+twitter/gjson::get_from_str
+                        time:   [348.30 µs 355.34 µs 364.13 µs]
 ```
 
 ## Usage
@@ -267,7 +276,10 @@ fn main() {
 
 ### Get a field from JSON
 
-Get a specific field from a JSON with the `pointer` path. The return is a `LazyValue`, which is a wrapper of a raw JSON slice. Note that the JSON must be valid and well-formed, otherwise it may return unexpected result.
+Get a specific field from a JSON with the `pointer` path. The return is a `LazyValue`, which is a wrapper of a raw valid JSON slice. 
+
+We provide the `get` and `get_unchecked` apis. `get_unchecked` apis should be used in valid JSON, otherwise it may return unexpected result.
+
 
 ```rs
 use sonic_rs::{get_from_str, pointer, JsonValue, PointerNode};
@@ -277,7 +289,8 @@ fn main() {
     let json = r#"
         {"u": 123, "a": {"b" : {"c": [null, "found"]}}}
     "#;
-    let target = unsafe { get_from_str(json, &path).unwrap() };
+    let target = get(json, &path).unwrap() };
+    // or let target = unsafe { get_unchecked(json, &path).unwrap() };
     assert_eq!(target.as_raw_str(), r#""found""#);
     assert_eq!(target.as_str().unwrap(), "found");
 
@@ -286,7 +299,7 @@ fn main() {
         {"u": 123, "a": {"b" : {"c": [null, "found"]}}}
     "#;
     // not found from json
-    let target = unsafe { get_from_str(json, &path) };
+    let target = get(json, &path);
     assert!(target.is_err());
 }
 ```
@@ -347,13 +360,13 @@ use sonic_rs::{to_array_iter, JsonValue};
 
 fn main() {
     let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6]"#);
-    let iter = unsafe { to_array_iter(&json) };
+    let iter = to_array_iter(&json);
     for (i, v) in iter.enumerate() {
         assert_eq!(i + 1, v.as_u64().unwrap() as usize);
     }
 
     let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6"#);
-    let iter = unsafe { to_array_iter(&json) };
+    let iter = to_array_iter(&json);
     for elem in iter {
         // deal with errors when invalid json
         if elem.is_err() {

@@ -58,7 +58,7 @@ Model name:          Intel(R) Xeon(R) Platinum 8260 CPU @ 2.40GHz
 
 基准测试主要有两个方面：
 
-- 解析到结构体：定义的结构体和测试数据来自 [json-benchmark][https://github.com/serde-rs/json-benchmark]
+- 解析到结构体：定义的结构体和测试数据来自 [json-benchmark](https://github.com/serde-rs/json-benchmark)
 
 - 解析到 document
 
@@ -223,12 +223,21 @@ citm_catalog/serde_json::to_string
 
 `cargo bench --bench get_from -- --quiet`
 
-基准测试是从 twitter JSON 中获取特定字段。在 sonic-rs 和 gjson 中，使用 get 或 get_from 时，JSON 应该格式正确且有效。Sonic-rs 利用 SIMD 快速跳过不必要的字段，从而提高性能。
+基准测试是从 twitter JSON 中获取特定字段。
+
+- sonic-rs::get_unchecked_from_str: 不校验json
+- sonic-rs::get_from_str: 校验json
+- gjson::get_from_str: 不校验json
+
+在 get_unchecked_from_str 中，Sonic-rs 利用 SIMD 快速跳过不必要的字段，从而提高性能。
 
 ```
+twitter/sonic-rs::get_unchecked_from_str
+                        time:   [67.390 µs 68.121 µs 69.028 µs]
 twitter/sonic-rs::get_from_str
-                        time:   [79.432 µs 80.008 µs 80.738 µs]
-twitter/gjson::get      time:   [344.41 µs 351.36 µs 362.03 µs]
+                        time:   [428.33 µs 437.55 µs 448.50 µs]
+twitter/gjson::get_from_str
+                        time:   [348.30 µs 355.34 µs 364.13 µs]
 ```
 
 ## 用法
@@ -267,7 +276,9 @@ fn main() {
 
 ### 从 JSON 中获取字段
 
-使用 `pointer` 路径从 JSON 中获取特定字段。返回的是 `LazyValue`，本质上是一段未解析的 JSON 切片。请注意，使用该 API 需要保证 JSON 是格式良好且有效的，否则可能返回非预期结果。
+使用 `pointer` 路径从 JSON 中获取特定字段。返回的是 `LazyValue`，本质上是一段未解析的 JSON 切片。
+
+sonic-rs 提供了 `get` 和 `get_unchecked` 两种接口。请注意，如果使用 `unchecked` 接口，需要保证 输入的JSON 是格式良好且合法的，否则可能返回非预期结果。
 
 ```rs
 use sonic_rs::{get_from_str, pointer, JsonValue, PointerNode};
@@ -277,7 +288,8 @@ fn main() {
     let json = r#"
         {"u": 123, "a": {"b" : {"c": [null, "found"]}}}
     "#;
-    let target = unsafe { get_from_str(json, &path).unwrap() };
+    let target = get(json, &path).unwrap() };
+    // or let target = unsafe { get_unchecked(json, &path).unwrap() };
     assert_eq!(target.as_raw_str(), r#""found""#);
     assert_eq!(target.as_str().unwrap(), "found");
 
@@ -348,13 +360,13 @@ use sonic_rs::{to_array_iter, JsonValue};
 
 fn main() {
     let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6]"#);
-    let iter = unsafe { to_array_iter(&json) };
+    let iter = to_array_iter(&json);
     for (i, v) in iter.enumerate() {
         assert_eq!(i + 1, v.as_u64().unwrap() as usize);
     }
 
     let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6"#);
-    let iter = unsafe { to_array_iter(&json) };
+    let iter = to_array_iter(&json);
     for elem in iter {
         // deal with errors when invalid json
         if elem.is_err() {
