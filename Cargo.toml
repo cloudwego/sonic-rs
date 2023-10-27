@@ -17,6 +17,7 @@ categories = ["encoding", "parser-implementations"]
 cfg-if = "1.0"
 arrayref = "0.3"
 packed_simd = { version = "0.3", package = "packed_simd" }
+
 serde = { version = "1.0", default-features = false }
 itoa = "1.0"
 ryu = "1.0"
@@ -31,7 +32,7 @@ simdutf8 = "0.1"
 jemallocator =  "0.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
-simd-json = "0.12"
+simd-json = "0.13"
 core_affinity = "0.8"
 criterion = { version = "0.5", features = ["html_reports"] }
 gjson = "0.8"

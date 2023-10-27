@@ -7,7 +7,6 @@ use crate::reader::SliceRead;
 use faststr::FastStr;
 
 /// A lazied iterator for JSON object.
-/// ObjectIterator can be used as `into_iter` directly.
 pub struct ObjectIntoIter<'de> {
     json: JsonSlice<'de>,
     parser: Option<Parser<SliceRead<'static>>>,
@@ -17,7 +16,6 @@ pub struct ObjectIntoIter<'de> {
 }
 
 /// A lazied iterator for JSON array.
-/// ArrayIterator can be used as `into_iter` directly.
 pub struct ArrayIntoIter<'de> {
     json: JsonSlice<'de>,
     parser: Option<Parser<SliceRead<'static>>>,

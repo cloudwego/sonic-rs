@@ -24,7 +24,7 @@ fn bench_get(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("twitter");
 
-    group.bench_with_input("sonic-rs::get_from_str", data, |b, data| {
+    group.bench_with_input("sonic-rs::get_unchecked_from_str", data, |b, data| {
         b.iter_batched(
             || data,
             |json| unsafe { sonic_rs::get_unchecked(json, &rpath) },
@@ -32,7 +32,15 @@ fn bench_get(c: &mut Criterion) {
         )
     });
 
-    group.bench_with_input("gjson::get", data, |b, data| {
+    group.bench_with_input("sonic-rs::get_from_str", data, |b, data| {
+        b.iter_batched(
+            || data,
+            |json| sonic_rs::get(json, &rpath),
+            BatchSize::SmallInput,
+        )
+    });
+
+    group.bench_with_input("gjson::get_from_str", data, |b, data| {
         b.iter_batched(
             || data,
             |json| gjson::get(json, gpath),
