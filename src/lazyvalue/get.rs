@@ -3,11 +3,11 @@ use crate::error::Result;
 use crate::input::JsonInput;
 use crate::parser::Parser;
 use crate::pointer::{PointerTrait, PointerTree};
+use crate::reader::Reader;
 use crate::reader::SliceRead;
+use crate::util::utf8::from_utf8;
 use bytes::Bytes;
 use faststr::FastStr;
-use crate::reader::Reader;
-use crate::util::utf8::from_utf8;
 
 /// get_from_str_unchecked returns the raw value from path.
 ///
@@ -177,9 +177,9 @@ where
     let mut parser = Parser::new(reader);
     let out = parser.get_many(tree, true)?;
     let nodes = out
-    .into_iter()
-    .map(|subset| LazyValue::new(json.from_subset(subset)))
-    .collect();
+        .into_iter()
+        .map(|subset| LazyValue::new(json.from_subset(subset)))
+        .collect();
 
     // validate the utf-8 if slice
     let index = parser.read.index();
@@ -193,7 +193,7 @@ where
 mod test {
     use super::*;
     use crate::{pointer, JsonPointer, PointerNode};
-    use std::str::{FromStr, from_utf8_unchecked};
+    use std::str::{from_utf8_unchecked, FromStr};
 
     #[test]
     fn test_get_from_json() {
@@ -269,7 +269,7 @@ mod test {
             assert!(out.is_err(), "json is {:?}", json);
 
             // test for SIMD codes
-            let json =  unsafe { from_utf8_unchecked(json) }.to_string() + &" ".repeat(1000);
+            let json = unsafe { from_utf8_unchecked(json) }.to_string() + &" ".repeat(1000);
             let out = get_from_slice(json.as_bytes(), path);
             assert!(out.is_err());
         }

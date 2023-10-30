@@ -6,7 +6,7 @@ use std::slice::from_raw_parts_mut;
 use std::mem::MaybeUninit;
 
 /// WriterExt is a extension to write with reserved space. It is designed for
-/// SIMD serializing without bound-checking. 
+/// SIMD serializing without bound-checking.
 pub trait WriterExt: io::Write {
     /// rerserve with additional space, equal as vector/bufmut reserve, but return the reserved buffer at [len: cap]
     /// # Safety
@@ -71,7 +71,7 @@ impl<W: WriterExt + ?Sized> WriterExt for Box<W> {
 
 #[cfg(test)]
 mod test {
-    use bytes::{BytesMut, BufMut};
+    use bytes::{BufMut, BytesMut};
 
     use crate::writer::WriterExt;
     use std::io::Write;
@@ -79,7 +79,7 @@ mod test {
     #[test]
     fn test_writer() {
         let buffer = BytesMut::new();
-        let writer =  &mut buffer.writer();
+        let writer = &mut buffer.writer();
 
         let buf = unsafe { writer.reserve_with(20) }.unwrap_or_default();
         assert_eq!(buf.len(), 20);

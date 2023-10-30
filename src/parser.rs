@@ -346,8 +346,8 @@ where
         };
 
         let reader = &mut self.read;
-        if let Some(chunck) = reader.next_n(literal.len()) {
-            if chunck != literal.as_bytes() {
+        if let Some(chunk) = reader.next_n(literal.len()) {
+            if chunk != literal.as_bytes() {
                 perr!(self, InvalidLiteral)
             } else {
                 let ok = match first {
@@ -717,8 +717,8 @@ where
     fn get_next_token<const N: usize>(&mut self, tokens: [u8; N], advance: usize) -> Option<u8> {
         let r = &mut self.read;
         const LANS: usize = u8x32::lanes();
-        while let Some(chunck) = r.peek_n(LANS) {
-            let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunck) };
+        while let Some(chunk) = r.peek_n(LANS) {
+            let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
             let mut vor = m8x32::splat(false);
             for t in tokens.iter().take(N) {
                 vor |= v.eq(u8x32::splat(*t));
@@ -726,7 +726,7 @@ where
             let next = vor.bitmask();
             if next != 0 {
                 let cnt = next.trailing_zeros() as usize;
-                let ch = chunck[cnt];
+                let ch = chunk[cnt];
                 r.eat(cnt + advance);
                 return Some(ch);
             }
@@ -756,8 +756,8 @@ where
         let mut prev_escaped = 0;
         let mut status = ParseStatus::None;
 
-        while let Some(chunck) = r.peek_n(LANS) {
-            let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunck) };
+        while let Some(chunk) = r.peek_n(LANS) {
+            let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
             let bs_bits = (v.eq(u8x32::splat(b'\\'))).bitmask();
             quote_bits = (v.eq(u8x32::splat(b'"'))).bitmask();
             // maybe has escaped quotes
@@ -811,8 +811,8 @@ where
         const LANS: usize = u8x32::lanes();
         let r = &mut self.read;
 
-        while let Some(chunck) = r.peek_n(LANS) {
-            let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunck) };
+        while let Some(chunk) = r.peek_n(LANS) {
+            let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
             let v_bs = v.eq(u8x32::splat(b'\\'));
             let v_quote = v.eq(u8x32::splat(b'"'));
             let v_cc = v.lt(u8x32::splat(0x20));
@@ -823,7 +823,7 @@ where
                 let cnt = mask.trailing_zeros() as usize;
                 r.eat(cnt + 1);
 
-                let ch = chunck[cnt];
+                let ch = chunk[cnt];
                 if ch == b'\\' {
                     // at leaset need two bytes, such as `"\""`
                     if r.remain() < 2 {
@@ -946,8 +946,8 @@ where
         let mut lbrace_num = 0;
         let reader = &mut self.read;
 
-        while let Some(chunck) = reader.peek_n(64) {
-            let input = array_ref![chunck, 0, 64];
+        while let Some(chunk) = reader.peek_n(64) {
+            let input = array_ref![chunk, 0, 64];
             if let Some(count) = skip_container_loop(
                 input,
                 &mut prev_instring,
@@ -1021,14 +1021,14 @@ where
         }
 
         // then we use simd to accelerate skipping space
-        while let Some(chunck) = reader.peek_n(64) {
-            let chunck = array_ref![chunck, 0, 64];
-            let bitmap = get_nonspace_bits(chunck);
+        while let Some(chunk) = reader.peek_n(64) {
+            let chunk = array_ref![chunk, 0, 64];
+            let bitmap = get_nonspace_bits(chunk);
             if bitmap != 0 {
                 self.nospace_bits = bitmap;
                 self.nospace_start = reader.index() as isize;
                 let cnt = bitmap.trailing_zeros() as usize;
-                let ch = chunck[cnt];
+                let ch = chunk[cnt];
                 reader.eat(cnt + 1);
 
                 return Some(ch);
@@ -1081,14 +1081,14 @@ where
         }
 
         // then we use simd to accelerate skipping space
-        while let Some(chunck) = reader.peek_n(64) {
-            let chunck = array_ref![chunck, 0, 64];
-            let bitmap = get_nonspace_bits(chunck);
+        while let Some(chunk) = reader.peek_n(64) {
+            let chunk = array_ref![chunk, 0, 64];
+            let bitmap = get_nonspace_bits(chunk);
             if bitmap != 0 {
                 self.nospace_bits = bitmap;
                 self.nospace_start = reader.index() as isize;
                 let cnt = bitmap.trailing_zeros() as usize;
-                let ch = chunck[cnt];
+                let ch = chunk[cnt];
                 reader.eat(cnt + 1);
 
                 return ch;
@@ -1114,8 +1114,8 @@ where
     #[inline(always)]
     pub(crate) fn parse_literal(&mut self, literal: &str) -> Result<()> {
         let reader = &mut self.read;
-        if let Some(chunck) = reader.next_n(literal.len()) {
-            if chunck == literal.as_bytes() {
+        if let Some(chunk) = reader.next_n(literal.len()) {
+            if chunk == literal.as_bytes() {
                 Ok(())
             } else {
                 perr!(self, InvalidLiteral)
@@ -1192,15 +1192,15 @@ where
         }
 
         // SIMD path for long number
-        while let Some(chunck) = self.read.peek_n(32) {
-            let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunck) };
+        while let Some(chunk) = self.read.peek_n(32) {
+            let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
             let less0 = u8x32::splat(b'0' - 1);
             let nine = u8x32::splat(b'9');
             let nondigits = !(v.gt(less0) & v.le(nine)).bitmask();
 
             if nondigits != 0 {
                 let cnt = nondigits.trailing_zeros() as usize;
-                let ch = chunck[cnt];
+                let ch = chunk[cnt];
                 if ch == b'.' && !is_float {
                     self.read.eat(cnt + 1);
                     // check the first digit after the dot
@@ -1210,7 +1210,7 @@ where
                     let nondigts = nondigits >> (cnt + 1);
                     if nondigts != 0 {
                         let cnt = nondigts.trailing_zeros() as usize;
-                        let ch = chunck[cnt];
+                        let ch = chunk[cnt];
                         if ch == b'e' || ch == b'E' {
                             self.read.eat(cnt + 1);
                             return self.skip_exponent();
