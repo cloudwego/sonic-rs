@@ -5,19 +5,21 @@ use std::slice::from_raw_parts_mut;
 
 use std::mem::MaybeUninit;
 
+/// WriterExt is a extension to write with reserved space. It is designed for
+/// SIMD serializing without bound-checking. 
 pub trait WriterExt: io::Write {
     /// rerserve with additional space, equal as vector/bufmut reserve, but return the reserved buffer at [len: cap]
     /// # Safety
-    /// must be used with add len
+    /// must be used with `add_len`
     unsafe fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]>;
 
     /// add len to the writer
     /// # Safety
-    /// must be used after reserve_with
+    /// must be used after `reserve_with`
     unsafe fn add_len(&mut self, additional: usize);
 }
 
-impl WriterExt for &mut Vec<u8> {
+impl WriterExt for Vec<u8> {
     unsafe fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
         self.reserve(additional);
         unsafe {
@@ -49,23 +51,43 @@ impl WriterExt for Writer<BytesMut> {
     }
 }
 
+impl<W: WriterExt + ?Sized> WriterExt for &mut W {
+    unsafe fn add_len(&mut self, additional: usize) {
+        (*self).add_len(additional)
+    }
+    unsafe fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
+        (*self).reserve_with(additional)
+    }
+}
+
+impl<W: WriterExt + ?Sized> WriterExt for Box<W> {
+    unsafe fn add_len(&mut self, additional: usize) {
+        (**self).add_len(additional)
+    }
+    unsafe fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
+        (**self).reserve_with(additional)
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use bytes::{BytesMut, BufMut};
+
     use crate::writer::WriterExt;
     use std::io::Write;
 
     #[test]
     fn test_writer() {
-        let mut buffer: Vec<u8> = Vec::new();
-        let mut writer = &mut buffer;
+        let buffer = BytesMut::new();
+        let writer =  &mut buffer.writer();
 
         let buf = unsafe { writer.reserve_with(20) }.unwrap_or_default();
         assert_eq!(buf.len(), 20);
-        assert_eq!(writer.capacity(), 20);
+        assert_eq!(writer.get_ref().capacity(), 20);
 
         let data = b"Hello, World!";
         writer.write_all(&data[..]).unwrap();
-        assert_eq!(writer.capacity(), 20);
-        assert_eq!(writer, &data[..]);
+        assert_eq!(writer.get_ref().capacity(), 20);
+        assert_eq!(writer.get_ref().as_ref(), &data[..]);
     }
 }
