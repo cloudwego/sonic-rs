@@ -25,7 +25,6 @@ More details about optimization can be found in [performance.md](docs/performanc
 
 1. Support x86_64 or aarch64. Note that the performance in aarch64 is lower and needs optimization.
 2. Requires Rust nightly version, as we use the `packed_simd` crate.
-3. When using `get_from`, `get_many`, `JsonIter` or `RawValue`, ***Warn:*** the JSON should be well-formed and valid.
 
 ## Features
 1. Serde into Rust struct as `serde_json` and `serde`.
@@ -47,7 +46,7 @@ To ensure that SIMD instruction is used in sonic-rs, you need to add rustflags `
 Add sonic-rs in `Cargo.toml`
 ```
 [dependencies]
-sonic-rs = 0.2.0
+sonic-rs = 0.2
 ```
 
 ## Benchmark
@@ -395,7 +394,6 @@ By default, sonic-rs does not enable UTF-8 validation. This is a trade-off to ac
 
 - For the `from_slice` and `dom_from_slice` interfaces, validate UTF-8 in default. If users make sure that the json is utf-8 valid, recommended use the `from_slice_unchecked` and `dom_from_slice_unchecked`.
 
-- For the `get` and `lazyvalue` related interfaces, due to the algorithm design, these interfaces are ***only suitable for use in valid-json scenarios***, and we will not provide UTF-8 validation in the future.
 
 ### About floating point precision
 
