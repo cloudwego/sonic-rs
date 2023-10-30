@@ -1,6 +1,7 @@
-use crate::Error;
-use crate::ErrorCode;
-use crate::{error::Result, reader::Position};
+use crate::{
+    error::{Error, ErrorCode, Result},
+    reader::Position,
+};
 
 #[inline(always)]
 pub(crate) fn from_utf8(data: &[u8]) -> Result<&str> {

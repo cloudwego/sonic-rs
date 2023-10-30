@@ -68,7 +68,7 @@ impl<'de> JsonValue for LazyValue<'de> {
         }
     }
 
-    fn get<I: crate::Index>(&self, index: I) -> Option<Self::ValueType<'_>> {
+    fn get<I: crate::value::Index>(&self, index: I) -> Option<Self::ValueType<'_>> {
         index.lazyvalue_index_into(self)
     }
 
