@@ -25,7 +25,6 @@ sonic-rs 的主要优化是使用 SIMD。然而，sonic-rs 没有使用来自`si
 
 1. 支持 x86_64 或 aarch64，aarch64 的性能较低，需要优化。
 2. 需要 Rust nightly 版本，因为 sonic-rs 使用了 `packed_simd` 包。
-3. 使用 `get_from`、`get_many`、`JsonIter` 或 `RawValue` 时，JSON 应该是格式正确且有效的。
 
 ## 功能
 
@@ -43,7 +42,7 @@ sonic-rs 的主要优化是使用 SIMD。然而，sonic-rs 没有使用来自`si
 在 Cargo 依赖中添加 sonic-rs:
 ```
 [dependencies]
-sonic-rs = 0.2.0
+sonic-rs = 0.2
 ```
 
 
@@ -392,8 +391,6 @@ fn main() {
 sonic-rs 默认并不开启 utf-8 校验，这是为了性能做出的权衡。
 
 - 对于 `from_slice` 和 `dom_from_slice` 接口，默认开启了 `utf8` 校验。如果用户确保是 `utf-8`, 也可以使用 `from_slice_unchecked` 和 `dom_from_slice_unchecked`。
-
-- 对于 `get` 和 `lazyvaue` 相关接口，由于实现算法设计的原因，这些接口***只适合在 valid-json 场景下使用***，我们后续也不会提供 utf-8 校验。
 
 ### 关于浮点数精度
 
