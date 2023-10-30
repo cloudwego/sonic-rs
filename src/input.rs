@@ -60,6 +60,7 @@ impl<'de> AsRef<[u8]> for JsonSlice<'de> {
 }
 
 pub trait JsonInput<'de>: Sealed {
+    fn need_utf8_valid(&self) -> bool;
     fn to_json_slice(&self) -> JsonSlice<'de>;
     #[allow(clippy::wrong_self_convention)]
     fn from_subset(&self, sub: &'de [u8]) -> JsonSlice<'de>;
@@ -67,6 +68,10 @@ pub trait JsonInput<'de>: Sealed {
 }
 
 impl<'de> JsonInput<'de> for &'de [u8] {
+    fn need_utf8_valid(&self) -> bool {
+        true
+    }
+
     fn to_json_slice(&self) -> JsonSlice<'de> {
         JsonSlice::Raw(self)
     }
@@ -81,6 +86,9 @@ impl<'de> JsonInput<'de> for &'de [u8] {
 }
 
 impl<'de> JsonInput<'de> for &'de str {
+    fn need_utf8_valid(&self) -> bool {
+        false
+    }
     fn to_json_slice(&self) -> JsonSlice<'de> {
         JsonSlice::Raw((*self).as_bytes())
     }
@@ -95,6 +103,10 @@ impl<'de> JsonInput<'de> for &'de str {
 }
 
 impl<'de> JsonInput<'de> for &'de Bytes {
+    fn need_utf8_valid(&self) -> bool {
+        true
+    }
+
     fn to_json_slice(&self) -> JsonSlice<'de> {
         let bytes = self.as_ref();
         let newed = self.slice_ref(bytes);
@@ -111,6 +123,10 @@ impl<'de> JsonInput<'de> for &'de Bytes {
 }
 
 impl<'de> JsonInput<'de> for &'de FastStr {
+    fn need_utf8_valid(&self) -> bool {
+        false
+    }
+
     fn to_json_slice(&self) -> JsonSlice<'de> {
         JsonSlice::FastStr((**self).clone())
     }
@@ -125,6 +141,10 @@ impl<'de> JsonInput<'de> for &'de FastStr {
 }
 
 impl<'de> JsonInput<'de> for &'de String {
+    fn need_utf8_valid(&self) -> bool {
+        false
+    }
+
     fn to_json_slice(&self) -> JsonSlice<'de> {
         JsonSlice::Raw(self.as_bytes())
     }

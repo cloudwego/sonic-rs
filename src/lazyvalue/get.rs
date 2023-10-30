@@ -6,6 +6,8 @@ use crate::pointer::{PointerTrait, PointerTree};
 use crate::reader::SliceRead;
 use bytes::Bytes;
 use faststr::FastStr;
+use crate::reader::Reader;
+use crate::util::utf8::from_utf8;
 
 /// get_from_str_unchecked returns the raw value from path.
 ///
@@ -151,9 +153,16 @@ where
     let slice = json.to_u8_slice();
     let reader = SliceRead::new(slice);
     let mut parser = Parser::new(reader);
-    parser
+    let node = parser
         .get_from_with_iter_checked(path)
-        .map(|sub| LazyValue::new(json.from_subset(sub)))
+        .map(|sub| LazyValue::new(json.from_subset(sub)))?;
+
+    // validate the utf-8 if slice
+    let index = parser.read.index();
+    if json.need_utf8_valid() {
+        from_utf8(&slice[..index])?;
+    }
+    Ok(node)
 }
 
 /// get_many returns the raw value from the PointerTree. The result is a Vec<LazyValue>.
@@ -167,17 +176,24 @@ where
     let reader = SliceRead::new(slice);
     let mut parser = Parser::new(reader);
     let out = parser.get_many(tree, true)?;
-    Ok(out
-        .into_iter()
-        .map(|subset| LazyValue::new(json.from_subset(subset)))
-        .collect())
+    let nodes = out
+    .into_iter()
+    .map(|subset| LazyValue::new(json.from_subset(subset)))
+    .collect();
+
+    // validate the utf-8 if slice
+    let index = parser.read.index();
+    if json.need_utf8_valid() {
+        from_utf8(&slice[..index])?;
+    }
+    Ok(nodes)
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::{pointer, JsonPointer, PointerNode};
-    use std::str::FromStr;
+    use std::str::{FromStr, from_utf8_unchecked};
 
     #[test]
     fn test_get_from_json() {
@@ -248,21 +264,23 @@ mod test {
 
     #[test]
     fn test_get_from_json_failed() {
-        fn test_get_failed(json: &str, path: &JsonPointer) {
-            let out = get_from_str(json, path);
-            assert!(out.is_err());
+        fn test_get_failed(json: &[u8], path: &JsonPointer) {
+            let out = get_from_slice(json, path);
+            assert!(out.is_err(), "json is {:?}", json);
 
             // test for SIMD codes
-            let json = json.to_string() + &" ".repeat(1000);
-            let out = get_from_str(&json, path);
+            let json =  unsafe { from_utf8_unchecked(json) }.to_string() + &" ".repeat(1000);
+            let out = get_from_slice(json.as_bytes(), path);
             assert!(out.is_err());
         }
 
-        test_get_failed(r#"{"a":"\n\tHello,\nworld!\n"}"#, &pointer!["b"]);
-        test_get_failed(r#"{"a":"\n\tHello,\nworld!\n"}"#, &pointer!["a", "b"]);
-        test_get_failed(r#"{"a":"\n\tHello,\nworld!\n"}"#, &pointer!["a", 1]);
-        test_get_failed(r#"{"a": ""invalid", "b":null}"#, &pointer!["a", "b"]);
-        test_get_failed(r#"{"a": "", "b":["123]"}"#, &pointer!["a", "b"]);
+        test_get_failed(br#"{"a":"\n\tHello,\nworld!\n"}"#, &pointer!["b"]);
+        test_get_failed(br#"{"a":"\n\tHello,\nworld!\n"}"#, &pointer!["a", "b"]);
+        test_get_failed(br#"{"a":"\n\tHello,\nworld!\n"}"#, &pointer!["a", 1]);
+        test_get_failed(br#"{"a": ""invalid", "b":null}"#, &pointer!["a", "b"]);
+        test_get_failed(br#"{"a": "", "b":["123]"}"#, &pointer!["a", "b"]);
+        let data = [b'"', 0x32, 0x32, 0x32, 0x80, 0x90, b'"'];
+        test_get_failed(&data, &pointer![]);
     }
 
     #[test]
