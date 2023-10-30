@@ -12,9 +12,6 @@ pub use self::ser::{
 
 pub(crate) use self::de::tri;
 
-// re-export serde trait
-pub use serde::{Deserialize, Serialize};
-
 #[cfg(test)]
 #[allow(clippy::mutable_key_type)]
 mod test {

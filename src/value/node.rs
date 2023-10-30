@@ -1,13 +1,14 @@
 use super::value_trait::{JsonType, JsonValue};
+use super::Index;
+use super::IndexMut;
 use crate::error::Result;
 use crate::parser::Parser;
 use crate::pointer::{JsonPointer, PointerNode};
 use crate::reader::UncheckedSliceRead;
 use crate::serde::tri;
 use crate::util::utf8::from_utf8;
-use crate::value::Index;
 use crate::visitor::JsonVisitor;
-use crate::{to_string, IndexMut, Number};
+use crate::{to_string, Number};
 use bumpalo::Bump;
 use core::mem::size_of;
 use serde::ser::{Error, Serialize, SerializeMap, SerializeSeq};

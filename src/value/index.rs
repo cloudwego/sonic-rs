@@ -1,4 +1,4 @@
-use crate::{value::Value, LazyValue};
+use crate::{lazyvalue::LazyValue, value::Value};
 use core::ops;
 
 pub trait Index: private::Sealed {

@@ -59,6 +59,7 @@ impl Hash for N {
     }
 }
 
+/// Number trait for both `Number` and `RawNumber`.
 pub trait JsonNumberTrait: Sealed {
     fn is_i64(&self) -> bool;
     fn is_u64(&self) -> bool;
