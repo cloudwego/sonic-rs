@@ -31,8 +31,8 @@ impl StringBlock {
     #[inline(always)]
     pub fn find(ptr: *const u8) -> Self {
         let v = unsafe {
-            let chunck = from_raw_parts(ptr, Self::LANS);
-            u8x32::from_slice_unaligned_unchecked(chunck)
+            let chunk = from_raw_parts(ptr, Self::LANS);
+            u8x32::from_slice_unaligned_unchecked(chunk)
         };
         let bs_bits = (v.eq(u8x32::splat(b'\\'))).bitmask();
         let quote_bits = (v.eq(u8x32::splat(b'"'))).bitmask();
@@ -127,8 +127,8 @@ pub(crate) unsafe fn parse_string_inplace(
         'find_and_move: loop {
             let v = unsafe {
                 let ptr = *src;
-                let chunck = from_raw_parts(ptr, LANS);
-                u8x32::from_slice_unaligned_unchecked(chunck)
+                let chunk = from_raw_parts(ptr, LANS);
+                u8x32::from_slice_unaligned_unchecked(chunk)
             };
             let block = StringBlock {
                 bs_bits: (v.eq(u8x32::splat(b'\\'))).bitmask(),
@@ -148,8 +148,8 @@ pub(crate) unsafe fn parse_string_inplace(
                 return Err(ControlCharacterWhileParsingString);
             }
             if !block.has_backslash() {
-                let chunck = from_raw_parts_mut(dst, LANS);
-                v.write_to_slice_unaligned_unchecked(chunck);
+                let chunk = from_raw_parts_mut(dst, LANS);
+                v.write_to_slice_unaligned_unchecked(chunk);
                 *src = src.add(LANS);
                 dst = dst.add(LANS);
                 continue 'find_and_move;
@@ -180,8 +180,8 @@ pub(crate) unsafe fn parse_string_unchecked(
         'find_and_move: loop {
             let v = unsafe {
                 let ptr = *src;
-                let chunck = from_raw_parts(ptr, LANS);
-                u8x32::from_slice_unaligned_unchecked(chunck)
+                let chunk = from_raw_parts(ptr, LANS);
+                u8x32::from_slice_unaligned_unchecked(chunk)
             };
             let block = StringBlock {
                 bs_bits: (v.eq(u8x32::splat(b'\\'))).bitmask(),
@@ -201,8 +201,8 @@ pub(crate) unsafe fn parse_string_unchecked(
                 return Err(ControlCharacterWhileParsingString);
             }
             if !block.has_backslash() {
-                let chunck = from_raw_parts_mut(dst, LANS);
-                v.write_to_slice_unaligned_unchecked(chunck);
+                let chunk = from_raw_parts_mut(dst, LANS);
+                v.write_to_slice_unaligned_unchecked(chunk);
                 *src = src.add(LANS);
                 dst = dst.add(LANS);
                 continue 'find_and_move;
