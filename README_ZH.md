@@ -232,11 +232,11 @@ citm_catalog/serde_json::to_string
 
 ```
 twitter/sonic-rs::get_unchecked_from_str
-                        time:   [67.390 µs 68.121 µs 69.028 µs]
+                        time:   [75.671 µs 76.766 µs 77.894 µs]
 twitter/sonic-rs::get_from_str
-                        time:   [428.33 µs 437.55 µs 448.50 µs]
+                        time:   [430.45 µs 434.62 µs 439.43 µs]
 twitter/gjson::get_from_str
-                        time:   [348.30 µs 355.34 µs 364.13 µs]
+                        time:   [359.61 µs 363.14 µs 367.19 µs]
 ```
 
 ## 用法
