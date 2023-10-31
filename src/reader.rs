@@ -86,10 +86,12 @@ impl<'a> SliceRead<'a> {
 }
 
 impl<'a> Reader<'a> for SliceRead<'a> {
+    #[inline(always)]
     fn remain(&self) -> isize {
         self.slice.len() as isize - self.index as isize
     }
 
+    #[inline(always)]
     fn peek_n(&mut self, n: usize) -> Option<&'a [u8]> {
         let end = self.index + n;
         (end <= self.slice.len()).then(|| {
@@ -98,10 +100,12 @@ impl<'a> Reader<'a> for SliceRead<'a> {
         })
     }
 
+    #[inline(always)]
     fn set_index(&mut self, index: usize) {
         self.index = index
     }
 
+    #[inline(always)]
     fn peek(&mut self) -> Option<u8> {
         if self.index < self.slice.len() {
             Some(self.slice[self.index])
@@ -110,10 +114,12 @@ impl<'a> Reader<'a> for SliceRead<'a> {
         }
     }
 
+    #[inline(always)]
     fn at(&self, index: usize) -> u8 {
         self.slice[index]
     }
 
+    #[inline(always)]
     fn next_n(&mut self, n: usize) -> Option<&'a [u8]> {
         let new_index = self.index + n;
         if new_index <= self.slice.len() {
@@ -125,30 +131,37 @@ impl<'a> Reader<'a> for SliceRead<'a> {
         }
     }
 
+    #[inline(always)]
     unsafe fn cur_ptr(&mut self) -> *mut u8 {
         todo!()
     }
 
+    #[inline(always)]
     unsafe fn set_ptr(&mut self, _cur: *mut u8) {
         todo!()
     }
 
+    #[inline(always)]
     fn index(&self) -> usize {
         self.index
     }
 
+    #[inline(always)]
     fn eat(&mut self, n: usize) {
         self.index += n;
     }
 
+    #[inline(always)]
     fn backward(&mut self, n: usize) {
         self.index -= n;
     }
 
+    #[inline(always)]
     fn slice_unchecked(&self, start: usize, end: usize) -> &'a [u8] {
         &self.slice[start..end]
     }
 
+    #[inline(always)]
     fn as_u8_slice(&self) -> &'a [u8] {
         self.slice
     }
@@ -175,30 +188,37 @@ impl<'a> UncheckedSliceRead<'a> {
 }
 
 impl<'a> Reader<'a> for UncheckedSliceRead<'a> {
+    #[inline(always)]
     fn as_u8_slice(&self) -> &'a [u8] {
         unsafe { std::slice::from_raw_parts(self.base.as_ptr(), self.len) }
     }
 
+    #[inline(always)]
     fn remain(&self) -> isize {
         self.len as isize - self.index() as isize
     }
 
+    #[inline(always)]
     fn peek_n(&mut self, n: usize) -> Option<&'a [u8]> {
         unsafe { Some(std::slice::from_raw_parts(self.cur.as_ptr(), n)) }
     }
 
+    #[inline(always)]
     fn set_index(&mut self, index: usize) {
         unsafe { self.cur = NonNull::new_unchecked(self.base.as_ptr().add(index)) }
     }
 
+    #[inline(always)]
     fn peek(&mut self) -> Option<u8> {
         unsafe { Some(*self.cur.as_ptr()) }
     }
 
+    #[inline(always)]
     fn at(&self, index: usize) -> u8 {
         unsafe { *(self.base.as_ptr().add(index)) }
     }
 
+    #[inline(always)]
     fn next_n(&mut self, n: usize) -> Option<&'a [u8]> {
         unsafe {
             let ptr = self.cur.as_ptr();
@@ -207,6 +227,7 @@ impl<'a> Reader<'a> for UncheckedSliceRead<'a> {
         }
     }
 
+    #[inline(always)]
     fn index(&self) -> usize {
         unsafe { self.cur.as_ptr().offset_from(self.base.as_ptr()) as usize }
     }
@@ -217,19 +238,24 @@ impl<'a> Reader<'a> for UncheckedSliceRead<'a> {
         }
     }
 
+    #[inline(always)]
     unsafe fn cur_ptr(&mut self) -> *mut u8 {
         self.cur.as_ptr()
     }
+
+    #[inline(always)]
     unsafe fn set_ptr(&mut self, cur: *mut u8) {
         self.cur = NonNull::new_unchecked(cur);
     }
 
+    #[inline(always)]
     fn backward(&mut self, n: usize) {
         unsafe {
             self.cur = NonNull::new_unchecked(self.cur.as_ptr().sub(n));
         }
     }
 
+    #[inline(always)]
     fn slice_unchecked(&self, start: usize, end: usize) -> &'a [u8] {
         unsafe {
             let ptr = self.base.as_ptr().add(start);

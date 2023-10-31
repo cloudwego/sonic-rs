@@ -20,6 +20,7 @@ pub trait WriterExt: io::Write {
 }
 
 impl WriterExt for Vec<u8> {
+    #[inline(always)]
     unsafe fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
         self.reserve(additional);
         unsafe {
@@ -28,6 +29,7 @@ impl WriterExt for Vec<u8> {
         }
     }
 
+    #[inline(always)]
     unsafe fn add_len(&mut self, additional: usize) {
         unsafe {
             let new_len = self.len() + additional;
@@ -37,11 +39,13 @@ impl WriterExt for Vec<u8> {
 }
 
 impl WriterExt for Writer<BytesMut> {
+    #[inline(always)]
     unsafe fn add_len(&mut self, additional: usize) {
         let new_len = self.get_ref().len() + additional;
         self.get_mut().set_len(new_len);
     }
 
+    #[inline(always)]
     unsafe fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
         self.get_mut().reserve(additional);
         unsafe {
@@ -52,18 +56,24 @@ impl WriterExt for Writer<BytesMut> {
 }
 
 impl<W: WriterExt + ?Sized> WriterExt for &mut W {
+    #[inline(always)]
     unsafe fn add_len(&mut self, additional: usize) {
         (*self).add_len(additional)
     }
+
+    #[inline(always)]
     unsafe fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
         (*self).reserve_with(additional)
     }
 }
 
 impl<W: WriterExt + ?Sized> WriterExt for Box<W> {
+    #[inline(always)]
     unsafe fn add_len(&mut self, additional: usize) {
         (**self).add_len(additional)
     }
+
+    #[inline(always)]
     unsafe fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
         (**self).reserve_with(additional)
     }
