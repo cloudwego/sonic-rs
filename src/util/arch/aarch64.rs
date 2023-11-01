@@ -8,7 +8,7 @@ pub fn prefix_xor(bitmask: u64) -> u64 {
     bitmask ^= bitmask << 8;
     bitmask ^= bitmask << 16;
     bitmask ^= bitmask << 32;
-    return bitmask;
+    bitmask
 }
 
 #[inline(always)]

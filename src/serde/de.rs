@@ -652,7 +652,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                     let _ = DepthGuard::guard(self);
                     visitor.visit_map(MapAccess::new(self))
                 };
-                return ret;
+                ret
             }
             _ => return Err(self.peek_invalid_type(peek, &visitor)),
         };

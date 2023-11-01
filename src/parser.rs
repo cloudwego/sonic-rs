@@ -1342,7 +1342,7 @@ where
         // deal with the empty object
         match self.get_next_token([b'"', b'}'], 1) {
             Some(b'"') => {}
-            Some(b'}') => return perr!(self, GetInEmptyObj),
+            Some(b'}') => return perr!(self, GetInEmptyObject),
             None => return perr!(self, EofWhileParsing),
             Some(_) => unreachable!(),
         }
@@ -1366,7 +1366,7 @@ where
             // optimze: direct find the next quote of key. or object ending
             match self.get_next_token([b'"', b'}'], 1) {
                 Some(b'"') => continue,
-                Some(b'}') => return perr!(self, GetUnknownKeyInObj),
+                Some(b'}') => return perr!(self, GetUnknownKeyInObject),
                 None => return perr!(self, EofWhileParsing),
                 Some(_) => unreachable!(),
             }
@@ -1387,7 +1387,7 @@ where
         // deal with the empty object
         match self.get_next_token([b'"', b'}'], 1) {
             Some(b'"') => {}
-            Some(b'}') => return perr!(self, GetInEmptyObj),
+            Some(b'}') => return perr!(self, GetInEmptyObject),
             None => return perr!(self, EofWhileParsing),
             Some(_) => unreachable!(),
         }
@@ -1402,7 +1402,7 @@ where
             self.skip_one()?;
 
             match self.skip_space() {
-                Some(b'}') => return perr!(self, GetUnknownKeyInObj),
+                Some(b'}') => return perr!(self, GetUnknownKeyInObject),
                 Some(b',') => match self.skip_space() {
                     Some(b'"') => continue,
                     _ => return perr!(self, ExpectObjectKeyOrEnd),
@@ -1422,23 +1422,27 @@ where
             None => return perr!(self, EofWhileParsing),
         }
 
-        while count > 0 {
-            match self.skip_space_peek() {
-                Some(b']') => return perr!(self, GetIndexOutOfArray),
-                Some(_) => {}
-                None => return perr!(self, EofWhileParsing),
-            }
+        match self.skip_space_peek() {
+            Some(b']') => return perr!(self, GetInEmptyArray),
+            Some(_) => {}
+            None => return perr!(self, EofWhileParsing),
+        }
 
+        while count > 0 {
             self.skip_one()?;
 
             match self.skip_space() {
                 Some(b']') => return perr!(self, GetIndexOutOfArray),
-                Some(b',') => {
-                    count -= 1;
-                    continue;
-                }
+                Some(b',') => {}
                 Some(_) => return perr!(self, ExpectedArrayCommaOrEnd),
                 None => return perr!(self, EofWhileParsing),
+            }
+
+            count -= 1;
+            match self.skip_space_peek() {
+                Some(_) if count == 0 => return Ok(()),
+                None => return perr!(self, EofWhileParsing),
+                _ => continue,
             }
         }
 
@@ -1461,7 +1465,7 @@ where
                 Some(b'{') => self.skip_container(b'{', b'}')?,
                 Some(b'[') => self.skip_container(b'[', b']')?,
                 Some(b'"') => self.skip_string_unchecked()?,
-                Some(b']') => return perr!(self, GetIndexOutOfArray),
+                Some(b']') => return perr!(self, GetInEmptyArray),
                 None => return perr!(self, EofWhileParsing),
                 _ => {}
             };
@@ -1597,7 +1601,7 @@ where
         // deal with the empty object
         match self.get_next_token([b'"', b'}'], 1) {
             Some(b'"') => {}
-            Some(b'}') => return perr!(self, GetInEmptyObj),
+            Some(b'}') => return perr!(self, GetInEmptyObject),
             None => return perr!(self, EofWhileParsing),
             Some(_) => unreachable!(),
         }
@@ -1634,7 +1638,7 @@ where
 
         // check wheter remaining unknown keys
         if visited < mkeys.len() {
-            perr!(self, GetUnknownKeyInObj)
+            perr!(self, GetUnknownKeyInObject)
         } else {
             Ok(())
         }
@@ -1658,7 +1662,7 @@ where
         // deal with the empty object
         match self.get_next_token([b'"', b'}'], 1) {
             Some(b'"') => {}
-            Some(b'}') => return perr!(self, GetInEmptyObj),
+            Some(b'}') => return perr!(self, GetInEmptyObject),
             None => return perr!(self, EofWhileParsing),
             Some(_) => unreachable!(),
         }
@@ -1691,7 +1695,7 @@ where
 
         // check wheter remaining unknown keys
         if visited < mkeys.len() {
-            perr!(self, GetUnknownKeyInObj)
+            perr!(self, GetUnknownKeyInObject)
         } else {
             Ok(())
         }
@@ -1722,6 +1726,13 @@ where
         }
         let mut index = 0;
         let mut visited = 0;
+
+        match self.skip_space_peek() {
+            Some(b']') => return perr!(self, GetInEmptyArray),
+            None => return perr!(self, EofWhileParsing),
+            _ => {}
+        };
+
         loop {
             if let Some(val) = midx.get(&index) {
                 self.get_many_rec(val, out, strbuf, remain, false)?;
@@ -1777,7 +1788,7 @@ where
 
         // check empty array
         match self.skip_space_peek() {
-            Some(b']') => return perr!(self, GetIndexOutOfArray),
+            Some(b']') => return perr!(self, GetInEmptyArray),
             Some(_) => {}
             None => return perr!(self, EofWhileParsing),
         }
