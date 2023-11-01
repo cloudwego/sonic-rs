@@ -55,10 +55,70 @@ impl Error {
         }
     }
 
-    pub(crate) fn new(code: ErrorCode, line: usize, column: usize) -> Self {
-        Error {
-            err: Box::new(ErrorImpl { code, line, column }),
+    /// Categorizes the cause of this error.
+    ///
+    /// - `Category::Io` - failure to read or write bytes on an I/O stream
+    /// - `Category::Syntax` - input that is not syntactically valid JSON
+    /// - `Category::Data` - input data that is semantically incorrect
+    /// - `Category::Eof` - unexpected end of the input data
+    pub fn classify(&self) -> Category {
+        match self.err.code {
+            ErrorCode::Message(_)
+            | ErrorCode::GetInEmptyObject
+            | ErrorCode::GetInEmptyArray
+            | ErrorCode::GetIndexOutOfArray
+            | ErrorCode::GetUnknownKeyInObject
+            | ErrorCode::UnexpectedVisitType => Category::Data,
+            ErrorCode::Io(_) => Category::Io,
+            ErrorCode::EofWhileParsing => Category::Eof,
+            ErrorCode::ExpectedColon
+            | ErrorCode::ExpectedObjectCommaOrEnd
+            | ErrorCode::InvalidEscape
+            | ErrorCode::InvalidJsonValue
+            | ErrorCode::InvalidLiteral
+            | ErrorCode::InvalidUTF8
+            | ErrorCode::InvalidNumber
+            | ErrorCode::NumberOutOfRange
+            | ErrorCode::InvalidUnicodeCodePoint
+            | ErrorCode::ControlCharacterWhileParsingString
+            | ErrorCode::TrailingComma
+            | ErrorCode::TrailingCharacters
+            | ErrorCode::ExpectObjectKeyOrEnd
+            | ErrorCode::ExpectedArrayCommaOrEnd
+            | ErrorCode::ExpectedArrayStart
+            | ErrorCode::ExpectedObjectStart
+            | ErrorCode::RecursionLimitExceeded => Category::Syntax,
         }
+    }
+
+    /// Returns true if this error was caused by a failure to read or write
+    /// bytes on an I/O stream.
+    pub fn is_io(&self) -> bool {
+        self.classify() == Category::Io
+    }
+
+    /// Returns true if this error was caused by input that was not
+    /// syntactically valid JSON.
+    pub fn is_syntax(&self) -> bool {
+        self.classify() == Category::Syntax
+    }
+
+    /// Returns true if this error was caused by input data that was
+    /// semantically incorrect.
+    ///
+    /// For example, JSON containing a number is semantically incorrect when the
+    /// type being deserialized into holds a String.
+    pub fn is_data(&self) -> bool {
+        self.classify() == Category::Data
+    }
+
+    /// Returns true if this error was caused by prematurely reaching the end of
+    /// the input data.
+    ///
+    /// Callers that process streaming input may be interested in retrying the
+    /// deserialization once more data is available.
+    pub fn is_eof(&self) -> bool {
+        self.classify() == Category::Eof
     }
 }
 
@@ -78,6 +138,34 @@ impl From<Error> for std::io::Error {
     }
 }
 
+/// Categorizes the cause of a `sonic_rs::Error`.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[non_exhaustive]
+pub enum Category {
+    /// The error was caused by a failure to read or write bytes on an I/O
+    /// stream.
+    /// TODO: support stream reader in the future
+    Io,
+
+    /// The error was caused by input that was not syntactically valid JSON.
+    Syntax,
+
+    /// The error was caused by input data that was semantically incorrect.
+    ///
+    /// For example:
+    /// 1. JSON containing a number is semantically incorrect when the
+    /// type being deserialized into holds a String.
+    /// 2. When using `get*` APIs, it gets a unknown keys from JSON text, or get
+    /// a index from empty array.
+    Data,
+
+    /// The error was caused by prematurely reaching the end of the input data.
+    ///
+    /// Callers that process streaming input may be interested in retrying the
+    /// deserialization once more data is available.
+    Eof,
+}
+
 struct ErrorImpl {
     code: ErrorCode,
     line: usize,
@@ -86,7 +174,7 @@ struct ErrorImpl {
 
 #[derive(ErrorTrait, Debug)]
 pub(crate) enum ErrorCode {
-    #[error("`{0}`")]
+    #[error("{0}")]
     Message(Box<str>),
 
     #[error("io error while serializing or deserializing")]
@@ -146,13 +234,16 @@ pub(crate) enum ErrorCode {
     #[error("Encountered nesting of JSON maps and arrays more than 128 layers deep")]
     RecursionLimitExceeded,
 
-    #[error("Get value from a empty object")]
-    GetInEmptyObj,
+    #[error("Get value from an empty object")]
+    GetInEmptyObject,
 
-    #[error("Get unknown key from a object")]
-    GetUnknownKeyInObj,
+    #[error("Get unknown key from the object")]
+    GetUnknownKeyInObject,
 
-    #[error("Get index out of array")]
+    #[error("Get value from an empty array")]
+    GetInEmptyArray,
+
+    #[error("Get index out of the array")]
     GetIndexOutOfArray,
 
     #[error("Unexpected visited type in JSON visitor")]
@@ -187,6 +278,13 @@ impl Error {
             f(self.err.code)
         } else {
             self
+        }
+    }
+
+    #[cold]
+    pub(crate) fn new(code: ErrorCode, line: usize, column: usize) -> Self {
+        Error {
+            err: Box::new(ErrorImpl { code, line, column }),
         }
     }
 }
@@ -311,5 +409,22 @@ fn starts_with_digit(slice: &str) -> bool {
     match slice.as_bytes().first() {
         None => false,
         Some(&byte) => byte.is_ascii_digit(),
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use crate::{from_str, Deserialize};
+
+    #[test]
+    fn test_errors_display() {
+        #[derive(Debug, Deserialize)]
+        struct Foo {
+            a: Vec<i32>,
+        }
+        // test error from `serde` trait
+        let err = from_str::<Foo>("{ \"b\":[]}").unwrap_err();
+        assert_eq!(format!("{}", err), "missing field `a` at line 1 column 9");
     }
 }
