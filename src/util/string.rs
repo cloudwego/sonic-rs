@@ -570,7 +570,8 @@ fn cross_page(ptr: *const u8, step: usize) -> bool {
     ((ptr as usize & 4095) + step) > 4096
 }
 
-pub fn quote(value: &str, dst: &mut [MaybeUninit<u8>]) -> usize {
+#[inline(always)]
+pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool) -> usize {
     assert!(dst.len() >= value.len() * 6 + 32 + 3);
     const LANS: usize = 32;
     unsafe {
@@ -580,8 +581,10 @@ pub fn quote(value: &str, dst: &mut [MaybeUninit<u8>]) -> usize {
         let dstart = dptr;
         let mut nb: usize = slice.len();
 
-        *dptr = b'"';
-        dptr = dptr.add(1);
+        if need_quote {
+            *dptr = b'"';
+            dptr = dptr.add(1);
+        }
         while nb >= LANS {
             let v = {
                 let raw = std::slice::from_raw_parts(sptr, LANS);
@@ -625,8 +628,10 @@ pub fn quote(value: &str, dst: &mut [MaybeUninit<u8>]) -> usize {
                 escape_unchecked(&mut sptr, &mut nb, &mut dptr);
             }
         }
-        *dptr = b'"';
-        dptr = dptr.add(1);
+        if need_quote {
+            *dptr = b'"';
+            dptr = dptr.add(1);
+        }
         dptr as usize - dstart as usize
     }
 }
@@ -639,19 +644,19 @@ mod test {
     fn test_quote() {
         let mut dst = [0u8; 1000];
         let dst_ref = unsafe { std::mem::transmute::<&mut [u8], &mut [MaybeUninit<u8>]>(&mut dst) };
-        assert_eq!(quote("", dst_ref), 2);
+        assert_eq!(format_string("", dst_ref, true), 2);
         assert_eq!(dst[..2], *b"\"\"");
-        assert_eq!(quote("\x00", dst_ref), 8);
+        assert_eq!(format_string("\x00", dst_ref, true), 8);
         assert_eq!(dst[..8], *b"\"\\u0000\"");
-        assert_eq!(quote("test", dst_ref), 6);
+        assert_eq!(format_string("test", dst_ref, true), 6);
         assert_eq!(dst[..6], *b"\"test\"");
-        assert_eq!(quote("test\"test", dst_ref), 12);
+        assert_eq!(format_string("test\"test", dst_ref, true), 12);
         assert_eq!(dst[..12], *b"\"test\\\"test\"");
-        assert_eq!(quote("\\testtest\"", dst_ref), 14);
+        assert_eq!(format_string("\\testtest\"", dst_ref, true), 14);
         assert_eq!(dst[..14], *b"\"\\\\testtest\\\"\"");
 
         let long_str = "this is a long string that should be \\\"quoted and escaped multiple times to test the performance and correctness of the function.";
-        assert_eq!(quote(long_str, dst_ref), 129 + 4);
+        assert_eq!(format_string(long_str, dst_ref, true), 129 + 4);
         assert_eq!(dst[..133], *b"\"this is a long string that should be \\\\\\\"quoted and escaped multiple times to test the performance and correctness of the function.\"");
 
         // TODO: add cross page test

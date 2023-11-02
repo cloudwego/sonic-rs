@@ -184,6 +184,17 @@ mod test {
         assert_eq!(val, expect);
     }
 
+    #[test]
+    fn test_serde_time() {
+        use chrono::DateTime;
+        use chrono::Utc;
+
+        let time: DateTime<Utc> = Utc::now();
+        let out = to_string_pretty(&time).unwrap();
+        let got = from_str::<DateTime<Utc>>(&out).unwrap();
+        assert_eq!(time, got);
+    }
+
     fn read_file(path: &str, vec: &mut Vec<u8>) {
         use std::io::Read;
         let root = env!("CARGO_MANIFEST_DIR").to_owned();
