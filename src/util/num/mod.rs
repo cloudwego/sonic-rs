@@ -151,6 +151,7 @@ pub(crate) unsafe fn parse_number_unchecked(
     let mut significant: u64 = 0;
     let mut exponent: i32 = 0;
     let mut trunc = false;
+    let raw_num = &data[*index..];
 
     if match_digit!(data, *index, b'0') {
         *index += 1;
@@ -298,7 +299,9 @@ pub(crate) unsafe fn parse_number_unchecked(
             trunc = true;
         }
     }
-    parse_float(significant, exponent, negative, trunc, data)
+
+    // raw_num is pass-through for fallback parsing logic
+    parse_float(significant, exponent, negative, trunc, raw_num)
 }
 
 #[inline(always)]
@@ -307,7 +310,7 @@ fn parse_float(
     exponent: i32,
     negative: bool,
     trunc: bool,
-    data: &[u8],
+    raw_num: &[u8],
 ) -> Result<ParserNumber, ErrorCode> {
     // parse double fast
     if significant >> 52 == 0 && (-22..=(22 + 15)).contains(&exponent) {
@@ -342,7 +345,7 @@ fn parse_float(
     // Unable to correctly round the float using the Eisel-Lemire algorithm.
     // Fallback to a slower, but always correct algorithm.
     if fp.e < 0 {
-        fp = slow::parse_long_mantissa::<f64>(data);
+        fp = slow::parse_long_mantissa::<f64>(raw_num);
     }
 
     let mut float = biased_fp_to_float::<f64>(fp);

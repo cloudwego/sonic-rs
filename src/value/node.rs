@@ -862,6 +862,12 @@ pub struct Document {
     alloc: NonNull<Bump>,
 }
 
+impl std::fmt::Debug for Document {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_value().fmt(f)
+    }
+}
+
 impl Default for Document {
     fn default() -> Self {
         Self::new()
@@ -1439,8 +1445,11 @@ mod test {
     }
 
     #[test]
-    fn test_max_numbrs() {
+    fn test_parse_numbrs() {
         let testdata = [
+            " 33.3333333043333333",
+            " 33.3333333043333333 ",
+            " 33.3333333043333333--",
             &f64::MAX.to_string(),
             &f64::MIN.to_string(),
             &u64::MAX.to_string(),
