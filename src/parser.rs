@@ -5,7 +5,6 @@ use crate::pointer::{
     tree::MultiIndex, tree::MultiKey, tree::PointerTreeInner, tree::PointerTreeNode, PointerTrait,
 };
 use crate::pointer::{JsonPointer, PointerTree};
-use crate::reader::Position;
 use crate::util::arch::{get_nonspace_bits, prefix_xor};
 use crate::util::num::{parse_number_unchecked, ParserNumber};
 use crate::util::string::parse_valid_escaped_string;
@@ -156,7 +155,7 @@ where
     fn error_index(&self) -> usize {
         // when parsing strings , we need record the error postion.
         // it must be smaller than reader.index().
-        std::cmp::min(self.error_index, self.read.index())
+        std::cmp::min(self.error_index, self.read.index() - 1)
     }
 
     /// Error caused by a byte from next_char().
@@ -170,14 +169,17 @@ where
             index = len;
         }
 
-        let position = Position::from_index(index, self.read.as_u8_slice());
-        Error::syntax(reason, position.line, position.column)
+        Error::syntax(reason, self.read.as_u8_slice(), index)
     }
 
     // maybe error in generated in visitor, so we need fix the postion.
     #[cold]
     pub(crate) fn fix_position(&self, err: Error) -> Error {
-        err.fix_position(move |code| self.error(code))
+        if err.line() == 0 {
+            self.error(err.error_code())
+        } else {
+            err
+        }
     }
 
     #[inline(always)]

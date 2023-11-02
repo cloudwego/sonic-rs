@@ -19,15 +19,10 @@ fn from_utf8_compat(data: &[u8]) -> Result<&str> {
     // compat::from_utf8 is slower than basic::from_utf8
     match simdutf8::compat::from_utf8(data) {
         Ok(ret) => Ok(ret),
-        Err(err) => {
-            // get the line and column number
-            let position = Position::from_index(err.valid_up_to(), data);
-
-            Err(Error::new(
-                ErrorCode::InvalidUTF8,
-                position.line,
-                position.column,
-            ))
-        }
+        Err(err) => Err(Error::syntax(
+            ErrorCode::InvalidUTF8,
+            data,
+            err.valid_up_to(),
+        )),
     }
 }
