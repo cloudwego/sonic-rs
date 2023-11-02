@@ -1290,7 +1290,6 @@ impl<'dom> Serialize for Value<'dom> {
 
 #[cfg(test)]
 mod test {
-    use serde::de::value;
 
     use super::*;
     use crate::{
@@ -1643,8 +1642,8 @@ mod test {
 
     #[test]
     fn test_value_from() {
-        assert_eq!(Value::from(1 as u64).as_u64().unwrap(), 1);
-        assert_eq!(Value::from(-1 as i64).as_i64().unwrap(), -1);
+        assert_eq!(Value::from(1_u64).as_u64().unwrap(), 1);
+        assert_eq!(Value::from(-1_i64).as_i64().unwrap(), -1);
 
         assert!(Value::try_from(f64::INFINITY).is_err());
         assert!(Value::try_from(f64::NAN).is_err());

@@ -344,14 +344,18 @@ impl Display for Error {
 
 impl Display for ErrorImpl {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{} at line {} column {}{}",
-            self.code,
-            self.line,
-            self.column,
-            self.descript.as_ref().unwrap_or(&"".to_string())
-        )
+        if self.line != 0 {
+            write!(
+                f,
+                "{} at line {} column {}{}",
+                self.code,
+                self.line,
+                self.column,
+                self.descript.as_ref().unwrap_or(&"".to_string())
+            )
+        } else {
+            write!(f, "{}", self.code)
+        }
     }
 }
 
@@ -457,6 +461,7 @@ fn starts_with_digit(slice: &str) -> bool {
 #[cfg(test)]
 mod test {
 
+    use crate::Value;
     use crate::{from_slice, from_str, Deserialize};
 
     #[test]
@@ -532,6 +537,15 @@ mod test {
         assert_eq!(
             format!("{}", err),
             "Invalid UTF-8 characters in json at line 1 column 6\n\n\t{\"b\":\"�\"}\n\t......^..\n"
+        );
+    }
+
+    #[test]
+    fn test_other_erros() {
+        let err = Value::try_from(f64::NAN).unwrap_err();
+        assert_eq!(
+            format!("{}", err),
+            "NaN or Infinity is not a valid JSON value"
         );
     }
 }
