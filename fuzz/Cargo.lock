@@ -153,6 +153,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d3e73c93c3240c0bda063c239298e633114c69a888c3e37ca8bb33f343e9890"
 
 [[package]]
+name = "serde_json"
+version = "1.0.108"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d1c7e3eac408d115102c4c24ad393e0821bb3a5df4d506a80f85f7a742a526b"
+dependencies = [
+ "itoa",
+ "ryu",
+ "serde",
+]
+
+[[package]]
+name = "simdutf8"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f27f6278552951f1f2b8cf9da965d10969b2efdea95a6ec47987ab46edfe263a"
+
+[[package]]
 name = "smallvec"
 version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -160,7 +177,7 @@ checksum = "62bb4feee49fdd9f707ef802e22365a35de4b7b299de4763d44bfea899442ff9"
 
 [[package]]
 name = "sonic-rs"
-version = "0.1.3"
+version = "0.2.3"
 dependencies = [
  "arrayref",
  "bumpalo",
@@ -171,6 +188,7 @@ dependencies = [
  "packed_simd",
  "ryu",
  "serde",
+ "simdutf8",
  "smallvec",
  "thiserror",
 ]
@@ -180,6 +198,7 @@ name = "sonic_rs-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
+ "serde_json",
  "sonic-rs",
 ]
 
