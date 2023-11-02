@@ -1,6 +1,7 @@
 use super::value_trait::{JsonType, JsonValue};
 use super::Index;
 use super::IndexMut;
+use crate::error::make_error;
 use crate::error::Result;
 use crate::parser::Parser;
 use crate::pointer::{JsonPointer, PointerNode};
@@ -28,6 +29,33 @@ pub struct Value<'dom> {
 impl<'dom> Default for Value<'dom> {
     fn default() -> Self {
         Self::new_uinit()
+    }
+}
+
+impl From<bool> for Value<'_> {
+    fn from(val: bool) -> Self {
+        Self::new_bool(val)
+    }
+}
+
+impl From<u64> for Value<'_> {
+    fn from(val: u64) -> Self {
+        Self::new_u64(val)
+    }
+}
+
+impl From<i64> for Value<'_> {
+    fn from(val: i64) -> Self {
+        Self::new_i64(val)
+    }
+}
+
+impl TryFrom<f64> for Value<'_> {
+    type Error = crate::Error;
+
+    fn try_from(value: f64) -> std::result::Result<Self, Self::Error> {
+        Self::new_f64(value)
+            .ok_or_else(|| make_error("NaN or Infinity is not a valid JSON value".to_string()))
     }
 }
 
@@ -344,6 +372,7 @@ impl<'dom> Value<'dom> {
 
 impl<'dom> Value<'dom> {
     /// Create a new `Value` from a null
+    #[inline(always)]
     pub const fn new_uinit() -> Self {
         Self {
             typ: NodeMeta(Self::NULL),
@@ -352,6 +381,7 @@ impl<'dom> Value<'dom> {
     }
 
     /// Create a new `Value` from a i64
+    #[inline(always)]
     pub const fn new_i64(val: i64) -> Self {
         Self {
             typ: NodeMeta(Self::SIGNED),
@@ -360,6 +390,7 @@ impl<'dom> Value<'dom> {
     }
 
     /// Create a new `Value` from a f64, if not finite return None.
+    #[inline(always)]
     pub fn new_f64(val: f64) -> Option<Self> {
         // not support f64::NAN and f64::INFINITY
         if val.is_finite() {
@@ -375,6 +406,7 @@ impl<'dom> Value<'dom> {
     /// Create a new `Value` from a f64. Not checking the f64 is finite.
     /// # Safety
     /// The f64 must be finite. Because JSON RFC NOT support `NaN` and `Infinity`.
+    #[inline(always)]
     pub unsafe fn new_f64_unchecked(val: f64) -> Self {
         Self {
             typ: NodeMeta(Self::FLOAT),
@@ -383,6 +415,7 @@ impl<'dom> Value<'dom> {
     }
 
     /// Create a new `Value` from a u64
+    #[inline(always)]
     pub const fn new_u64(val: u64) -> Self {
         Self {
             typ: NodeMeta(Self::UNSIGNED),
@@ -391,6 +424,7 @@ impl<'dom> Value<'dom> {
     }
 
     /// Create a new `Value` from a bool
+    #[inline(always)]
     pub const fn new_bool(val: bool) -> Self {
         Self {
             typ: NodeMeta(if val { Self::TRUE } else { Self::FALSE }),
@@ -399,6 +433,7 @@ impl<'dom> Value<'dom> {
     }
 
     /// Create a new `Value` from a empty object
+    #[inline(always)]
     pub const fn new_object() -> Self {
         Self {
             typ: NodeMeta(JsonType::Object as u64),
@@ -407,10 +442,45 @@ impl<'dom> Value<'dom> {
     }
 
     /// Create a new `Value` from a empty array
+    #[inline(always)]
     pub const fn new_array() -> Self {
         Self {
             typ: NodeMeta(JsonType::Array as u64),
             val: NodeValue { uval: 0 },
+        }
+    }
+
+    /// create a new owned string value with the alloctor
+    #[inline(always)]
+    pub fn new_str(val: &str, alloc: &'dom Bump) -> Self {
+        let val = alloc.alloc_str(val);
+        Self {
+            typ: NodeMeta(Self::STRING | ((val.len() as u64) << Self::LEN_BITS)),
+            val: NodeValue {
+                str_ptr: val.as_bytes().as_ptr(),
+            },
+        }
+    }
+
+    /// create a new string from static
+    #[inline(always)]
+    pub fn new_str_static(val: &'static str) -> Self {
+        Self {
+            typ: NodeMeta(Self::STRING | ((val.len() as u64) << Self::LEN_BITS)),
+            val: NodeValue {
+                str_ptr: val.as_bytes().as_ptr(),
+            },
+        }
+    }
+
+    /// create a new borrow string, lifetime of Value will limited  by str
+    #[inline(always)]
+    pub fn new_str_borrow(val: &str) -> Self {
+        Self {
+            typ: NodeMeta(Self::STRING | ((val.len() as u64) << Self::LEN_BITS)),
+            val: NodeValue {
+                str_ptr: val.as_bytes().as_ptr(),
+            },
         }
     }
 
@@ -732,34 +802,6 @@ impl<'dom> Value<'dom> {
 
     fn set_null(&mut self) {
         self.typ.0 = Self::NULL;
-    }
-
-    pub fn new_str(val: &str, alloc: &'dom Bump) -> Self {
-        let val = alloc.alloc_str(val);
-        Self {
-            typ: NodeMeta(Self::STRING | ((val.len() as u64) << Self::LEN_BITS)),
-            val: NodeValue {
-                str_ptr: val.as_bytes().as_ptr(),
-            },
-        }
-    }
-
-    pub fn new_str_static(val: &'static str) -> Self {
-        Self {
-            typ: NodeMeta(Self::STRING | ((val.len() as u64) << Self::LEN_BITS)),
-            val: NodeValue {
-                str_ptr: val.as_bytes().as_ptr(),
-            },
-        }
-    }
-
-    pub(crate) fn new_str_borrow(val: &str) -> Self {
-        Self {
-            typ: NodeMeta(Self::STRING | ((val.len() as u64) << Self::LEN_BITS)),
-            val: NodeValue {
-                str_ptr: val.as_bytes().as_ptr(),
-            },
-        }
     }
 
     fn set_len(&mut self, len: usize) {
@@ -1248,12 +1290,14 @@ impl<'dom> Serialize for Value<'dom> {
 
 #[cfg(test)]
 mod test {
+    use serde::de::value;
+
     use super::*;
     use crate::{
         error::{make_error, Result},
         pointer,
     };
-    use std::path::Path;
+    use std::{collections::HashMap, path::Path};
 
     fn test_value(data: &str) -> Result<()> {
         let serde_value: serde_json::Result<serde_json::Value> = serde_json::from_str(data);
@@ -1583,6 +1627,30 @@ mod test {
         assert_eq!(
             dom.err().unwrap().to_string(),
             "Invalid UTF-8 characters in json at line 1 column 0\n\n\t�\"\"\n\t^..\n"
+        );
+    }
+
+    #[test]
+    fn test_string_borrow() {
+        let s = String::from("borrowed");
+        let value2 = Value::new_str_borrow(&s);
+
+        let mut map = HashMap::new();
+        map.insert("v2", value2);
+
+        assert_eq!(to_string(&map).unwrap().as_str(), r#"{"v2":"borrowed"}"#);
+    }
+
+    #[test]
+    fn test_value_from() {
+        assert_eq!(Value::from(1 as u64).as_u64().unwrap(), 1);
+        assert_eq!(Value::from(-1 as i64).as_i64().unwrap(), -1);
+
+        assert!(Value::try_from(f64::INFINITY).is_err());
+        assert!(Value::try_from(f64::NAN).is_err());
+        assert_eq!(
+            Value::try_from(f64::MAX).unwrap().as_f64().unwrap(),
+            f64::MAX
         );
     }
 }
