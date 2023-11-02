@@ -1,6 +1,6 @@
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
 
-use crate::util::string::quote;
+use crate::util::string::format_string;
 use crate::writer::WriterExt;
 use std::io::{self, Write};
 
@@ -184,12 +184,17 @@ pub trait Formatter {
     /// Writes a string fragment that doesn't need any escaping to the
     /// specified writer.
     #[inline]
-    fn write_string_fast<W>(&mut self, writer: &mut W, value: &str) -> io::Result<()>
+    fn write_string_fast<W>(
+        &mut self,
+        writer: &mut W,
+        value: &str,
+        need_quote: bool,
+    ) -> io::Result<()>
     where
         W: ?Sized + WriterExt,
     {
         let buf = unsafe { writer.reserve_with(value.len() * 6 + 32 + 3)? };
-        let cnt = quote(value, buf);
+        let cnt = format_string(value, buf, need_quote);
         unsafe { writer.add_len(cnt) };
         Ok(())
     }
