@@ -55,26 +55,26 @@ macro_rules! check_digit {
 }
 
 #[inline(always)]
-unsafe fn parse_exponent(data: &[u8], i: &mut usize) -> Result<i32, ErrorCode> {
+unsafe fn parse_exponent(data: &[u8], index: &mut usize) -> Result<i32, ErrorCode> {
     let mut exponent: i32 = 0;
     let mut negative = false;
 
-    match data.get_unchecked(*i) {
-        b'+' => *i += 1,
+    match data.get_unchecked(*index) {
+        b'+' => *index += 1,
         b'-' => {
             negative = true;
-            *i += 1;
+            *index += 1;
         }
         _ => {}
     }
 
-    check_digit!(data, *i);
-    while exponent < 1000 && is_digit!(data, *i) {
-        exponent = digit!(data, *i) as i32 + exponent * 10;
-        *i += 1;
+    check_digit!(data, *index);
+    while exponent < 1000 && is_digit!(data, *index) {
+        exponent = digit!(data, *index) as i32 + exponent * 10;
+        *index += 1;
     }
-    while is_digit!(data, *i) {
-        *i += 1;
+    while is_digit!(data, *index) {
+        *index += 1;
     }
     if negative {
         exponent = -exponent;
@@ -115,32 +115,30 @@ unsafe fn parse_number_fraction(
     dot_pos: usize,
 ) -> Result<bool, ErrorCode> {
     debug_assert!(need < FLOATING_LONGEST_DIGITS as isize);
-    let mut i = *index;
 
     // native implement:
-    // while need > 0 && is_digit!(data, i) {
-    //     *significant = *significant * 10 + digit!(data, i);
-    //     i += 1;
+    // while need > 0 && is_digit!(data, *index) {
+    //     *significant = *significant * 10 + digit!(data, *index);
+    //     *index += 1;
     //     need -= 1;
     // }
     if need > 0 {
-        let (frac, ndigits) = unsafe { simd_str2int(&data[i..], need as usize) };
+        let (frac, ndigits) = unsafe { simd_str2int(&data[*index..], need as usize) };
         *significant = *significant * POW10_UINT[ndigits] + frac;
-        i += ndigits;
+        *index += ndigits;
     }
 
-    *exponent -= i as i32 - dot_pos as i32;
+    *exponent -= *index as i32 - dot_pos as i32;
     let mut trunc = false;
-    while is_digit!(data, i) {
+    while is_digit!(data, *index) {
         trunc = true;
-        i += 1;
+        *index += 1;
     }
 
-    if match_digit!(data, i, b'e' | b'E') {
-        i += 1;
-        *exponent += parse_exponent(data, &mut i)?;
+    if match_digit!(data, *index, b'e' | b'E') {
+        *index += 1;
+        *exponent += parse_exponent(data, &mut *index)?;
     }
-    *index = i;
     Ok(trunc)
 }
 
@@ -150,34 +148,32 @@ pub(crate) unsafe fn parse_number_unchecked(
     index: &mut usize,
     negative: bool,
 ) -> Result<ParserNumber, ErrorCode> {
-    let mut i = *index;
     let mut significant: u64 = 0;
     let mut exponent: i32 = 0;
     let mut trunc = false;
 
-    if match_digit!(data, i, b'0') {
-        i += 1;
+    if match_digit!(data, *index, b'0') {
+        *index += 1;
 
         // deal with 0e123 or 0.000e123
-        match data.get_unchecked(i) {
+        match data.get_unchecked(*index) {
             b'.' => {
-                i += 1;
-                let dot_pos = i;
-                check_digit!(data, i);
-                while match_digit!(data, i, b'0') {
-                    i += 1;
+                *index += 1;
+                let dot_pos = *index;
+                check_digit!(data, *index);
+                while match_digit!(data, *index, b'0') {
+                    *index += 1;
                 }
                 // special case: 0.000e123
-                if match_digit!(data, i, b'e' | b'E') {
-                    i += 1;
-                    if match_digit!(data, i, b'-' | b'+') {
-                        i += 1;
+                if match_digit!(data, *index, b'e' | b'E') {
+                    *index += 1;
+                    if match_digit!(data, *index, b'-' | b'+') {
+                        *index += 1;
                     }
-                    check_digit!(data, i);
-                    while is_digit!(data, i) {
-                        i += 1;
+                    check_digit!(data, *index);
+                    while is_digit!(data, *index) {
+                        *index += 1;
                     }
-                    *index = i;
                     return Ok(ParserNumber::Float(0.0));
                 }
 
@@ -185,17 +181,15 @@ pub(crate) unsafe fn parse_number_unchecked(
                 // 1. fastpath for samll float number
                 // 2. we only need parse at most 16 digits in parse_number_fraction
                 // and it is friendly for simd
-                if !is_digit!(data, i) {
-                    *index = i;
+                if !is_digit!(data, *index) {
                     return Ok(ParserNumber::Float(0.0));
                 }
 
-                significant = digit!(data, i);
-                i += 1;
+                significant = digit!(data, *index);
+                *index += 1;
 
-                if is_digit!(data, i) {
+                if is_digit!(data, *index) {
                     let need = FLOATING_LONGEST_DIGITS as isize - 1;
-                    *index = i;
                     trunc = parse_number_fraction(
                         data,
                         index,
@@ -205,80 +199,75 @@ pub(crate) unsafe fn parse_number_unchecked(
                         dot_pos,
                     )?;
                 } else {
-                    exponent -= i as i32 - dot_pos as i32;
-                    if match_digit!(data, i, b'e' | b'E') {
-                        i += 1;
-                        exponent += parse_exponent(data, &mut i)?;
+                    exponent -= *index as i32 - dot_pos as i32;
+                    if match_digit!(data, *index, b'e' | b'E') {
+                        *index += 1;
+                        exponent += parse_exponent(data, &mut *index)?;
                     }
-                    *index = i;
                 }
             }
             b'e' | b'E' => {
-                i += 1;
-                if match_digit!(data, i, b'-' | b'+') {
-                    i += 1;
+                *index += 1;
+                if match_digit!(data, *index, b'-' | b'+') {
+                    *index += 1;
                 }
-                check_digit!(data, i);
-                while is_digit!(data, i) {
-                    i += 1;
+                check_digit!(data, *index);
+                while is_digit!(data, *index) {
+                    *index += 1;
                 }
-                *index = i;
                 return Ok(ParserNumber::Float(0.0));
             }
             _ => {
-                *index = i;
                 return Ok(ParserNumber::Unsigned(0));
             }
         }
     } else {
         // parse significant digits
-        let digit_start = i;
-        while is_digit!(data, i) {
+        let digit_start = *index;
+        while is_digit!(data, *index) {
             // assume most number is not overflow here. When it overflow, we will check digits count
             // and fallback into the slow path.
-            significant = significant.wrapping_mul(10).wrapping_add(digit!(data, i));
-            i += 1;
+            significant = significant
+                .wrapping_mul(10)
+                .wrapping_add(digit!(data, *index));
+            *index += 1;
         }
-        let mut digits_cnt = i - digit_start;
+        let mut digits_cnt = *index - digit_start;
         if digits_cnt == 0 {
-            *index = i;
             return Err(ErrorCode::InvalidNumber);
         }
 
         // slow path for tooo long integer
         if digits_cnt > 19 {
-            i = digit_start;
+            *index = digit_start;
             significant = 0;
             digits_cnt = 0;
-            while is_digit!(data, i) && digits_cnt < 19 {
-                significant = significant * 10 + digit!(data, i);
+            while is_digit!(data, *index) && digits_cnt < 19 {
+                significant = significant * 10 + digit!(data, *index);
                 digits_cnt += 1;
-                i += 1;
+                *index += 1;
             }
-            while is_digit!(data, i) {
+            while is_digit!(data, *index) {
                 exponent += 1;
-                i += 1;
+                *index += 1;
             }
         }
 
-        if match_digit!(data, i, b'e' | b'E') {
+        if match_digit!(data, *index, b'e' | b'E') {
             // parse exponent
-            i += 1;
-            *index = i;
+            *index += 1;
             exponent += parse_exponent(data, index)?;
-        } else if match_digit!(data, i, b'.') {
-            i += 1;
-            check_digit!(data, i);
-            let dot_pos = i;
+        } else if match_digit!(data, *index, b'.') {
+            *index += 1;
+            check_digit!(data, *index);
+            let dot_pos = *index;
 
             // parse fraction
             let need = FLOATING_LONGEST_DIGITS as isize - digits_cnt as isize;
-            *index = i;
             trunc =
                 parse_number_fraction(data, index, &mut significant, &mut exponent, need, dot_pos)?;
         } else {
             // parse integer, all parse has finished.
-            *index = i;
             if exponent == 0 {
                 if negative {
                     if significant > (1u64 << 63) {
@@ -293,7 +282,7 @@ pub(crate) unsafe fn parse_number_unchecked(
                 }
             } else if exponent == 1 {
                 // now we get 20 digits, it maybe overflow for uint64
-                let last = digit!(data, i - 1);
+                let last = digit!(data, *index - 1);
                 let (out, ov0) = significant.overflowing_mul(10);
                 let (out, ov1) = out.overflowing_add(last);
                 if !ov0 && !ov1 {
