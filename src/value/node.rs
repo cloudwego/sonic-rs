@@ -1566,7 +1566,7 @@ mod test {
         let dom = dom_from_slice(&data);
         assert_eq!(
             dom.err().unwrap().to_string(),
-            "Invalid UTF-8 characters in json at line 1 column 1"
+            "Invalid UTF-8 characters in json at line 1 column 1\n\n\t\"��\"\n\t.^..\n"
         );
         let dom = unsafe { dom_from_slice_unchecked(&data) };
         assert!(dom.is_ok());
@@ -1575,14 +1575,14 @@ mod test {
         let dom = dom_from_slice(&data);
         assert_eq!(
             dom.err().unwrap().to_string(),
-            "Invalid UTF-8 characters in json at line 1 column 2"
+            "Invalid UTF-8 characters in json at line 1 column 2\n\n\t\"\"�\n\t..^\n"
         );
 
         let data = [0x80, b'"', b'"'];
         let dom = dom_from_slice(&data);
         assert_eq!(
             dom.err().unwrap().to_string(),
-            "Invalid UTF-8 characters in json at line 1 column 0"
+            "Invalid UTF-8 characters in json at line 1 column 0\n\n\t�\"\"\n\t^..\n"
         );
     }
 }

@@ -11,6 +11,8 @@ use std::string::{String, ToString};
 
 use thiserror::Error as ErrorTrait;
 
+use crate::reader::Position;
+
 /// This type represents all possible errors that can occur when serializing or
 /// deserializing JSON data.
 pub struct Error {
@@ -170,6 +172,8 @@ struct ErrorImpl {
     code: ErrorCode,
     line: usize,
     column: usize,
+    // the descript of the error postion
+    descript: Option<String>,
 }
 
 #[derive(ErrorTrait, Debug)]
@@ -252,9 +256,44 @@ pub(crate) enum ErrorCode {
 
 impl Error {
     #[cold]
-    pub(crate) fn syntax(code: ErrorCode, line: usize, column: usize) -> Self {
+    pub(crate) fn syntax(code: ErrorCode, json: &[u8], index: usize) -> Self {
+        let position = Position::from_index(index, json);
+        // generate descript about 16 characters
+        let mut start = if index < 8 { 0 } else { index - 8 };
+        let mut end = if index + 8 > json.len() {
+            json.len()
+        } else {
+            index + 8
+        };
+
+        // find the nearest valid utf-8 character
+        while start > 0 && index - start <= 16 && (json[start] & 0b1100_0000) == 0b1000_0000 {
+            start -= 1;
+        }
+
+        // find the nearest valid utf-8 character
+        while end < json.len() && end - index <= 16 && (json[end - 1] & 0b1100_0000) == 0b1000_0000
+        {
+            end += 1;
+        }
+
+        let fragment = String::from_utf8_lossy(&json[start..end]).to_string();
+        let left = index - start;
+        let right = if end - index > 1 {
+            end - (index + 1)
+        } else {
+            0
+        };
+        let mask = ".".repeat(left) + "^" + &".".repeat(right);
+        let descript = format!("\n\n\t{}\n\t{}\n", fragment, mask);
+
         Error {
-            err: Box::new(ErrorImpl { code, line, column }),
+            err: Box::new(ErrorImpl {
+                code,
+                line: position.line,
+                column: position.column,
+                descript: Some(descript),
+            }),
         }
     }
 
@@ -265,26 +304,25 @@ impl Error {
                 code: ErrorCode::Io(error),
                 line: 0,
                 column: 0,
+                descript: None,
             }),
         }
     }
 
     #[cold]
-    pub(crate) fn fix_position<F>(self, f: F) -> Self
-    where
-        F: FnOnce(ErrorCode) -> Error,
-    {
-        if self.err.line == 0 {
-            f(self.err.code)
-        } else {
-            self
-        }
+    pub(crate) fn error_code(self) -> ErrorCode {
+        self.err.code
     }
 
     #[cold]
     pub(crate) fn new(code: ErrorCode, line: usize, column: usize) -> Self {
         Error {
-            err: Box::new(ErrorImpl { code, line, column }),
+            err: Box::new(ErrorImpl {
+                code,
+                line,
+                column,
+                descript: None,
+            }),
         }
     }
 }
@@ -308,8 +346,11 @@ impl Display for ErrorImpl {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "{} at line {} column {}",
-            self.code, self.line, self.column
+            "{} at line {} column {}{}",
+            self.code,
+            self.line,
+            self.column,
+            self.descript.as_ref().unwrap_or(&"".to_string())
         )
     }
 }
@@ -320,8 +361,8 @@ impl Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Error({}, line: {}, column: {})",
-            self.err.code, self.err.line, self.err.column
+            "Error({}, line: {}, column: {}) Error around is: {:?}",
+            self.err.code, self.err.line, self.err.column, self.err.descript
         )
     }
 }
@@ -359,6 +400,7 @@ pub fn make_error(mut msg: String) -> Error {
             code: ErrorCode::Message(msg.into_boxed_str()),
             line,
             column,
+            descript: None,
         }),
     }
 }
@@ -415,16 +457,81 @@ fn starts_with_digit(slice: &str) -> bool {
 #[cfg(test)]
 mod test {
 
-    use crate::{from_str, Deserialize};
+    use crate::{from_slice, from_str, Deserialize};
 
     #[test]
-    fn test_errors_display() {
+    fn test_serde_errors_display() {
         #[derive(Debug, Deserialize)]
         struct Foo {
             a: Vec<i32>,
+            c: String,
         }
-        // test error from `serde` trait
+
         let err = from_str::<Foo>("{ \"b\":[]}").unwrap_err();
-        assert_eq!(format!("{}", err), "missing field `a` at line 1 column 9");
+        assert_eq!(
+            format!("{}", err),
+            "missing field `a` at line 1 column 8\n\n\t{ \"b\":[]}\n\t........^\n"
+        );
+
+        let err = from_str::<Foo>("{\"a\": [1, 2x, 3, 4, 5]}").unwrap_err();
+        println!("{}", err);
+        assert_eq!(
+            format!("{}", err),
+            "Expected this character to be either a ',' or a ']' while parsing at line 1 column 11\n\n\t\": [1, 2x, 3, 4,\n\t........^.......\n"
+        );
+
+        let err = from_str::<Foo>("{\"a\": null}").unwrap_err();
+        assert_eq!(
+            format!("{}", err),
+            "invalid type: null, expected a sequence at line 1 column 9\n\n\t\"a\": null}\n\t........^.\n"
+        );
+
+        let err = from_str::<Foo>("{\"a\": [1,2,3  }").unwrap_err();
+        assert_eq!(
+            format!("{}", err),
+            "Expected this character to be either a ',' or a ']' while parsing at line 1 column 14\n\n\t[1,2,3  }\n\t........^\n"
+        );
+
+        let err = from_str::<Foo>("{\"a\": [\"123\"]}").unwrap_err();
+        assert_eq!(
+            format!("{}", err),
+            "invalid type: string \"123\", expected i32 at line 1 column 11\n\n\t\": [\"123\"]}\n\t........^..\n"
+        );
+
+        let err = from_str::<Foo>("{\"a\": [").unwrap_err();
+        assert_eq!(
+            format!("{}", err),
+            "EOF while parsing at line 1 column 6\n\n\t{\"a\": [\n\t......^\n"
+        );
+
+        let err = from_str::<Foo>("{\"a\": [000]}").unwrap_err();
+        assert_eq!(
+            format!("{}", err),
+            "Expected this character to be either a ',' or a ']' while parsing at line 1 column 8\n\n\t{\"a\": [000]}\n\t........^...\n"
+        );
+
+        let err = from_str::<Foo>("{\"a\": [-]}").unwrap_err();
+        assert_eq!(
+            format!("{}", err),
+            "Invalid number at line 1 column 7\n\n\t{\"a\": [-]}\n\t.......^..\n"
+        );
+
+        let err = from_str::<Foo>("{\"a\": [-1.23e]}").unwrap_err();
+        assert_eq!(
+            format!("{}", err),
+            "Invalid number at line 1 column 12\n\n\t: [-1.23e]}\n\t........^..\n"
+        );
+
+        let err = from_str::<Foo>("{\"c\": \"哈哈哈哈哈哈}").unwrap_err();
+        assert_eq!(
+            format!("{}", err),
+            "EOF while parsing at line 1 column 25\n\n\t哈哈哈}\n\t.........^\n"
+        );
+
+        let err = from_slice::<Foo>(b"{\"b\":\"\x80\"}").unwrap_err();
+        assert_eq!(
+            format!("{}", err),
+            "Invalid UTF-8 characters in json at line 1 column 6\n\n\t{\"b\":\"�\"}\n\t......^..\n"
+        );
     }
 }

@@ -386,6 +386,63 @@ If we need parse a JSON number ***without loss of percision***, we can use `RawN
 
 Detailed examples can be found in [raw_value.rs](examples/raw_value.rs) and [json_number.rs](examples/json_number.rs).
 
+### Error handle
+
+Sonic's errors is follow as `serde-json` and have a display around the error position.
+
+```rs
+use sonic_rs::{from_slice, from_str, Deserialize};
+
+fn main() {
+    #[allow(dead_code)]
+    #[derive(Debug, Deserialize)]
+    struct Foo {
+        a: Vec<i32>,
+        c: String,
+    }
+
+    // deal with Eof errors
+    let err = from_str::<Foo>("{\"a\": [").unwrap_err();
+    assert!(err.is_eof());
+    eprintln!("{}", err);
+    // EOF while parsing at line 1 column 6
+
+    //     {"a": [
+    //     ......^
+    assert_eq!(
+        format!("{}", err),
+        "EOF while parsing at line 1 column 6\n\n\t{\"a\": [\n\t......^\n"
+    );
+
+    // deal with Data errors
+    let err = from_str::<Foo>("{ \"b\":[]}").unwrap_err();
+    eprintln!("{}", err);
+    assert!(err.is_data());
+    // println as follows:
+    // missing field `a` at line 1 column 8
+    //
+    //     { "b":[]}
+    //     ........^
+    assert_eq!(
+        format!("{}", err),
+        "missing field `a` at line 1 column 8\n\n\t{ \"b\":[]}\n\t........^\n"
+    );
+
+    // deal with Syntax errors
+    let err = from_slice::<Foo>(b"{\"b\":\"\x80\"}").unwrap_err();
+    eprintln!("{}", err);
+    assert!(err.is_syntax());
+    // println as follows:
+    // Invalid UTF-8 characters in json at line 1 column 6
+    //
+    //     {"b":"�"}
+    //     ......^...
+    assert_eq!(
+        format!("{}", err),
+        "Invalid UTF-8 characters in json at line 1 column 6\n\n\t{\"b\":\"�\"}\n\t......^...\n"
+    );
+}
+```
 ## FAQs
 
 ### About UTF-8

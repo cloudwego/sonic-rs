@@ -333,7 +333,7 @@ mod test {
         let value: crate::Result<String> = from_slice(&data);
         assert_eq!(
             value.err().unwrap().to_string(),
-            "Invalid UTF-8 characters in json at line 1 column 4"
+            "Invalid UTF-8 characters in json at line 1 column 4\n\n\t\"\0\0\0��\"\n\t....^..\n"
         );
     }
 }
