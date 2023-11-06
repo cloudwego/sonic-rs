@@ -19,6 +19,7 @@ use std::mem::transmute;
 use std::ops;
 use std::ptr::NonNull;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
+use std::sync::Arc;
 
 /// Value is a node in the DOM tree.
 pub struct Value<'dom> {
@@ -857,10 +858,10 @@ struct ValueInner {
 
 pub struct Document {
     root: ValueInner,
-    // drop once in here.
-    own_alloc: Option<Box<Bump>>,
-    alloc: NonNull<Bump>,
+    alloc: Arc<Bump>,
 }
+
+unsafe impl Send for Document {}
 
 impl std::fmt::Debug for Document {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -993,12 +994,9 @@ impl Document {
     const PADDING_SIZE: usize = 64;
 
     pub fn new() -> Document {
-        let mut bump = Box::new(Bump::new());
-        let ptr = unsafe { NonNull::new_unchecked(&mut *bump as *mut Bump) };
         Self {
-            alloc: ptr,
+            alloc: Arc::new(Bump::new()),
             root: ValueInner { _typ: 0, _val: 0 },
-            own_alloc: Some(bump),
         }
     }
 
@@ -1009,7 +1007,7 @@ impl Document {
     pub fn as_value_mut(&'_ mut self) -> ValueMut<'_> {
         ValueMut {
             val: unsafe { transmute(&mut self.root) },
-            alloc: self.own_alloc.as_ref().unwrap(),
+            alloc: self.alloc.as_ref(),
         }
     }
 
@@ -1017,7 +1015,7 @@ impl Document {
         if self.as_value().is_array() {
             Some(ArrayMut(ValueMut {
                 val: unsafe { transmute(&mut self.root) },
-                alloc: self.own_alloc.as_ref().unwrap(),
+                alloc: self.alloc.as_ref(),
             }))
         } else {
             None
@@ -1028,7 +1026,7 @@ impl Document {
         if self.as_value().is_object() {
             Some(ObjectMut(ValueMut {
                 val: unsafe { transmute(&mut self.root) },
-                alloc: self.own_alloc.as_ref().unwrap(),
+                alloc: self.alloc.as_ref(),
             }))
         } else {
             None
@@ -1036,7 +1034,7 @@ impl Document {
     }
 
     fn parse_bytes_impl(&mut self, json: &[u8]) -> Result<()> {
-        let alloc = unsafe { self.alloc.as_mut() };
+        let alloc = self.alloc.as_ref();
         let len = json.len();
 
         // allocate the padding buffer for the input json
@@ -1046,6 +1044,8 @@ impl Document {
         let json_buf = unsafe {
             let dst = dst.as_ptr();
             std::ptr::copy_nonoverlapping(json.as_ptr(), dst, len);
+            // fix miri warnings, actual this code can be removed because we set a guard for the json
+            std::ptr::write_bytes(dst.add(len), 0, Self::PADDING_SIZE);
             *(dst.add(len)) = b'x';
             *(dst.add(len + 1)) = b'"';
             *(dst.add(len + 2)) = b'x';
@@ -1057,17 +1057,17 @@ impl Document {
 
         // a simple wrapper for visitor
         #[derive(Debug)]
-        struct DocumentVisitor {
-            alloc: NonNull<Bump>,
+        struct DocumentVisitor<'a> {
+            alloc: &'a Bump,
             nodes: Vec<Value<'static>>,
             parent: usize,
         }
 
-        impl DocumentVisitor {
+        impl<'a> DocumentVisitor<'_> {
             // the array and object's logic is same.
             fn visit_container(&mut self, len: usize) -> bool {
                 let visitor = self;
-                let alloc = unsafe { visitor.alloc.as_mut() };
+                let alloc = visitor.alloc;
                 let parent = visitor.parent;
                 let old = unsafe { visitor.nodes[parent].val.parent as usize };
                 visitor.parent = old;
@@ -1121,7 +1121,7 @@ impl Document {
             }
         }
 
-        impl<'de> JsonVisitor<'de> for DocumentVisitor {
+        impl<'de, 'a: 'de> JsonVisitor<'de> for DocumentVisitor<'a> {
             #[inline(always)]
             fn visit_bool(&mut self, val: bool) -> bool {
                 self.push_node(Value::new_bool(val))
@@ -1181,7 +1181,7 @@ impl Document {
 
             #[inline(always)]
             fn visit_str(&mut self, value: &str) -> bool {
-                let alloc = unsafe { self.alloc.as_mut() };
+                let alloc = self.alloc;
                 let value = alloc.alloc_str(value);
                 self.push_node(Value::new_str_borrow(value))
             }
@@ -1202,7 +1202,7 @@ impl Document {
             }
         }
 
-        let alloc: NonNull<Bump> = self.alloc;
+        let alloc = self.alloc.as_ref();
         // optimize: use a pre-allocated vec.
         // If json is valid, the max number of value nodes should be
         // half of the valid json length + 2. like as [1,2,3,1,2,3...]
