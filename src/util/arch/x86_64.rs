@@ -1,7 +1,7 @@
-#[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
-pub fn prefix_xor(bitmask: u64) -> u64 {
+#[inline(always)]
+pub unsafe fn prefix_xor(bitmask: u64) -> u64 {
     unsafe {
         let all_ones = _mm_set1_epi8(-1i8);
         let result = _mm_clmulepi64_si128(_mm_set_epi64x(0, bitmask as i64), all_ones, 0);
@@ -9,8 +9,7 @@ pub fn prefix_xor(bitmask: u64) -> u64 {
     }
 }
 
-#[inline(always)]
-pub fn get_nonspace_bits(data: &[u8; 64]) -> u64 {
+pub unsafe fn get_nonspace_bits(data: &[u8; 64]) -> u64 {
     unsafe {
         let lo: std::arch::x86_64::__m256i = _mm256_loadu_si256(data.as_ptr() as *const __m256i);
         let hi: std::arch::x86_64::__m256i =
@@ -110,7 +109,6 @@ macro_rules! simd_add_16 {
         (_mm_extract_epi32($v, 0) as u64) * 100000000 + (_mm_extract_epi32($v, 1) as u64)
     }};
 }
-
 #[inline(always)]
 pub unsafe fn simd_str2int(c: &[u8], need: usize) -> (u64, usize) {
     debug_assert!(need <= 16);
