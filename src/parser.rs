@@ -6,7 +6,7 @@ use crate::pointer::{
 };
 use crate::pointer::{JsonPointer, PointerTree};
 use crate::util::arch::{get_nonspace_bits, prefix_xor};
-use crate::util::num::{parse_number_unchecked, ParserNumber};
+use crate::util::num::{parse_number, ParserNumber};
 use crate::util::string::parse_valid_escaped_string;
 use crate::util::string::*;
 use crate::visitor::JsonVisitor;
@@ -87,7 +87,7 @@ fn get_string_bits(data: &[u8; 64], prev_instring: &mut u64, prev_escaped: &mut 
         *prev_escaped = 0;
     }
     let quote_bits = (v.eq(u8x64::splat(b'"'))).bitmask() & !escaped;
-    let in_string = prefix_xor(quote_bits) ^ *prev_instring;
+    let in_string = unsafe { prefix_xor(quote_bits) ^ *prev_instring };
     *prev_instring = (in_string as i64 >> 63) as u64;
     in_string
 }
@@ -187,7 +187,7 @@ where
         let reader = &mut self.read;
         let mut now = reader.index() - ((!negative) as usize);
         let data = reader.as_u8_slice();
-        let ret = unsafe { parse_number_unchecked(data, &mut now, negative) };
+        let ret = parse_number(data, &mut now, negative);
         reader.set_index(now);
         match ret {
             Err(code) => perr!(self, code),
@@ -1025,7 +1025,7 @@ where
         // then we use simd to accelerate skipping space
         while let Some(chunk) = reader.peek_n(64) {
             let chunk = array_ref![chunk, 0, 64];
-            let bitmap = get_nonspace_bits(chunk);
+            let bitmap = unsafe { get_nonspace_bits(chunk) };
             if bitmap != 0 {
                 self.nospace_bits = bitmap;
                 self.nospace_start = reader.index() as isize;
@@ -1085,7 +1085,7 @@ where
         // then we use simd to accelerate skipping space
         while let Some(chunk) = reader.peek_n(64) {
             let chunk = array_ref![chunk, 0, 64];
-            let bitmap = get_nonspace_bits(chunk);
+            let bitmap = unsafe { get_nonspace_bits(chunk) };
             if bitmap != 0 {
                 self.nospace_bits = bitmap;
                 self.nospace_start = reader.index() as isize;

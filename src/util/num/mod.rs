@@ -30,36 +30,42 @@ pub(crate) enum ParserNumber {
 
 macro_rules! match_digit {
     ($data:expr, $i:expr, $pattern:pat) => {
-        matches!($data.get_unchecked($i), $pattern)
+        $i < $data.len() && matches!($data[$i], $pattern)
     };
 }
 
 macro_rules! is_digit {
     ($data:expr, $i:expr) => {
-        $data.get_unchecked($i).is_ascii_digit()
+        $i < $data.len() && $data[$i].is_ascii_digit()
     };
 }
 
 macro_rules! digit {
     ($data:expr, $i:expr) => {
-        ($data.get_unchecked($i) - b'0') as u64
+        ($data[$i] - b'0') as u64
     };
 }
 
 macro_rules! check_digit {
     ($data:expr, $i:expr) => {
-        if !$data.get_unchecked($i).is_ascii_digit() {
+        if !($i < $data.len() && $data[$i].is_ascii_digit()) {
             return Err(ErrorCode::InvalidNumber);
         }
     };
 }
 
+const DEFAULT_U8: u8 = 0_u8;
+
 #[inline(always)]
-unsafe fn parse_exponent(data: &[u8], index: &mut usize) -> Result<i32, ErrorCode> {
+fn parse_exponent(data: &[u8], index: &mut usize) -> Result<i32, ErrorCode> {
     let mut exponent: i32 = 0;
     let mut negative = false;
 
-    match data.get_unchecked(*index) {
+    if *index >= data.len() {
+        return Err(ErrorCode::InvalidNumber);
+    }
+
+    match data[*index] {
         b'+' => *index += 1,
         b'-' => {
             negative = true;
@@ -106,12 +112,12 @@ const POW10_UINT: [u64; 18] = [
 // parse at most 16 digits for fraction, record the exponent.
 // because we calcaute at least the first significant digit when both normal or subnormal float points
 #[inline(always)]
-unsafe fn parse_number_fraction(
+fn parse_number_fraction(
     data: &[u8],
     index: &mut usize,
     significant: &mut u64,
     exponent: &mut i32,
-    need: isize,
+    mut need: isize,
     dot_pos: usize,
 ) -> Result<bool, ErrorCode> {
     debug_assert!(need < FLOATING_LONGEST_DIGITS as isize);
@@ -123,9 +129,17 @@ unsafe fn parse_number_fraction(
     //     need -= 1;
     // }
     if need > 0 {
-        let (frac, ndigits) = unsafe { simd_str2int(&data[*index..], need as usize) };
-        *significant = *significant * POW10_UINT[ndigits] + frac;
-        *index += ndigits;
+        if data.len() - *index >= 16 {
+            let (frac, ndigits) = unsafe { simd_str2int(&data[*index..], need as usize) };
+            *significant = *significant * POW10_UINT[ndigits] + frac;
+            *index += ndigits;
+        } else {
+            while need > 0 && is_digit!(data, *index) {
+                *significant = *significant * 10 + digit!(data, *index);
+                *index += 1;
+                need -= 1;
+            }
+        }
     }
 
     *exponent -= *index as i32 - dot_pos as i32;
@@ -143,7 +157,7 @@ unsafe fn parse_number_fraction(
 }
 
 #[inline(always)]
-pub(crate) unsafe fn parse_number_unchecked(
+pub(crate) fn parse_number(
     data: &[u8],
     index: &mut usize,
     negative: bool,
@@ -156,8 +170,12 @@ pub(crate) unsafe fn parse_number_unchecked(
     if match_digit!(data, *index, b'0') {
         *index += 1;
 
+        if *index >= data.len() || !matches!(data[*index], b'.' | b'e' | b'E') {
+            return Ok(ParserNumber::Unsigned(0));
+        }
+
         // deal with 0e123 or 0.000e123
-        match data.get_unchecked(*index) {
+        match data[*index] {
             b'.' => {
                 *index += 1;
                 let dot_pos = *index;
@@ -218,9 +236,7 @@ pub(crate) unsafe fn parse_number_unchecked(
                 }
                 return Ok(ParserNumber::Float(0.0));
             }
-            _ => {
-                return Ok(ParserNumber::Unsigned(0));
-            }
+            _ => unreachable!("unreachable branch in parse_number_unchecked"),
         }
     } else {
         // parse significant digits
@@ -449,23 +465,21 @@ const POW10_FLOAT: [f64; 23] = [
 
 #[cfg(test)]
 mod test {
-    use super::parse_number_unchecked;
+    use super::parse_number;
     use crate::util::num::ParserNumber;
 
     fn test_parse_ok(input: &str, expect: f64) {
         let mut data = input.as_bytes().to_vec();
         data.push(b' ');
-        unsafe {
-            let mut index = 0;
-            let num = parse_number_unchecked(&data, &mut index, false).unwrap();
-            assert!(
-                matches!(num, ParserNumber::Float(f) if f == expect),
-                "parsed is {:?} failed num is {}",
-                num,
-                input
-            );
-            assert_eq!(data[index], b' ', "faild num is {}", input);
-        }
+        let mut index = 0;
+        let num = parse_number(&data, &mut index, false).unwrap();
+        assert!(
+            matches!(num, ParserNumber::Float(f) if f == expect),
+            "parsed is {:?} failed num is {}",
+            num,
+            input
+        );
+        assert_eq!(data[index], b' ', "faild num is {}", input);
     }
 
     #[test]
