@@ -24,6 +24,7 @@ use crate::{from_str, JsonValue};
 pub struct LazyValue<'de> {
     // the raw slice from origin json
     raw: JsonSlice<'de>,
+    // used for deserialize escaped strings
     own: UnsafeCell<Vec<u8>>,
 }
 
@@ -94,13 +95,19 @@ impl<'de> LazyValue<'de> {
 
     /// export the raw json text as str
     pub fn as_raw_str(&self) -> &str {
+        // # Safety
+        // it is validate when using to_object_iter/get ...
+        // if use `get_unchecked` unsafe apis, it must ensured by the user at first
         unsafe { from_utf8_unchecked(self.raw.as_ref()) }
     }
 
-    /// export the raw json text as str
-    // pub fn as_raw_cow(&self) -> &'de str {
-    //     unsafe { from_utf8_unchecked(self.raw.as_ref()) }
-    // }
+    /// export the raw json text as Cow str, the lifetime of Cow is the same as the json text
+    pub fn as_raw_cow(&self) -> Cow<'de, str> {
+        match &self.raw {
+            JsonSlice::Raw(r) => Cow::Borrowed(unsafe { from_utf8_unchecked(r) }),
+            JsonSlice::FastStr(f) => Cow::Owned(f.to_string()),
+        }
+    }
 
     /// export the raw json text as bytes
     /// Note: if the input json is not bytes or faststr, there will be a copy.
@@ -181,8 +188,8 @@ impl<'de> LazyValue<'de> {
 #[cfg(test)]
 mod test {
     use crate::value::JsonValue;
-    use crate::PointerNode;
     use crate::{get_unchecked, pointer};
+    use crate::{to_array_iter, PointerNode};
 
     use super::*;
 
@@ -267,5 +274,16 @@ mod test {
 
         let value = unsafe { get_unchecked(TEST_JSON, pointer![].iter()).unwrap() };
         assert!(value.get("int").unwrap().into_cow_str().is_err());
+    }
+
+    #[test]
+    fn test_lazyvalue_cow() {
+        fn get_cow(json: &str) -> Option<Cow<'_, str>> {
+            to_array_iter(json)
+                .next()
+                .map(|val| val.unwrap().as_raw_cow())
+        }
+
+        assert_eq!(get_cow("[true]").unwrap(), "true");
     }
 }
