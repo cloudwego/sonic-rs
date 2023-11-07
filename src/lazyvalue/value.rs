@@ -97,6 +97,11 @@ impl<'de> LazyValue<'de> {
         unsafe { from_utf8_unchecked(self.raw.as_ref()) }
     }
 
+    /// export the raw json text as str
+    // pub fn as_raw_cow(&self) -> &'de str {
+    //     unsafe { from_utf8_unchecked(self.raw.as_ref()) }
+    // }
+
     /// export the raw json text as bytes
     /// Note: if the input json is not bytes or faststr, there will be a copy.
     pub fn as_raw_bytes(&self) -> Bytes {

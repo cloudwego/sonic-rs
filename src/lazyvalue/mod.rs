@@ -7,5 +7,8 @@ pub use get::{
     get_from_slice, get_from_slice_unchecked, get_from_str, get_from_str_unchecked, get_many,
     get_many_unchecked, get_unchecked,
 };
-pub use iterator::{to_array_iter, to_object_iter, ArrayIntoIter, ObjectIntoIter};
+pub use iterator::{
+    to_array_iter, to_array_iter_unchecked, to_object_iter, to_object_iter_unchecked,
+    ArrayIntoIter, ObjectIntoIter, UnsafeArrayIntoIter, UnsafeObjectIntoIter,
+};
 pub use value::LazyValue;

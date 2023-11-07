@@ -7,7 +7,12 @@ use crate::reader::SliceRead;
 use faststr::FastStr;
 
 /// A lazied iterator for JSON object.
-pub struct ObjectIntoIter<'de> {
+pub struct ObjectIntoIter<'de>(ObjectInner<'de>);
+
+/// A lazied iterator for JSON array.
+pub struct ArrayIntoIter<'de>(ArrayInner<'de>);
+
+struct ObjectInner<'de> {
     json: JsonSlice<'de>,
     parser: Option<Parser<SliceRead<'static>>>,
     strbuf: Vec<u8>,
@@ -15,15 +20,24 @@ pub struct ObjectIntoIter<'de> {
     ending: bool,
 }
 
-/// A lazied iterator for JSON array.
-pub struct ArrayIntoIter<'de> {
+struct ArrayInner<'de> {
     json: JsonSlice<'de>,
     parser: Option<Parser<SliceRead<'static>>>,
     first: bool,
     ending: bool,
 }
 
-impl<'de> ObjectIntoIter<'de> {
+/// A lazied iterator for JSON object.
+/// # Safety
+/// If the json is invalid, the result is undefined.
+pub struct UnsafeObjectIntoIter<'de>(ObjectInner<'de>);
+
+/// A lazied iterator for JSON array.
+/// # Safety
+/// If the json is invalid, the result is undefined.
+pub struct UnsafeArrayIntoIter<'de>(ArrayInner<'de>);
+
+impl<'de> ObjectInner<'de> {
     fn new(json: JsonSlice<'de>) -> Self {
         Self {
             json,
@@ -34,7 +48,7 @@ impl<'de> ObjectIntoIter<'de> {
         }
     }
 
-    fn next_entry_impl(&mut self) -> Option<Result<(FastStr, LazyValue<'de>)>> {
+    fn next_entry_impl(&mut self, check: bool) -> Option<Result<(FastStr, LazyValue<'de>)>> {
         if self.ending {
             return None;
         }
@@ -47,7 +61,7 @@ impl<'de> ObjectIntoIter<'de> {
         }
 
         let parser = unsafe { self.parser.as_mut().unwrap_unchecked() };
-        match parser.parse_entry_lazy(&mut self.strbuf, &mut self.first) {
+        match parser.parse_entry_lazy(&mut self.strbuf, &mut self.first, check) {
             Ok(ret) => {
                 if let Some((key, val)) = ret {
                     let val = self.json.slice_ref(val);
@@ -65,7 +79,7 @@ impl<'de> ObjectIntoIter<'de> {
     }
 }
 
-impl<'de> ArrayIntoIter<'de> {
+impl<'de> ArrayInner<'de> {
     fn new(json: JsonSlice<'de>) -> Self {
         Self {
             json,
@@ -75,7 +89,7 @@ impl<'de> ArrayIntoIter<'de> {
         }
     }
 
-    fn next_elem_impl(&mut self) -> Option<Result<LazyValue<'de>>> {
+    fn next_elem_impl(&mut self, check: bool) -> Option<Result<LazyValue<'de>>> {
         if self.ending {
             return None;
         }
@@ -88,7 +102,7 @@ impl<'de> ArrayIntoIter<'de> {
         }
 
         let parser = unsafe { self.parser.as_mut().unwrap_unchecked() };
-        match parser.parse_array_elem_lazy(&mut self.first) {
+        match parser.parse_array_elem_lazy(&mut self.first, check) {
             Ok(ret) => {
                 if let Some(ret) = ret {
                     let val = self.json.slice_ref(ret);
@@ -109,20 +123,38 @@ impl<'de> ArrayIntoIter<'de> {
 /// Convert a json to a lazy ObjectIntoIter. The iterator is lazied and the parsing will doing when iterating.
 /// The item of the iterator is a Result. If parse error, it will return Err.
 pub fn to_object_iter<'de, I: JsonInput<'de>>(json: I) -> ObjectIntoIter<'de> {
-    ObjectIntoIter::new(json.to_json_slice())
+    ObjectIntoIter(ObjectInner::new(json.to_json_slice()))
 }
 
 /// Convert a json to a lazy ArrayIntoIter. The iterator is lazied and the parsing will doing when iterating.
 /// The item of the iterator is a Result. If parse error, it will return Err.
 pub fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayIntoIter<'de> {
-    ArrayIntoIter::new(json.to_json_slice())
+    ArrayIntoIter(ArrayInner::new(json.to_json_slice()))
+}
+
+/// Convert a json to a lazy ObjectIntoIter. The iterator is lazied and the parsing will doing when iterating.
+/// The item of the iterator is a Result. If parse error, it will return Err.
+/// # Safety
+/// If the json is invalid, the result is undefined.
+pub unsafe fn to_object_iter_unchecked<'de, I: JsonInput<'de>>(
+    json: I,
+) -> UnsafeObjectIntoIter<'de> {
+    UnsafeObjectIntoIter(ObjectInner::new(json.to_json_slice()))
+}
+
+/// Convert a json to a lazy ArrayIntoIter. The iterator is lazied and the parsing will doing when iterating.
+/// The item of the iterator is a Result. If parse error, it will return Err.
+/// # Safety
+/// If the json is invalid, the result is undefined.
+pub unsafe fn to_array_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> UnsafeArrayIntoIter<'de> {
+    UnsafeArrayIntoIter(ArrayInner::new(json.to_json_slice()))
 }
 
 impl<'de> Iterator for ObjectIntoIter<'de> {
     type Item = Result<(FastStr, LazyValue<'de>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.next_entry_impl()
+        self.0.next_entry_impl(true)
     }
 }
 
@@ -130,7 +162,23 @@ impl<'de> Iterator for ArrayIntoIter<'de> {
     type Item = Result<LazyValue<'de>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.next_elem_impl()
+        self.0.next_elem_impl(true)
+    }
+}
+
+impl<'de> Iterator for UnsafeObjectIntoIter<'de> {
+    type Item = Result<(FastStr, LazyValue<'de>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next_entry_impl(false)
+    }
+}
+
+impl<'de> Iterator for UnsafeArrayIntoIter<'de> {
+    type Item = Result<LazyValue<'de>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next_elem_impl(false)
     }
 }
 
@@ -159,9 +207,15 @@ mod test {
         );
         let _v: serde_json::Value = serde_json::from_slice(json.as_ref()).unwrap();
         let mut iter = to_object_iter(&json);
+        let mut iter_unchecked = unsafe { to_object_iter_unchecked(&json) };
 
         let mut test_ok = |key: &str, val: &str, typ: JsonType| {
             let ret = iter.next().unwrap().unwrap();
+            assert_eq!(ret.0.as_str(), key);
+            assert_eq!(ret.1.as_raw_slice(), val.as_bytes(), "key is {} ", key);
+            assert_eq!(ret.1.get_type(), typ);
+
+            let ret = iter_unchecked.next().unwrap().unwrap();
             assert_eq!(ret.0.as_str(), key);
             assert_eq!(ret.1.as_raw_slice(), val.as_bytes(), "key is {} ", key);
             assert_eq!(ret.1.get_type(), typ);
@@ -219,9 +273,14 @@ mod test {
         ]"#,
         );
         let mut iter = to_array_iter(&json);
+        let mut iter_unchecked = unsafe { to_array_iter_unchecked(&json) };
         let mut test_ok = |val: &str, typ: JsonType| {
             let ret: LazyValue<'_> = iter.next().unwrap().unwrap();
             assert_eq!(ret.as_raw_str(), val);
+            assert_eq!(ret.get_type(), typ);
+
+            let ret = iter_unchecked.next().unwrap().unwrap();
+            assert_eq!(ret.as_raw_slice(), val.as_bytes());
             assert_eq!(ret.get_type(), typ);
         };
 

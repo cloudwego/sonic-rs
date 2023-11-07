@@ -381,7 +381,11 @@ where
     }
 
     #[inline]
-    pub(crate) fn parse_array_elem_lazy(&mut self, first: &mut bool) -> Result<Option<&'de [u8]>> {
+    pub(crate) fn parse_array_elem_lazy(
+        &mut self,
+        first: &mut bool,
+        check: bool,
+    ) -> Result<Option<&'de [u8]>> {
         if *first && self.skip_space() != Some(b'[') {
             return perr!(self, ExpectedArrayStart);
         }
@@ -398,7 +402,11 @@ where
             }
             _ => return perr!(self, ExpectedArrayCommaOrEnd),
         };
-        let raw = self.skip_one()?;
+        let raw = if check {
+            self.skip_one()
+        } else {
+            self.skip_one_unchecked()
+        }?;
         Ok(Some(raw))
     }
 
@@ -407,6 +415,7 @@ where
         &mut self,
         strbuf: &mut Vec<u8>,
         first: &mut bool,
+        check: bool,
     ) -> Result<Option<(FastStr, &'de [u8])>> {
         if *first && self.skip_space() != Some(b'{') {
             return perr!(self, ExpectedObjectStart);
@@ -427,7 +436,11 @@ where
             Reference::Copied(s) => FastStr::new(s),
         };
         self.parse_object_clo()?;
-        let raw = self.skip_one()?;
+        let raw = if check {
+            self.skip_one()
+        } else {
+            self.skip_one_unchecked()
+        }?;
         Ok(Some((key, raw)))
     }
 
