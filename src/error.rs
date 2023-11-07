@@ -365,8 +365,11 @@ impl Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Error({}, line: {}, column: {}) The error position at: {:?}",
-            self.err.code, self.err.line, self.err.column, self.err.descript
+            "Error({}, line: {}, column: {}){}",
+            self.err.code,
+            self.err.line,
+            self.err.column,
+            self.err.descript.as_ref().unwrap_or(&"".to_string())
         )
     }
 }
