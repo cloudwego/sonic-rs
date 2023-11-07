@@ -6,7 +6,7 @@ use sonic_rs::dom_from_slice;
 use sonic_rs::dom_from_str;
 use sonic_rs::JsonNumberTrait;
 use sonic_rs::JsonValue;
-use sonic_rs::{to_array_iter, to_object_iter};
+use sonic_rs::{to_array_iter, to_array_iter_unchecked, to_object_iter, to_object_iter_unchecked};
 
 fuzz_target!(|data: &[u8]| {
     match serde_json::from_slice::<JValue>(data) {
@@ -23,12 +23,42 @@ fuzz_target!(|data: &[u8]| {
                     let (k, lv) = ret.unwrap();
                     let jv = jv.get(k.as_str()).unwrap();
                     compare_lazyvalue(jv, &lv);
+
+                    let gv = sonic_rs::get(data, &[k.as_str()]).unwrap();
+                    compare_lazyvalue(jv, &gv);
+                }
+
+                // fuzzing unchecked apis
+                unsafe {
+                    for ret in to_object_iter_unchecked(data) {
+                        let (k, lv) = ret.unwrap();
+                        let jv = jv.get(k.as_str()).unwrap();
+                        compare_lazyvalue(jv, &lv);
+
+                        let gv = sonic_rs::get_unchecked(data, &[k.as_str()]).unwrap();
+                        compare_lazyvalue(jv, &gv);
+                    }
                 }
             } else if jv.is_array() {
                 for (i, ret) in to_array_iter(data).enumerate() {
                     let lv = ret.unwrap();
                     let jv = jv.get(i).unwrap();
                     compare_lazyvalue(jv, &lv);
+
+                    let gv = sonic_rs::get(data, &[i]).unwrap();
+                    compare_lazyvalue(jv, &gv);
+                }
+
+                // fuzzing unchecked apis
+                unsafe {
+                    for (i, ret) in to_array_iter_unchecked(data).enumerate() {
+                        let lv = ret.unwrap();
+                        let jv = jv.get(i).unwrap();
+                        compare_lazyvalue(jv, &lv);
+
+                        let gv = sonic_rs::get_unchecked(data, &[i]).unwrap();
+                        compare_lazyvalue(jv, &gv);
+                    }
                 }
             }
         }
