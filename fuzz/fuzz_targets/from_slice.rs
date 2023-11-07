@@ -6,25 +6,45 @@ use sonic_rs::dom_from_slice;
 use sonic_rs::dom_from_str;
 use sonic_rs::JsonNumberTrait;
 use sonic_rs::JsonValue;
+use sonic_rs::{to_array_iter, to_object_iter};
 
 fuzz_target!(|data: &[u8]| {
     match serde_json::from_slice::<JValue>(data) {
         Ok(jv) => {
             let sv = dom_from_slice(data).unwrap();
-            compare(&jv, sv.as_value());
+            compare_value(&jv, sv.as_value());
             let sout = sonic_rs::to_string(&sv).unwrap();
             let jv2 = serde_json::from_str::<JValue>(&sout).unwrap();
             let sv2 = dom_from_str(&sout).unwrap();
-            compare(&jv2, sv2.as_value());
+            let eq = compare_value(&jv2, sv2.as_value());
+
+            if jv.is_object() && eq {
+                for ret in to_object_iter(data) {
+                    let (k, lv) = ret.unwrap();
+                    let jv = jv.get(k.as_str()).unwrap();
+                    compare_lazyvalue(jv, &lv);
+                }
+            } else if jv.is_array() {
+                for (i, ret) in to_array_iter(data).enumerate() {
+                    let lv = ret.unwrap();
+                    let jv = jv.get(i).unwrap();
+                    compare_lazyvalue(jv, &lv);
+                }
+            }
         }
         Err(_) => {
             let _ = dom_from_slice(data).unwrap_err();
-            // assert!(err.is_syntax());
         }
     }
 });
 
-fn compare(jv: &JValue, sv: &sonic_rs::Value) {
+fn compare_lazyvalue(jv: &JValue, sv: &sonic_rs::LazyValue) {
+    let out = sv.as_raw_slice();
+    let sv2 = sonic_rs::dom_from_slice(out).unwrap();
+    compare_value(jv, sv2.as_value());
+}
+
+fn compare_value(jv: &JValue, sv: &sonic_rs::Value) -> bool {
     match *jv {
         JValue::Object(ref obj) => {
             assert!(sv.is_object());
@@ -33,8 +53,11 @@ fn compare(jv: &JValue, sv: &sonic_rs::Value) {
             if sobj.len() == obj.len() {
                 for (k, v) in obj {
                     let got = sobj.get(k).unwrap();
-                    compare(v, got)
+                    compare_value(v, got);
                 }
+                return true;
+            } else {
+                return false;
             }
         }
         JValue::Array(ref arr) => {
@@ -44,7 +67,7 @@ fn compare(jv: &JValue, sv: &sonic_rs::Value) {
 
             for (i, v) in arr.iter().enumerate() {
                 let got = sarr.get(i).unwrap();
-                compare(v, got)
+                compare_value(v, got);
             }
         }
         JValue::Bool(b) => assert!(sv.is_boolean() && sv.as_bool().unwrap() == b),
@@ -52,7 +75,9 @@ fn compare(jv: &JValue, sv: &sonic_rs::Value) {
         JValue::Number(ref num) => {
             let got = sv.as_number().unwrap();
             if num.is_f64() {
-                assert!(num.as_f64().unwrap() == got.as_f64().unwrap());
+                let jf = num.as_f64().unwrap();
+                let sf = got.as_f64().unwrap();
+                assert_eq!(jf, sf, "jf {} sf {}", jf, sf);
             }
             if num.is_u64() {
                 assert!(num.as_u64().unwrap() == got.as_u64().unwrap());
@@ -63,4 +88,5 @@ fn compare(jv: &JValue, sv: &sonic_rs::Value) {
         }
         JValue::String(ref s) => assert!(sv.is_str() && sv.as_str().unwrap() == s),
     }
+    true
 }

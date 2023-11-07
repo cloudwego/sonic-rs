@@ -20,9 +20,9 @@ pub const ESCAPED_TAB: [u8; 256] = [
 ];
 
 pub(crate) struct StringBlock {
-    bs_bits: u32,
-    quote_bits: u32,
-    unescaped_bits: u32,
+    pub(crate) bs_bits: u32,
+    pub(crate) quote_bits: u32,
+    pub(crate) unescaped_bits: u32,
 }
 
 impl StringBlock {
@@ -68,6 +68,11 @@ impl StringBlock {
     pub fn bs_index(&self) -> usize {
         self.bs_bits.trailing_zeros() as usize
     }
+
+    #[inline(always)]
+    pub fn unescaped_index(&self) -> usize {
+        self.unescaped_bits.trailing_zeros() as usize
+    }
 }
 
 // return the size of the actual parsed string
@@ -77,6 +82,7 @@ pub(crate) unsafe fn parse_string_inplace(
 ) -> std::result::Result<usize, ErrorCode> {
     const LANS: usize = 32;
     let sdst = *src;
+    let src: &mut *const u8 = std::mem::transmute(src);
     let mut block;
 
     // loop for string without escaped chars
@@ -98,7 +104,7 @@ pub(crate) unsafe fn parse_string_inplace(
 
     let bs_dist = block.bs_index();
     *src = src.add(bs_dist);
-    let mut dst = *src;
+    let mut dst = sdst.add((*src as usize) - sdst as usize);
 
     // loop for string with escaped chars
     loop {

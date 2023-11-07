@@ -132,7 +132,7 @@ const DIGIT_TO_VAL32: [u32; 886] = [
 // see
 // https://lemire.me/blog/2019/04/17/parsing-short-hexadecimal-strings-efficiently/
 #[inline(always)]
-fn hex_to_u32_nocheck(src: &[u8; 4]) -> u32 {
+pub(crate) unsafe fn hex_to_u32_nocheck(src: &[u8; 4]) -> u32 {
     // strictly speaking, static inline is a C-ism
     let v1 = DIGIT_TO_VAL32[630 + src[0] as usize];
     let v2 = DIGIT_TO_VAL32[420 + src[1] as usize];
@@ -152,7 +152,7 @@ fn hex_to_u32_nocheck(src: &[u8; 4]) -> u32 {
 // function looks cheap.
 //
 // Note: we assume that surrogates are treated separately
-fn codepoint_to_utf8(cp: u32, c: *mut u8) -> usize {
+pub(crate) unsafe fn codepoint_to_utf8(cp: u32, c: *mut u8) -> usize {
     if cp <= 0x7F {
         unsafe { *c = cp as u8 };
         1 // ascii
@@ -185,13 +185,13 @@ fn codepoint_to_utf8(cp: u32, c: *mut u8) -> usize {
     }
 }
 
-pub unsafe fn handle_unicode_codepoint_mut(src_ptr: &mut *mut u8, dst_ptr: &mut *mut u8) -> bool {
+pub unsafe fn handle_unicode_codepoint_mut(src_ptr: &mut *const u8, dst_ptr: &mut *mut u8) -> bool {
     // hex_to_u32_nocheck fills high 16 bits of the return value
-    // with 1s if the conversion isn't valid; we defer the check for this to
-    // inside the multilingual plane check
+    // with 1s if the conversion isn't valid
     let mut code_point = hex_to_u32_nocheck(&*(src_ptr.add(2) as *const [u8; 4]));
 
     *src_ptr = src_ptr.add(6);
+
     // check for low surrogate for characters outside the Basic
     // Multilingual Plane.
     if (0xD800..0xDC00).contains(&code_point) {
@@ -200,20 +200,20 @@ pub unsafe fn handle_unicode_codepoint_mut(src_ptr: &mut *mut u8, dst_ptr: &mut 
         }
         let code_point_2 = hex_to_u32_nocheck(&*(src_ptr.add(2) as *const [u8; 4]));
 
-        // if the first code point is invalid we will get here, as we will go past
-        // the check for being outside the Basic Multilingual plane. If we don't
-        // find a \u immediately afterwards we fail out anyhow, but if we do,
-        // this check catches both the case of the first code point being invalid
-        // or the second code point being invalid.
-        if (code_point | code_point_2) >> 16 != 0 {
+        let low_bit = code_point_2.wrapping_sub(0xdc00);
+        if (low_bit >> 10) != 0 {
+            // invalid surrogate
             return false;
         }
 
-        code_point = (((code_point.wrapping_sub(0xD800)) << 10)
-            | (code_point_2.wrapping_sub(0xDC00)))
-        .wrapping_add(0x10000);
+        code_point = (((code_point - 0xd800) << 10) | low_bit).wrapping_add(0x10000);
         *src_ptr = src_ptr.add(6);
+    } else if (0xDC00..0xE000).contains(&code_point) {
+        // invalid surrogate
+        return false;
     }
+
+    // also checking invalid utf8 here
     let offset = codepoint_to_utf8(code_point, *dst_ptr);
     *dst_ptr = dst_ptr.add(offset);
     offset > 0
@@ -245,6 +245,9 @@ pub unsafe fn handle_unicode_codepoint(src_ptr: &mut *const u8, dst_ptr: &mut *m
 
         code_point = (((code_point - 0xD800) << 10) | (code_point_2 - 0xDC00)) + 0x10000;
         *src_ptr = src_ptr.add(6);
+    } else if (0xDC00..0xE000).contains(&code_point) {
+        // invalid surrogate
+        return false;
     }
     let offset = codepoint_to_utf8(code_point, *dst_ptr);
     *dst_ptr = dst_ptr.add(offset);
