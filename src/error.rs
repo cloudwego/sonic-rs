@@ -208,7 +208,7 @@ pub(crate) enum ErrorCode {
     #[error("Expected this character to be '['")]
     ExpectedArrayStart,
 
-    #[error("Invalid hex escape code")]
+    #[error("Invalid escape chars")]
     InvalidEscape,
 
     #[error("Invalid number")]
@@ -365,7 +365,7 @@ impl Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Error({}, line: {}, column: {}) Error around is: {:?}",
+            "Error({}, line: {}, column: {}) The error position at: {:?}",
             self.err.code, self.err.line, self.err.column, self.err.descript
         )
     }

@@ -270,6 +270,8 @@ pub(crate) fn parse_number(
             }
         }
 
+        // TODO: fix special case like `43332000001000000003888e-4`.
+        // it should parse as `4.3332000001000003e18`.
         if match_digit!(data, *index, b'e' | b'E') {
             // parse exponent
             *index += 1;

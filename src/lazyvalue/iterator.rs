@@ -49,9 +49,8 @@ impl<'de> ObjectIntoIter<'de> {
         let parser = unsafe { self.parser.as_mut().unwrap_unchecked() };
         match parser.parse_entry_lazy(&mut self.strbuf, &mut self.first) {
             Ok(ret) => {
-                if let Some(ret) = ret {
-                    let key = ret.0;
-                    let val = self.json.slice_ref(ret.1);
+                if let Some((key, val)) = ret {
+                    let val = self.json.slice_ref(val);
                     Some(Ok((key, LazyValue::new(val))))
                 } else {
                     self.ending = true;
@@ -153,9 +152,12 @@ mod test {
             "object": {"name": "Alice"},
             "empty": {},
             "": [],
-            "escaped\"": "\"\""
+            "escaped\"": "\"\"",
+            "\t": "\n",
+            "\u0000": "\u0001"
         }"#,
         );
+        let _v: serde_json::Value = serde_json::from_slice(json.as_ref()).unwrap();
         let mut iter = to_object_iter(&json);
 
         let mut test_ok = |key: &str, val: &str, typ: JsonType| {
@@ -173,6 +175,8 @@ mod test {
         test_ok("empty", r#"{}"#, JsonType::Object);
         test_ok("", r#"[]"#, JsonType::Array);
         test_ok("escaped\"", r#""\"\"""#, JsonType::String);
+        test_ok("\t", r#""\n""#, JsonType::String);
+        test_ok("\x00", r#""\u0001""#, JsonType::String);
         assert!(iter.next().is_none());
         assert!(iter.next().is_none());
 
@@ -192,8 +196,20 @@ mod test {
     fn test_array_iter() {
         let json = Bytes::from(
             r#"[
+            "",
+            "\\\"\"",
+            "{\"a\":null}",
             "Hello, world!",
+            0,
+            1,
+            11,
+            1000,
             42,
+            42.0,
+            42e-1,
+            4.2e+1,
+            2333.2e+1,
+            0.0000000999e8,
             true,
             null,
             ["foo","bar","baz"],
@@ -204,13 +220,25 @@ mod test {
         );
         let mut iter = to_array_iter(&json);
         let mut test_ok = |val: &str, typ: JsonType| {
-            let ret = iter.next().unwrap().unwrap();
-            assert_eq!(ret.as_raw_slice(), val.as_bytes());
+            let ret: LazyValue<'_> = iter.next().unwrap().unwrap();
+            assert_eq!(ret.as_raw_str(), val);
             assert_eq!(ret.get_type(), typ);
         };
 
+        test_ok(r#""""#, JsonType::String);
+        test_ok(r#""\\\"\"""#, JsonType::String);
+        test_ok(r#""{\"a\":null}""#, JsonType::String);
         test_ok(r#""Hello, world!""#, JsonType::String);
+        test_ok("0", JsonType::Number);
+        test_ok("1", JsonType::Number);
+        test_ok("11", JsonType::Number);
+        test_ok("1000", JsonType::Number);
         test_ok("42", JsonType::Number);
+        test_ok("42.0", JsonType::Number);
+        test_ok("42e-1", JsonType::Number);
+        test_ok("4.2e+1", JsonType::Number);
+        test_ok("2333.2e+1", JsonType::Number);
+        test_ok("0.0000000999e8", JsonType::Number);
         test_ok("true", JsonType::Boolean);
         test_ok("null", JsonType::Null);
         test_ok(r#"["foo","bar","baz"]"#, JsonType::Array);
@@ -246,5 +274,12 @@ mod test {
         let iter = to_array_iter(&json);
         let out: Vec<JsonType> = iter.map(|e| e.get_type()).collect();
         println!("array elem type is {:?}", out);
+    }
+
+    #[test]
+    fn test_num_iter() {
+        for i in to_array_iter("[6,-9E6]") {
+            println!("{:?}", i.unwrap().as_raw_str());
+        }
     }
 }

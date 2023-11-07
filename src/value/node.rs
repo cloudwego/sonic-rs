@@ -19,7 +19,6 @@ use std::mem::transmute;
 use std::ops;
 use std::ptr::NonNull;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
-use std::sync::Arc;
 
 /// Value is a node in the DOM tree.
 pub struct Value<'dom> {
@@ -858,7 +857,7 @@ struct ValueInner {
 
 pub struct Document {
     root: ValueInner,
-    alloc: Arc<Bump>,
+    alloc: Bump,
 }
 
 unsafe impl Send for Document {}
@@ -995,7 +994,7 @@ impl Document {
 
     pub fn new() -> Document {
         Self {
-            alloc: Arc::new(Bump::new()),
+            alloc: Bump::new(),
             root: ValueInner { _typ: 0, _val: 0 },
         }
     }
@@ -1007,7 +1006,7 @@ impl Document {
     pub fn as_value_mut(&'_ mut self) -> ValueMut<'_> {
         ValueMut {
             val: unsafe { transmute(&mut self.root) },
-            alloc: self.alloc.as_ref(),
+            alloc: &self.alloc,
         }
     }
 
@@ -1015,7 +1014,7 @@ impl Document {
         if self.as_value().is_array() {
             Some(ArrayMut(ValueMut {
                 val: unsafe { transmute(&mut self.root) },
-                alloc: self.alloc.as_ref(),
+                alloc: &self.alloc,
             }))
         } else {
             None
@@ -1026,7 +1025,7 @@ impl Document {
         if self.as_value().is_object() {
             Some(ObjectMut(ValueMut {
                 val: unsafe { transmute(&mut self.root) },
-                alloc: self.alloc.as_ref(),
+                alloc: &self.alloc,
             }))
         } else {
             None
@@ -1034,7 +1033,7 @@ impl Document {
     }
 
     fn parse_bytes_impl(&mut self, json: &[u8]) -> Result<()> {
-        let alloc = self.alloc.as_ref();
+        let alloc = &self.alloc;
         let len = json.len();
 
         // allocate the padding buffer for the input json
@@ -1063,7 +1062,7 @@ impl Document {
             parent: usize,
         }
 
-        impl<'a> DocumentVisitor<'_> {
+        impl<'a> DocumentVisitor<'a> {
             // the array and object's logic is same.
             fn visit_container(&mut self, len: usize) -> bool {
                 let visitor = self;
@@ -1202,7 +1201,7 @@ impl Document {
             }
         }
 
-        let alloc = self.alloc.as_ref();
+        let alloc = &self.alloc;
         // optimize: use a pre-allocated vec.
         // If json is valid, the max number of value nodes should be
         // half of the valid json length + 2. like as [1,2,3,1,2,3...]
@@ -1462,6 +1461,16 @@ mod test {
         }
     }
 
+    #[test]
+    fn test_parse_escaped() {
+        let testdata = [
+            r#""\\9,\ud9CC\u8888|""#,
+            r#"{"\t:0000000006427[{\t:003E:[[{0.77":96}"#,
+        ];
+        for data in testdata {
+            test_value(data).unwrap();
+        }
+    }
     const TEST_JSON: &str = r#"{
         "bool": true,
         "int": -1,

@@ -7,8 +7,8 @@ use crate::pointer::{
 use crate::pointer::{JsonPointer, PointerTree};
 use crate::util::arch::{get_nonspace_bits, prefix_xor};
 use crate::util::num::{parse_number, ParserNumber};
-use crate::util::string::parse_valid_escaped_string;
 use crate::util::string::*;
+use crate::util::unicode::{codepoint_to_utf8, hex_to_u32_nocheck};
 use crate::visitor::JsonVisitor;
 use crate::JsonType;
 use arrayref::array_ref;
@@ -18,6 +18,7 @@ use smallvec::SmallVec;
 use std::num::NonZeroU8;
 use std::ops::Deref;
 use std::slice::from_raw_parts;
+use std::slice::from_raw_parts_mut;
 use std::str::from_utf8_unchecked;
 
 pub(crate) const DEFAULT_KEY_BUF_CAPACITY: usize = 128;
@@ -690,6 +691,137 @@ where
         })
     }
 
+    pub(crate) fn parse_escaped_utf8(&mut self) -> Result<u32> {
+        let point1 = if let Some(asc) = self.read.next_n(4) {
+            unsafe { hex_to_u32_nocheck(&*(asc.as_ptr() as *const _ as *const [u8; 4])) }
+        } else {
+            return perr!(self, EofWhileParsing);
+        };
+
+        if (0xD800..0xDC00).contains(&point1) {
+            // parse the second utf8 code point of surrogate
+            let point2 = if let Some(asc) = self.read.next_n(6) {
+                if asc[0] != b'\\' || asc[1] != b'u' {
+                    return perr!(self, InvalidUnicodeCodePoint);
+                }
+                unsafe { hex_to_u32_nocheck(&*(asc.as_ptr().add(2) as *const _ as *const [u8; 4])) }
+            } else {
+                return perr!(self, EofWhileParsing);
+            };
+
+            /* calcute the real code point */
+            let low_bit = point2.wrapping_sub(0xdc00);
+            if (low_bit >> 10) != 0 {
+                // invalid surrogate
+                return perr!(self, InvalidUnicodeCodePoint);
+            }
+
+            Ok((((point1 - 0xd800) << 10) | low_bit).wrapping_add(0x10000))
+        } else if (0xDC00..0xE000).contains(&point1) {
+            // invalid surrogate
+            perr!(self, InvalidUnicodeCodePoint)
+        } else {
+            Ok(point1)
+        }
+    }
+
+    pub(crate) unsafe fn parse_escaped_char(&mut self, buf: &mut Vec<u8>) -> Result<()> {
+        'esacpe: loop {
+            match self.read.next() {
+                Some(b'u') => {
+                    let code = self.parse_escaped_utf8()?;
+                    buf.reserve(4);
+                    let ptr = buf.as_mut_ptr().add(buf.len());
+                    let cnt = codepoint_to_utf8(code, ptr);
+                    buf.set_len(buf.len() + cnt);
+                }
+                Some(c) if ESCAPED_TAB[c as usize] != 0 => {
+                    buf.push(ESCAPED_TAB[c as usize]);
+                }
+                None => return perr!(self, EofWhileParsing),
+                _ => return perr!(self, InvalidEscape),
+            }
+
+            // fast path for continous escaped chars
+            if self.read.peek() == Some(b'\\') {
+                self.read.eat(1);
+                continue 'esacpe;
+            }
+            break 'esacpe;
+        }
+        Ok(())
+    }
+
+    pub(crate) unsafe fn parse_string_escaped<'own>(
+        &mut self,
+        buf: &'own mut Vec<u8>,
+    ) -> Result<Reference<'de, 'own, [u8]>> {
+        const LANS: usize = 32;
+
+        self.parse_escaped_char(buf)?;
+
+        while let Some(chunk) = self.read.peek_n(LANS) {
+            buf.reserve(LANS);
+            let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
+            let block = StringBlock {
+                bs_bits: (v.eq(u8x32::splat(b'\\'))).bitmask(),
+                quote_bits: (v.eq(u8x32::splat(b'"'))).bitmask(),
+                unescaped_bits: (v.le(u8x32::splat(0x1f))).bitmask(),
+            };
+
+            if block.has_unesacped() {
+                self.read.eat(block.unescaped_index());
+                return perr!(self, ControlCharacterWhileParsingString);
+            }
+
+            // write the chunk to buf, we will set new_len later
+            let chunk = from_raw_parts_mut(buf.as_mut_ptr().add(buf.len()), LANS);
+            v.write_to_slice_unaligned_unchecked(chunk);
+
+            if block.has_quote_first() {
+                let cnt = block.quote_index();
+                buf.set_len(buf.len() + cnt);
+
+                // skip the right quote
+                self.read.eat(cnt + 1);
+                return Ok(Reference::Copied(buf.as_slice()));
+            }
+
+            if block.has_backslash() {
+                // TODO: loop unrooling here
+                let cnt = block.bs_index();
+                // skip the backslash
+                self.read.eat(cnt + 1);
+                buf.set_len(buf.len() + cnt);
+                self.parse_escaped_char(buf)?;
+            } else {
+                buf.set_len(buf.len() + LANS);
+                self.read.eat(LANS);
+            }
+        }
+
+        // scalar codes
+        while let Some(c) = self.read.peek() {
+            match c {
+                b'"' => {
+                    self.read.eat(1);
+                    return Ok(Reference::Copied(buf.as_slice()));
+                }
+                b'\\' => {
+                    // skip the backslash
+                    self.read.eat(1);
+                    self.parse_escaped_char(buf)?;
+                }
+                _ => {
+                    buf.push(c);
+                    self.read.eat(1);
+                }
+            }
+        }
+
+        perr!(self, EofWhileParsing)
+    }
+
     #[inline(always)]
     // parse_string_raw maybe borrowed, maybe copied into buf(buf will be clear at first).
     pub(crate) fn parse_string_raw<'own>(
@@ -698,21 +830,64 @@ where
     ) -> Result<Reference<'de, 'own, [u8]>> {
         // now reader is start after `"`, so we can directly skipstring
         let start = self.read.index();
-        let status = self.skip_string_impl()?;
-        let key = self.read.slice_unchecked(start, self.read.index() - 1);
-        match status {
-            ParseStatus::HasEsacped => {
-                buf.clear();
-                match parse_valid_escaped_string(key, buf) {
-                    Ok(_) => Ok(Reference::Copied(buf)),
-                    Err(code) => {
-                        self.error_index = start;
-                        perr!(self, code)
-                    }
-                }
+        const LANS: usize = u8x32::lanes();
+
+        while let Some(chunk) = self.read.peek_n(LANS) {
+            let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
+            let block = StringBlock {
+                bs_bits: (v.eq(u8x32::splat(b'\\'))).bitmask(),
+                quote_bits: (v.eq(u8x32::splat(b'"'))).bitmask(),
+                unescaped_bits: (v.le(u8x32::splat(0x1f))).bitmask(),
+            };
+
+            if block.has_quote_first() {
+                let cnt = block.quote_index();
+                self.read.eat(cnt + 1);
+                return Ok(Reference::Borrowed(
+                    self.read.slice_unchecked(start, self.read.index() - 1),
+                ));
             }
-            _ => Ok(Reference::Borrowed(key)),
+
+            if block.has_unesacped() {
+                self.read.eat(block.unescaped_index());
+                return perr!(self, ControlCharacterWhileParsingString);
+            }
+
+            if block.has_backslash() {
+                let cnt = block.bs_index();
+                // skip the backslash
+                self.read.eat(cnt + 1);
+
+                // copy unescaped parts to buf
+                buf.clear();
+                buf.extend_from_slice(&self.read.as_u8_slice()[start..self.read.index() - 1]);
+
+                return unsafe { self.parse_string_escaped(buf) };
+            }
+
+            self.read.eat(LANS);
+            continue;
         }
+
+        // found quote for remaining bytes
+        while let Some(c) = self.read.peek() {
+            match c {
+                b'"' => {
+                    self.read.eat(1);
+                    return Ok(Reference::Borrowed(
+                        self.read.slice_unchecked(start, self.read.index() - 1),
+                    ));
+                }
+                b'\\' => {
+                    buf.clear();
+                    buf.extend_from_slice(self.read.slice_unchecked(start, self.read.index()));
+                    self.read.eat(1);
+                    return unsafe { self.parse_string_escaped(buf) };
+                }
+                _ => self.read.eat(1),
+            }
+        }
+        perr!(self, EofWhileParsing)
     }
 
     #[inline(always)]
@@ -807,13 +982,34 @@ where
         Ok(())
     }
 
+    fn skip_escaped_chars(&mut self) -> Result<()> {
+        match self.read.peek() {
+            Some(b'u') => {
+                if self.read.remain() < 6 {
+                    return perr!(self, EofWhileParsing);
+                } else {
+                    self.read.eat(5);
+                }
+            }
+            Some(c) => {
+                if self.read.next().is_none() {
+                    return perr!(self, EofWhileParsing);
+                }
+                if ESCAPED_TAB[c as usize] == 0 {
+                    return perr!(self, InvalidEscape);
+                }
+            }
+            None => return perr!(self, EofWhileParsing),
+        }
+        Ok(())
+    }
+
     // skip_string skips a JSON string with validation.
     #[inline(always)]
     fn skip_string(&mut self) -> Result<()> {
         const LANS: usize = u8x32::lanes();
-        let r = &mut self.read;
 
-        while let Some(chunk) = r.peek_n(LANS) {
+        while let Some(chunk) = self.read.peek_n(LANS) {
             let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
             let v_bs = v.eq(u8x32::splat(b'\\'));
             let v_quote = v.eq(u8x32::splat(b'"'));
@@ -823,46 +1019,23 @@ where
             // check the mask
             if mask != 0 {
                 let cnt = mask.trailing_zeros() as usize;
-                r.eat(cnt + 1);
+                self.read.eat(cnt + 1);
 
-                let ch = chunk[cnt];
-                if ch == b'\\' {
-                    // at leaset need two bytes, such as `"\""`
-                    if r.remain() < 2 {
-                        return perr!(self, EofWhileParsing);
-                    }
-
-                    // we check the remain bytes at first
-                    let second = unsafe { r.peek().unwrap_unchecked() };
-                    if ESCAPED_TAB[second as usize] == 0 {
-                        return perr!(self, InvalidEscape);
-                    }
-                    r.eat(1);
-                    continue;
-                } else if ch == b'"' {
-                    return Ok(());
-                } else {
-                    return perr!(self, ControlCharacterWhileParsingString);
+                match chunk[cnt] {
+                    b'\\' => self.skip_escaped_chars()?,
+                    b'\"' => return Ok(()),
+                    0..=0x1f => return perr!(self, ControlCharacterWhileParsingString),
+                    _ => unreachable!(),
                 }
             } else {
-                r.eat(LANS)
+                self.read.eat(LANS)
             }
         }
 
         // found quote for remaining bytes
-        while let Some(ch) = r.next() {
+        while let Some(ch) = self.read.next() {
             match ch {
-                b'\\' => {
-                    if r.remain() < 2 {
-                        break;
-                    }
-
-                    let second = unsafe { r.peek().unwrap_unchecked() };
-                    if ESCAPED_TAB[second as usize] == 0 {
-                        return perr!(self, InvalidEscape);
-                    }
-                    r.eat(1);
-                }
+                b'\\' => self.skip_escaped_chars()?,
                 b'"' => return Ok(()),
                 0..=0x1f => return perr!(self, ControlCharacterWhileParsingString),
                 _ => {}
@@ -1135,13 +1308,12 @@ where
 
     #[inline(always)]
     fn skip_exponent(&mut self) -> Result<()> {
-        if let Some(ch) = self.read.next() {
+        if let Some(ch) = self.read.peek() {
             if ch == b'-' || ch == b'+' {
                 self.read.eat(1);
             }
         }
         self.skip_single_digit()?;
-
         // skip the remaining digits
         while matches!(self.read.peek(), Some(b'0'..=b'9')) {
             self.read.eat(1);
@@ -1208,21 +1380,25 @@ where
                     // check the first digit after the dot
                     self.skip_single_digit()?;
 
+                    let traversed = cnt + 2;
                     // check the remainig digits
-                    let nondigts = nondigits >> (cnt + 1);
+                    let nondigts = nondigits.wrapping_shr((traversed) as u32);
                     if nondigts != 0 {
-                        let cnt = nondigts.trailing_zeros() as usize;
-                        let ch = chunk[cnt];
-                        if ch == b'e' || ch == b'E' {
-                            self.read.eat(cnt + 1);
-                            return self.skip_exponent();
-                        } else {
-                            self.read.eat(cnt);
-                            return Ok(());
+                        // TODO: optimize without bound-checking here.
+                        while let Some(ch) = self.read.peek() {
+                            if ch == b'e' || ch == b'E' {
+                                self.read.eat(1);
+                                return self.skip_exponent();
+                            } else if ch.is_ascii_digit() {
+                                self.read.eat(1);
+                                continue;
+                            } else {
+                                return Ok(());
+                            }
                         }
                     } else {
                         // long digits
-                        self.read.eat(32 - cnt - 1);
+                        self.read.eat(32 - traversed);
                         is_float = true;
                         continue;
                     }
@@ -1709,7 +1885,11 @@ where
 
     pub(crate) fn remain_u8_slice(&self) -> &'de [u8] {
         let reader = &self.read;
-        let len = reader.remain() as usize;
+        let len = if reader.remain() >= 0 {
+            reader.remain() as usize
+        } else {
+            0
+        };
         let start = reader.index();
         reader.slice_unchecked(start, start + len)
     }
