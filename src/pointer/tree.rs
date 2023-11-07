@@ -22,7 +22,7 @@ impl PointerTree {
 
     /// we build tree and return value according by the order of path.
     /// Allow the repeated path.
-    pub fn add_path<Path: Iterator>(&mut self, path: Path)
+    pub fn add_path<Path: IntoIterator>(&mut self, path: Path)
     where
         Path::Item: PointerTrait,
     {

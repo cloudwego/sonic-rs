@@ -21,10 +21,47 @@ The main optimization in sonic-rs is the use of SIMD. However, we do not use the
 
 More details about optimization can be found in [performance.md](docs/performance.md).
 
+***For Golang user to use `sonic_rs`, please see [for_Golang_user_zh.md](docs/for_Golang_user.md)***
+
+- [sonic-rs](#sonic-rs)
+    - [Requirements/Notes](#requirementsnotes)
+    - [Quick to use sonic-rs](#quick-to-use-sonic-rs)
+- [Features](#features)
+- [Benchmark](#benchmark)
+    - [Deserialize Struct](#deserialize-struct)
+    - [Deserialize Untyped](#deserialize-untyped)
+    - [Serialize Untyped](#serialize-untyped)
+    - [Serialize Struct](#serialize-struct)
+    - [Get from JSON](#get-from-json)
+- [Usage](#usage)
+    - [Serde into Rust Type](#serde-into-rust-type)
+    - [Get a field from JSON](#get-a-field-from-json)
+    - [Parse and Serialize into untyped Value](#parse-and-serialize-into-untyped-value)
+    - [JSON Iterator](#json-iterator)
+    - [JSON RawValue & Number & RawNumber](#json-rawvalue--number--rawnumber)
+    - [Error handle](#error-handle)
+- [FAQs](#faqs)
+    - [About UTF-8](#about-utf-8)
+    - [About floating point precision](#about-floating-point-precision)
+- [Acknowledgement](#acknowledgement)
+- [Contributing](#contributing)
+
 ## Requirements/Notes
 
 1. Support x86_64 or aarch64. Note that the performance in aarch64 is lower and needs optimization.
 2. Requires Rust nightly version, as we use the `packed_simd` crate.
+3. please add the compile options `-C target-cpu=native`
+
+## Quick to use sonic-rs
+
+To ensure that SIMD instruction is used in sonic-rs, you need to add rustflags `-C target-cpu=native` and compile on the host machine. For example, Rust flags can be configured in Cargo [config](.cargo/config).
+
+Add sonic-rs in `Cargo.toml`
+
+```
+[dependencies]
+sonic-rs = 0.2
+```
 
 ## Features
 1. Serde into Rust struct as `serde_json` and `serde`.
@@ -39,15 +76,6 @@ More details about optimization can be found in [performance.md](docs/performanc
 
 6. The floating parsing percision is as Rust std in default.
 
-## Quick to use sonic-rs
-
-To ensure that SIMD instruction is used in sonic-rs, you need to add rustflags `-C target-cpu=native` and compile on the host machine. For example, Rust flags can be configured in Cargo [config](.cargo/config).
-
-Add sonic-rs in `Cargo.toml`
-```
-[dependencies]
-sonic-rs = 0.2
-```
 
 ## Benchmark
 

@@ -1,5 +1,6 @@
 use bytes::Bytes;
-use sonic_rs::{to_array_iter, JsonValue};
+use faststr::FastStr;
+use sonic_rs::{to_array_iter, to_object_iter_unchecked, JsonValue};
 
 fn main() {
     let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6]"#);
@@ -11,12 +12,34 @@ fn main() {
     let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6"#);
     let iter = to_array_iter(&json);
     for elem in iter {
+        // do something for each elem
+
         // deal with errors when invalid json
         if elem.is_err() {
             assert_eq!(
                 elem.err().unwrap().to_string(),
                 "Expected this character to be either a ',' or a ']' while parsing at line 1 column 17"
             );
+        }
+    }
+
+    let json = FastStr::from(r#"{"a": null, "b":[1, 2, 3]}"#);
+    let iter = unsafe { to_object_iter_unchecked(&json) };
+    for ret in iter {
+        // deal with errors
+        if ret.is_err() {
+            println!("{}", ret.unwrap_err());
+            return;
+        }
+
+        let (k, v) = ret.unwrap();
+        if k == "a" {
+            assert!(v.is_null());
+        } else if k == "b" {
+            let iter = to_array_iter(v.as_raw_str());
+            for (i, v) in iter.enumerate() {
+                assert_eq!(i + 1, v.as_u64().unwrap() as usize);
+            }
         }
     }
 }
