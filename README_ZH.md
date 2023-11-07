@@ -21,19 +21,36 @@ sonic-rs 的主要优化是使用 SIMD。然而，sonic-rs 没有使用来自`si
 
 有关优化的更多细节，请参见 [performance_zh.md](docs/performance_zh.md)。
 
+***对于 Golang 用户迁移 Rust 使用 `sonic_rs`, 请参考 [for_Golang_user.md](docs/for_Golang_user_zh.md)***
+
+- [sonic-rs](#sonic-rs)
+    - [要求/注意事项](#要求注意事项)
+    - [如何使用 sonic-rs](#如何使用-sonic-rs)
+- [功能](#功能)
+- [基准测试](#基准测试)
+    - [解析到结构体](#解析到结构体)
+    - [解析到document](#解析到-document)
+    - [序列化document](#序列化-document)
+    - [序列化Rust结构体](#序列化-rust-结构体)
+    - [从JSON中获取](#从-json-中获取)
+- [用法](#用法)
+    - [对Rust类型解析/序列化](#对-rust-类型解析序列化)
+    - [从JSON中获取字段](#从-json-中获取字段)
+    - [解析/序列化document](#解析序列化-document)
+    - [JSON Iterator](#json-iterator)
+    - [JSON RawValue & Number & RawNumber](#json-rawvalue--number--rawnumber)
+    - [错误处理](#错误处理)
+- [常见问题](#常见问题)
+    - [关于UTF-8](#关于-utf-8)
+    - [关于浮点数精度](#关于浮点数精度)
+- [致谢](#致谢)
+- [如何贡献](#如何贡献)
+
 ## ***要求/注意事项***
 
 1. 支持 x86_64 或 aarch64，aarch64 的性能较低，需要优化。
 2. 需要 Rust nightly 版本，因为 sonic-rs 使用了 `packed_simd` 包。
-
-## 功能
-
-1. JSON 与 Rust 结构体之间的序列化，基于兼容 `serde_json` 和 `serde`。
-2. JSON 与 document 之间的序列化，document是可变数据结构
-3. 从 JSON 中获取特定字段
-4. 将 JSON 解析为惰性迭代器
-5. 在默认情况下支持 `RawValue`，`Number` 和 `RawNumber`（就像 Golang 的 `JsonNumber`）。
-6. 浮点数精度默认和 Rust 标准库对齐
+3. 在编译选项中开启 `-C target-cpu=native`
 
 ## 如何使用 sonic-rs
 
@@ -44,6 +61,15 @@ sonic-rs 的主要优化是使用 SIMD。然而，sonic-rs 没有使用来自`si
 [dependencies]
 sonic-rs = 0.2
 ```
+
+## 功能
+
+1. JSON 与 Rust 结构体之间的序列化，基于兼容 `serde_json` 和 `serde`。
+2. JSON 与 document 之间的序列化，document是可变数据结构
+3. 从 JSON 中获取特定字段
+4. 将 JSON 解析为惰性迭代器
+5. 在默认情况下支持 `RawValue`，`Number` 和 `RawNumber`（就像 Golang 的 `JsonNumber`）。
+6. 浮点数精度默认和 Rust 标准库对齐
 
 
 ## 基准测试
