@@ -33,21 +33,29 @@ impl IndexMut for usize {
     }
 }
 
-impl Index for &str {
-    fn value_index_into<'dom, 'v>(self, v: &'v Value<'dom>) -> Option<&'v Value<'dom>> {
-        v.get_key(self)
-    }
+macro_rules! impl_index {
+    ($($t: ty),*) => {
+        $(
+            impl Index for &$t {
+                fn value_index_into<'dom, 'v>(self, v: &'v Value<'dom>) -> Option<&'v Value<'dom>> {
+                    v.get_key(self)
+                }
 
-    fn lazyvalue_index_into<'de>(self, v: &'de LazyValue<'de>) -> Option<LazyValue<'de>> {
-        v.get_key(self)
-    }
+                fn lazyvalue_index_into<'de>(self, v: &'de LazyValue<'de>) -> Option<LazyValue<'de>> {
+                    v.get_key(self)
+                }
+            }
+
+            impl IndexMut for &$t {
+                fn index_into_mut<'dom, 'v>(self, v: &'v mut Value<'dom>) -> Option<&'v mut Value<'dom>> {
+                    v.get_key_mut(self)
+                }
+            }
+        )*
+    };
 }
 
-impl IndexMut for &str {
-    fn index_into_mut<'dom, 'v>(self, v: &'v mut Value<'dom>) -> Option<&'v mut Value<'dom>> {
-        v.get_key_mut(self)
-    }
-}
+impl_index!(str, String, faststr::FastStr);
 
 // Prevent users from implementing the Index trait.
 mod private {
@@ -55,6 +63,7 @@ mod private {
     impl Sealed for usize {}
     impl Sealed for str {}
     impl Sealed for std::string::String {}
+    impl Sealed for faststr::FastStr {}
     impl<'a, T> Sealed for &'a T where T: ?Sized + Sealed {}
 }
 
