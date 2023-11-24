@@ -12,10 +12,12 @@ use crate::visitor::JsonVisitor;
 use crate::{to_string, Number};
 use bumpalo::Bump;
 use core::mem::size_of;
+use serde::de::Visitor;
 use serde::ser::{Error, Serialize, SerializeMap, SerializeSeq};
+use serde::Deserialize;
 use std::alloc::Layout;
 use std::marker::PhantomData;
-use std::mem::transmute;
+use std::mem::{transmute, MaybeUninit};
 use std::ops;
 use std::ptr::NonNull;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
@@ -1249,6 +1251,49 @@ impl JsonValue for Document {
     }
 }
 
+use serde::de;
+use std::result::Result as StdResult;
+struct DomKey;
+
+pub(crate) const TOKEN: &str = "$sonic_rs::private::Document";
+
+// Serde for document
+impl<'de> Deserialize<'de> for Document {
+    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+    where
+        D: ::serde::Deserializer<'de>,
+    {
+        struct DomVisitor;
+
+        impl<'de> Visitor<'de> for DomVisitor {
+            type Value = Document;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a valid json")
+            }
+
+            fn visit_bytes<E>(self, dom_binary: &[u8]) -> StdResult<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                // we pass the document from dom_binary
+                unsafe {
+                    assert!(dom_binary.len() == size_of::<Document>());
+                    let mut dom: MaybeUninit<Document> = MaybeUninit::zeroed();
+                    std::ptr::copy_nonoverlapping(
+                        dom_binary.as_ptr() as *const Document,
+                        dom.as_mut_ptr(),
+                        1,
+                    );
+                    Ok(dom.assume_init())
+                }
+            }
+        }
+
+        deserializer.deserialize_newtype_struct(TOKEN, DomVisitor)
+    }
+}
+
 impl Serialize for Document {
     #[inline]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -1669,5 +1714,17 @@ mod test {
             Value::try_from(f64::MAX).unwrap().as_f64().unwrap(),
             f64::MAX
         );
+    }
+
+    #[test]
+    fn test_document_serde() {
+        use crate::{Deserialize, Serialize};
+        #[derive(Serialize, Deserialize)]
+        struct Person {
+            any: Document,
+        }
+        let json = r#"{"any": {"name": "John", "age": 30}}"#;
+        let person: Person = crate::from_str(json).unwrap();
+        assert_eq!(person.any.get("name").as_str().unwrap(), "John");
     }
 }
