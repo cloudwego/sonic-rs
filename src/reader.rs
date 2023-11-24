@@ -60,6 +60,8 @@ pub trait Reader<'de>: Sealed {
     fn at(&self, index: usize) -> u8;
     fn set_index(&mut self, index: usize);
     fn next_n(&mut self, n: usize) -> Option<&'de [u8]>;
+
+    #[inline(always)]
     fn next(&mut self) -> Option<u8> {
         self.peek().map(|a| {
             self.eat(1);

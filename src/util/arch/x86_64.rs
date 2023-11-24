@@ -9,6 +9,7 @@ pub unsafe fn prefix_xor(bitmask: u64) -> u64 {
     }
 }
 
+#[inline(always)]
 pub unsafe fn get_nonspace_bits(data: &[u8; 64]) -> u64 {
     unsafe {
         let lo: std::arch::x86_64::__m256i = _mm256_loadu_si256(data.as_ptr() as *const __m256i);

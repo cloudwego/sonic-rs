@@ -2,14 +2,19 @@
 
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
 
-use crate::error::{
-    Error,
-    ErrorCode::{self, EofWhileParsing, RecursionLimitExceeded},
-    Result,
-};
+use std::ptr::slice_from_raw_parts;
+
 use crate::parser::{as_str, Parser};
 use crate::reader::{Reader, Reference, SliceRead};
 use crate::util::num::ParserNumber;
+use crate::{
+    error::{
+        Error,
+        ErrorCode::{self, EofWhileParsing, RecursionLimitExceeded},
+        Result,
+    },
+    Document,
+};
 
 use serde::de::{self, Expected, Unexpected};
 use serde::forward_to_deserialize_any;
@@ -233,6 +238,24 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     {
         let raw = as_str(self.parser.skip_one()?);
         visitor.visit_borrowed_str(raw)
+    }
+
+    fn deserialize_document<V>(&mut self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        // #Safety
+        // the json is validate before parsing json, and we pass the document using visit_bytes here.
+        unsafe {
+            let raw = as_str(self.parser.skip_one_unchecked()?);
+            let dom = crate::dom_from_slice_unchecked(raw.as_bytes())?;
+            let binary = &*slice_from_raw_parts(
+                &dom as *const _ as *const u8,
+                std::mem::size_of::<Document>(),
+            );
+            std::mem::forget(dom);
+            visitor.visit_bytes(binary)
+        }
     }
 
     // we deserialize json number from string or number types
@@ -560,6 +583,8 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 return self.deserialize_json_number(visitor);
             } else if name == crate::lazyvalue::TOKEN {
                 return self.deserialize_lazy_value(visitor);
+            } else if name == crate::value::TOKEN {
+                return self.deserialize_document(visitor);
             }
         }
 

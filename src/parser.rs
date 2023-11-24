@@ -71,8 +71,11 @@ fn get_escaped_branchless_u64(prev_escaped: &mut u64, backslash: u64) -> u64 {
 }
 
 #[inline(always)]
-fn is_whitespace(ch: u8) -> bool {
-    ch == b' ' || ch == b'\r' || ch == b'\n' || ch == b'\t'
+pub(crate) fn is_whitespace(ch: u8) -> bool {
+    // NOTE: the compiler not optimize as lookup, so we hard code here.
+    const SPACE_MASK: u64 = (1u64 << b' ') | (1u64 << b'\r') | (1u64 << b'\n') | (1u64 << b'\t');
+    1u64.checked_shl(ch as u32)
+        .is_some_and(|v| v & SPACE_MASK != 0)
 }
 
 #[inline(always)]
@@ -1066,10 +1069,20 @@ where
     // parse the Colon :
     #[inline(always)]
     pub(crate) fn parse_object_clo(&mut self) -> Result<()> {
-        match self.skip_space() {
-            Some(b':') => Ok(()),
-            Some(_) => perr!(self, ExpectedColon),
-            None => perr!(self, EofWhileParsing),
+        if let Some(ch) = self.read.peek() {
+            // fast path for compact json
+            if ch == b':' {
+                self.read.eat(1);
+                return Ok(());
+            }
+
+            match self.skip_space() {
+                Some(b':') => Ok(()),
+                Some(_) => perr!(self, ExpectedColon),
+                None => perr!(self, EofWhileParsing),
+            }
+        } else {
+            perr!(self, EofWhileParsing)
         }
     }
 
