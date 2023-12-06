@@ -15,8 +15,9 @@ use crate::reader::Reference;
 use crate::reader::SliceRead;
 use crate::serde::Deserializer;
 use crate::serde::Number;
+use crate::value::index::Index;
 use crate::JsonType;
-use crate::{from_str, JsonValue};
+use crate::{from_str, JsonValueTrait};
 
 /// LazyValue is a raw value from json text. Mainly used for get few values from json fastly.
 /// LazyValue is only generated when using `get` or `Iterator` or `from_string`.
@@ -28,8 +29,8 @@ pub struct LazyValue<'de> {
     own: UnsafeCell<Vec<u8>>,
 }
 
-impl<'de> JsonValue for LazyValue<'de> {
-    type ValueType<'dom> = LazyValue<'dom> where Self: 'dom;
+impl<'de> JsonValueTrait for LazyValue<'de> {
+    type ValueType<'v> = LazyValue<'v> where Self: 'v;
 
     fn as_bool(&self) -> Option<bool> {
         match self.raw.as_ref() {
@@ -69,7 +70,7 @@ impl<'de> JsonValue for LazyValue<'de> {
         }
     }
 
-    fn get<I: crate::value::Index>(&self, index: I) -> Option<Self::ValueType<'_>> {
+    fn get<I: Index>(&self, index: I) -> Option<Self::ValueType<'_>> {
         index.lazyvalue_index_into(self)
     }
 
@@ -187,9 +188,9 @@ impl<'de> LazyValue<'de> {
 
 #[cfg(test)]
 mod test {
-    use crate::value::JsonValue;
+    use crate::to_array_iter;
+    use crate::value::JsonValueTrait;
     use crate::{get_unchecked, pointer};
-    use crate::{to_array_iter, PointerNode};
 
     use super::*;
 

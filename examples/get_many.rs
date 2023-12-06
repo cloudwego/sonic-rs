@@ -1,5 +1,4 @@
 use sonic_rs::pointer;
-use sonic_rs::PointerNode;
 
 fn main() {
     let json = r#"

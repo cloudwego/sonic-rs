@@ -1,6 +1,5 @@
 use super::PointerTrait;
 use faststr::FastStr;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 /// PointerTree is designed for `get_many`.
@@ -50,7 +49,6 @@ pub(crate) struct PointerTreeNode {
     pub(crate) order: Vec<usize>,
     pub(crate) children: PointerTreeInner,
 }
-
 use PointerTreeInner::{Empty, Index, Key};
 
 impl PointerTreeNode {
@@ -78,10 +76,7 @@ impl PointerTreeNode {
 
     fn insert_key(&mut self, key: &str) -> &mut Self {
         if let Key(mkey) = &mut self.children {
-            match mkey.entry(FastStr::new(key)) {
-                Entry::Occupied(o) => o.into_mut(),
-                Entry::Vacant(v) => v.insert(Self::default()),
-            }
+            mkey.entry(FastStr::new(key)).or_insert(Self::default())
         } else {
             unreachable!()
         }
@@ -89,10 +84,7 @@ impl PointerTreeNode {
 
     fn insert_index(&mut self, idx: usize) -> &mut Self {
         if let Index(midx) = &mut self.children {
-            match midx.entry(idx) {
-                Entry::Occupied(o) => o.into_mut(),
-                Entry::Vacant(v) => v.insert(Self::default()),
-            }
+            midx.entry(idx).or_insert(Self::default())
         } else {
             unreachable!()
         }
@@ -108,7 +100,6 @@ pub(crate) type MultiIndex = HashMap<usize, PointerTreeNode>;
 mod test {
     use super::*;
     use crate::pointer;
-    use crate::PointerNode;
 
     #[test]
     fn test_tree() {

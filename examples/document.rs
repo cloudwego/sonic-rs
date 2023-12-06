@@ -1,8 +1,10 @@
 // Parse json into sonic_rs document.
 
-use sonic_rs::value::{dom_from_slice, Value};
-use sonic_rs::PointerNode;
-use sonic_rs::{pointer, JsonValue};
+use serde_json::json;
+use sonic_rs::from_str;
+use sonic_rs::JsonValueMutTrait;
+use sonic_rs::{pointer, JsonValueTrait, Value};
+
 fn main() {
     let json = r#"{
         "name": "Xiaoming",
@@ -17,9 +19,7 @@ fn main() {
         ]
     }"#;
 
-    let mut dom = dom_from_slice(json.as_bytes()).unwrap();
-    // get the value from dom
-    let root = dom.as_value();
+    let mut root: Value = from_str(json).unwrap();
 
     // get key from value
     let age = root.get("age").as_i64();
@@ -34,8 +34,17 @@ fn main() {
     assert_eq!(phones.as_str().unwrap(), "+123456");
 
     // convert to mutable object
-    let mut obj = dom.as_object_mut().unwrap();
-    let value = Value::new_bool(true);
-    obj.insert("inserted", value);
-    assert!(obj.contains_key("inserted"));
+    let obj = root.as_object_mut().unwrap();
+    obj.insert(&"inserted", true);
+    assert!(obj.contains_key(&"inserted"));
+
+    let mut object = json!({ "A": 65, "B": 66, "C": 67 });
+    *object.get_mut("A").unwrap() = json!({
+        "code": 123,
+        "success": false,
+        "payload": {}
+    });
+
+    let mut array = json!(["A", "B", "C"]);
+    *array.get_mut(2).unwrap() = json!("D");
 }

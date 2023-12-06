@@ -1,6 +1,17 @@
-use crate::{value::Index, JsonNumberTrait, JsonPointer, Number};
+use super::index::Index;
+use crate::{JsonNumberTrait, JsonPointer, Number};
 
 /// JsonType is an enum that represents the type of a JSON value.
+///
+/// # Examples
+/// ```
+///  use sonic_rs::JsonType;
+///  use sonic_rs::Value;
+///
+///  let json: Value = sonic_rs::from_str(r#"{"a": 1, "b": true}"#).unwrap();
+///
+///  assert_eq!(json.get("a").unwrap().get_type(), JsonType::Number);
+/// ```
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(u8)]
 pub enum JsonType {
@@ -10,7 +21,6 @@ pub enum JsonType {
     String = 3,
     Object = 4,
     Array = 5,
-    Raw = 6,
 }
 
 impl From<u8> for JsonType {
@@ -22,17 +32,16 @@ impl From<u8> for JsonType {
             3 => JsonType::String,
             4 => JsonType::Object,
             5 => JsonType::Array,
-            6 => JsonType::Raw,
             _ => panic!("invalid JsonType value: {}", value),
         }
     }
 }
 
 /// A trait for all JSON values. Used by `Value` and `LazyValue`.
-pub trait JsonValue: Sized {
-    type ValueType<'dom>
+pub trait JsonValueTrait {
+    type ValueType<'v>
     where
-        Self: 'dom;
+        Self: 'v;
 
     /// get the type of the `JsonValue`.
     fn get_type(&self) -> JsonType;
@@ -131,18 +140,60 @@ pub trait JsonValue: Sized {
     fn as_bool(&self) -> Option<bool>;
 
     /// Returns the value from index if the `JsonValue` is an `array` or `object`
-    /// The index may be usize or &str. The `usize` is for array, the `&str` is for object.
+    /// The index may be usize or &str. The `usize` is for array, the `&str` is for object. If not found, return `None`.
+    ///
+    /// # Examples
+    /// ```
+    /// use sonic_rs::value::JsonType;
+    /// use sonic_rs::value::JsonValueTrait;
+    /// use sonic_rs::value::Value;
+    ///
+    /// let json = Value::from_str(r#"{"a": 1, "b": true}"#).unwrap();
+    ///
+    /// assert!(json.get("a").is_number());
+    /// assert!(json.get("unknown").is_none());
+    /// ```
     fn get<I: Index>(&self, index: I) -> Option<Self::ValueType<'_>>;
 
     /// Returns the value from pointer path if the `JsonValue` is an `array` or `object`
     fn pointer(&self, path: &JsonPointer) -> Option<Self::ValueType<'_>>;
 }
 
+/// A trait for all JSON object or array values. Used by `Value`.
+pub trait JsonContainerTrait {
+    type ObjectType;
+    type ArrayType;
+
+    /// Returns the object if the `JsonValue` is an `object`.
+    fn as_object(&self) -> Option<&Self::ObjectType>;
+
+    /// Returns the array if the `JsonValue` is an `object`.
+    fn as_array(&self) -> Option<&Self::ArrayType>;
+}
+
+/// A trait for all JSON values. Used by `Value` and `LazyValue`.
+pub trait JsonValueMutTrait {
+    type ValueType;
+    type ObjectType;
+    type ArrayType;
+
+    /// Returns the mutable object if the `JsonValue` is an `object`.
+    fn as_object_mut(&mut self) -> Option<&mut Self::ObjectType>;
+
+    /// Returns the mutable array if the `JsonValue` is an `array`.
+    fn as_array_mut(&mut self) -> Option<&mut Self::ArrayType>;
+
+    /// Returns the value from pointer path if the `JsonValue` is an `array` or `object`
+    fn pointer_mut(&mut self, path: &JsonPointer) -> Option<&mut Self::ValueType>;
+
+    /// Returns the value from index if the `JsonValue` is an `array` or `object`
+    /// The index may be usize or &str. The `usize` is for array, the `&str` is for object.
+    fn get_mut<I: Index>(&mut self, index: I) -> Option<&mut Self::ValueType>;
+}
+
 // A helper trait for Option types
-impl<V: JsonValue> JsonValue for Option<V> {
-    type ValueType<'dom> = V::ValueType<'dom>
-        where
-        V:'dom, Self: 'dom;
+impl<V: JsonValueTrait> JsonValueTrait for Option<V> {
+    type ValueType<'v> = V::ValueType<'v> where V:'v, Self: 'v;
 
     fn as_bool(&self) -> Option<bool> {
         self.as_ref().and_then(|v| v.as_bool())
@@ -181,11 +232,43 @@ impl<V: JsonValue> JsonValue for Option<V> {
     }
 }
 
+impl<V: JsonContainerTrait> JsonContainerTrait for Option<V> {
+    type ArrayType = V::ArrayType;
+    type ObjectType = V::ObjectType;
+
+    fn as_array(&self) -> Option<&Self::ArrayType> {
+        self.as_ref().and_then(|v| v.as_array())
+    }
+
+    fn as_object(&self) -> Option<&Self::ObjectType> {
+        self.as_ref().and_then(|v| v.as_object())
+    }
+}
+
+impl<V: JsonValueMutTrait> JsonValueMutTrait for Option<V> {
+    type ValueType = V::ValueType;
+    type ArrayType = V::ArrayType;
+    type ObjectType = V::ObjectType;
+
+    fn as_array_mut(&mut self) -> Option<&mut Self::ArrayType> {
+        self.as_mut().and_then(|v| v.as_array_mut())
+    }
+    fn as_object_mut(&mut self) -> Option<&mut Self::ObjectType> {
+        self.as_mut().and_then(|v| v.as_object_mut())
+    }
+
+    fn pointer_mut(&mut self, path: &JsonPointer) -> Option<&mut Self::ValueType> {
+        self.as_mut().and_then(|v| v.pointer_mut(path))
+    }
+
+    fn get_mut<I: Index>(&mut self, index: I) -> Option<&mut Self::ValueType> {
+        self.as_mut().and_then(|v| v.get_mut(index))
+    }
+}
+
 // A helper trait for Result types
-impl<V: JsonValue, E> JsonValue for Result<V, E> {
-    type ValueType<'dom> = V::ValueType<'dom>
-        where
-        V:'dom, Self: 'dom;
+impl<V: JsonValueTrait, E> JsonValueTrait for Result<V, E> {
+    type ValueType<'v> = V::ValueType<'v> where V:'v, Self: 'v;
 
     fn as_bool(&self) -> Option<bool> {
         self.as_ref().ok().and_then(|v| v.as_bool())
@@ -224,11 +307,42 @@ impl<V: JsonValue, E> JsonValue for Result<V, E> {
     }
 }
 
-// A helper trait for reference types
-impl<V: JsonValue> JsonValue for &V {
-    type ValueType<'dom> = V::ValueType<'dom>
-        where
-        V:'dom, Self: 'dom;
+impl<V: JsonContainerTrait, E> JsonContainerTrait for Result<V, E> {
+    type ArrayType = V::ArrayType;
+    type ObjectType = V::ObjectType;
+    fn as_array(&self) -> Option<&Self::ArrayType> {
+        self.as_ref().ok().and_then(|v| v.as_array())
+    }
+
+    fn as_object(&self) -> Option<&Self::ObjectType> {
+        self.as_ref().ok().and_then(|v| v.as_object())
+    }
+}
+
+impl<V: JsonValueMutTrait, E> JsonValueMutTrait for Result<V, E> {
+    type ValueType = V::ValueType;
+    type ArrayType = V::ArrayType;
+    type ObjectType = V::ObjectType;
+
+    fn as_array_mut(&mut self) -> Option<&mut Self::ArrayType> {
+        self.as_mut().ok().and_then(|v| v.as_array_mut())
+    }
+
+    fn as_object_mut(&mut self) -> Option<&mut Self::ObjectType> {
+        self.as_mut().ok().and_then(|v| v.as_object_mut())
+    }
+
+    fn pointer_mut(&mut self, path: &JsonPointer) -> Option<&mut Self::ValueType> {
+        self.as_mut().ok().and_then(|v| v.pointer_mut(path))
+    }
+
+    fn get_mut<I: Index>(&mut self, index: I) -> Option<&mut Self::ValueType> {
+        self.as_mut().ok().and_then(|v| v.get_mut(index))
+    }
+}
+
+impl<V: JsonValueTrait> JsonValueTrait for &V {
+    type ValueType<'v> = V::ValueType<'v> where V:'v, Self: 'v;
 
     fn as_bool(&self) -> Option<bool> {
         (*self).as_bool()
@@ -267,45 +381,37 @@ impl<V: JsonValue> JsonValue for &V {
     }
 }
 
-// A helper trait for reference types
-impl<V: JsonValue> JsonValue for &mut V {
-    type ValueType<'dom> = V::ValueType<'dom>
-        where
-        V:'dom, Self: 'dom;
+impl<V: JsonContainerTrait> JsonContainerTrait for &V {
+    type ArrayType = V::ArrayType;
+    type ObjectType = V::ObjectType;
 
-    fn as_bool(&self) -> Option<bool> {
-        (**self).as_bool()
+    fn as_array(&self) -> Option<&Self::ArrayType> {
+        (*self).as_array()
     }
 
-    fn as_f64(&self) -> Option<f64> {
-        (**self).as_f64()
+    fn as_object(&self) -> Option<&Self::ObjectType> {
+        (*self).as_object()
+    }
+}
+
+impl<V: JsonValueMutTrait> JsonValueMutTrait for &mut V {
+    type ValueType = V::ValueType;
+    type ArrayType = V::ArrayType;
+    type ObjectType = V::ObjectType;
+
+    fn as_array_mut(&mut self) -> Option<&mut Self::ArrayType> {
+        (*self).as_array_mut()
     }
 
-    fn as_i64(&self) -> Option<i64> {
-        (**self).as_i64()
+    fn as_object_mut(&mut self) -> Option<&mut Self::ObjectType> {
+        (*self).as_object_mut()
     }
 
-    fn as_u64(&self) -> Option<u64> {
-        (**self).as_u64()
+    fn get_mut<I: Index>(&mut self, index: I) -> Option<&mut Self::ValueType> {
+        (**self).get_mut(index)
     }
 
-    fn as_number(&self) -> Option<Number> {
-        (**self).as_number()
-    }
-
-    fn get_type(&self) -> JsonType {
-        (**self).get_type()
-    }
-
-    fn as_str(&self) -> Option<&str> {
-        (**self).as_str()
-    }
-
-    fn get<I: Index>(&self, index: I) -> Option<Self::ValueType<'_>> {
-        (**self).get(index)
-    }
-
-    fn pointer(&self, path: &JsonPointer) -> Option<Self::ValueType<'_>> {
-        (**self).pointer(path)
+    fn pointer_mut(&mut self, path: &JsonPointer) -> Option<&mut Self::ValueType> {
+        (*self).pointer_mut(path)
     }
 }

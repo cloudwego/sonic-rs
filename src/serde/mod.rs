@@ -1,6 +1,6 @@
 mod de;
-mod number;
-mod raw;
+pub(crate) mod number;
+pub(crate) mod raw;
 mod ser;
 
 pub use self::de::{from_slice, from_slice_unchecked, from_str, Deserializer};
@@ -72,6 +72,7 @@ mod test {
     struct TestData<'a> {
         fieldless: FieldlessEnum,
         enummap: HashMap<Enum, FieldlessEnum>,
+        nummap: HashMap<i64, FieldlessEnum>,
         enum_: Enum,
 
         // basic types
@@ -81,7 +82,6 @@ mod test {
         int128: i128,
         uint128: u128,
         char_: char,
-
         // string or bytes
         str_: &'a str,
         // bytes_: &'a [u8],
@@ -89,7 +89,6 @@ mod test {
         faststr: FastStr,
         #[serde(borrow)]
         cow: Cow<'a, str>,
-
         // containers
         vector: Vec<u32>,
         array: [u32; 1],
@@ -108,7 +107,7 @@ mod test {
 
         #[serde(borrow)]
         wrapper: Wrapper<'a>,
-        phan_struct: Phan<()>,
+        phan_struct: Phan<&'a ()>,
     }
 
     #[test]
@@ -120,13 +119,11 @@ mod test {
             int128: -22_000_000_000_000_000_000_000_000,
             uint128: 11_000_000_000_000_000_000_000_000,
             char_: 'A',
-
             str_: "hello world",
             // bytes_: &[0x52, 0x75, 0x73, 0x74],
             string: String::from("hello world"),
             faststr: FastStr::from("hello world"),
             cow: Cow::Borrowed("borrowed"),
-
             vector: vec![42, 24, 7],
             array: [99],
             empty_array: [],
@@ -148,6 +145,12 @@ mod test {
                 let mut m = HashMap::new();
                 m.insert(Enum::Zero, FieldlessEnum::Struct {});
                 m.insert(Enum::One, FieldlessEnum::Unit);
+                m
+            },
+            nummap: {
+                let mut m = HashMap::new();
+                m.insert(0, FieldlessEnum::Struct {});
+                m.insert(1, FieldlessEnum::Unit);
                 m
             },
             fieldenum: FieldEnum::Tuple((FastStr::from("test"), 42)),
@@ -177,7 +180,7 @@ mod test {
 
     #[test]
     fn test_struct_with_skipped() {
-        let json = r#"{"unknown":0,"unknown":null,"unknown":1234e123,"unknown":1.234,"unknown":[],"unknown":{},"unknown":{"a":[]},"unknown":[1,2,3],"fieldless":{"Struct":{}},"enummap":{"Zero":{"Struct":{}},"One":"Unit"},"enum_":"One","boolean":true,"integer":-42,"float":3.33,"int128":-22000000000000000000000000,"uint128":11000000000000000000000000,"char_":"A","str_":"hello world","string":"hello world","faststr":"hello world","cow":"borrowed","vector":[42,24,7],"array":[99],"empty_array":[],"map":{"key2":2.2,"key1":1.1},"map_opkey":{"key1":1.1},"option":"I'm here","fieldenum":{"Tuple":["test",42]},"tuple":[42,"test"],"tuple_struct":[42,3.33],"unit_struct":null,"wrapper":"hello","phan_struct":{"phan":"test data","_data":null},"unknown":0,"unknown":null,"unknown":1234e123,"unknown":1.234,"unknown":[],"unknown":{},"unknown":{"a":[]},"unknown":[1,2,3]}"#;
+        let json = r#"{"unknown":0,"unknown":null,"unknown":1234e123,"unknown":1.234,"unknown":[],"unknown":{},"unknown":{"a":[]},"unknown":[1,2,3],"fieldless":{"Struct":{}},"enummap":{"Zero":{"Struct":{}},"One":"Unit"},"nummap":{"0":{"Struct":{}},"1":"Unit"},"enum_":"One","boolean":true,"integer":-42,"float":3.33,"int128":-22000000000000000000000000,"uint128":11000000000000000000000000,"char_":"A","str_":"hello world","string":"hello world","faststr":"hello world","cow":"borrowed","vector":[42,24,7],"array":[99],"empty_array":[],"map":{"key2":2.2,"key1":1.1},"map_opkey":{"key1":1.1},"option":"I'm here","fieldenum":{"Tuple":["test",42]},"tuple":[42,"test"],"tuple_struct":[42,3.33],"unit_struct":null,"wrapper":"hello","phan_struct":{"phan":"test data","_data":null},"unknown":0,"unknown":null,"unknown":1234e123,"unknown":1.234,"unknown":[],"unknown":{},"unknown":{"a":[]},"unknown":[1,2,3]}"#;
 
         let expect: TestData = serde_json::from_str(json).unwrap();
         let val: TestData = from_str(json).unwrap();

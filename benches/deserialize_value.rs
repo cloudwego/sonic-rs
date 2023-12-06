@@ -27,12 +27,24 @@ fn serde_from_str(data: &[u8]) {
     let _: serde_json::Value = serde_json::from_str(data).unwrap();
 }
 
-fn sonic_rs_dom_from_slice(data: &[u8]) {
-    let _ = sonic_rs::value::dom_from_slice(data).unwrap();
+fn sonic_rs_from_slice(data: &[u8]) {
+    let _: sonic_rs::Value = sonic_rs::from_slice(data).unwrap();
 }
 
-fn sonic_rs_dom_from_slice_unchecked(data: &[u8]) {
-    let _ = unsafe { sonic_rs::value::dom_from_slice_unchecked(data).unwrap() };
+fn sonic_rs_from_slice_unchecked(data: &[u8]) {
+    let _: sonic_rs::Value = unsafe { sonic_rs::from_slice_unchecked(data).unwrap() };
+}
+
+fn sonic_rs_skip_one(data: &[u8]) {
+    unsafe {
+        let data = from_utf8_unchecked(data);
+        let empty: &[&str] = &[];
+        let _ = sonic_rs::get_unchecked(data, empty).unwrap();
+    }
+}
+
+fn sonic_rs_to_serdejson_value(data: &[u8]) {
+    let _: serde_json::Value = sonic_rs::from_slice(data).unwrap();
 }
 
 macro_rules! bench_file {
@@ -52,7 +64,7 @@ macro_rules! bench_file {
             // verify sonic-rs parse
             let serde_out: serde_json::Value = serde_json::from_slice(&vec).unwrap();
 
-            let value = sonic_rs::value::dom_from_slice(&vec).unwrap();
+            let value: sonic_rs::Value = sonic_rs::from_slice(&vec).unwrap();
             let out = sonic_rs::to_string(&value).unwrap();
             let rs_out1: serde_json::Value = serde_json::from_str(&out).unwrap();
             assert_eq!(rs_out1, serde_out);
@@ -63,7 +75,7 @@ macro_rules! bench_file {
             group.bench_with_input("sonic_rs_dom::from_slice", &vec, |b, data| {
                 b.iter_batched(
                     || data,
-                    |bytes| sonic_rs_dom_from_slice(&bytes),
+                    |bytes| sonic_rs_from_slice(&bytes),
                     BatchSize::SmallInput,
                 )
             });
@@ -71,15 +83,23 @@ macro_rules! bench_file {
             group.bench_with_input("sonic_rs_dom::from_slice_unchecked", &vec, |b, data| {
                 b.iter_batched(
                     || data,
-                    |bytes| sonic_rs_dom_from_slice_unchecked(&bytes),
+                    |bytes| sonic_rs_from_slice_unchecked(&bytes),
                     BatchSize::SmallInput,
                 )
             });
 
-            group.bench_with_input("simd_json::slice_to_borrowed_value", &vec, |b, data| {
+            group.bench_with_input("sonic_rs::skip_one", &vec, |b, data| {
                 b.iter_batched(
-                    || data.clone(),
-                    |mut bytes| simdjson_to_borrowed_value(&mut bytes),
+                    || data,
+                    |bytes| sonic_rs_skip_one(&bytes),
+                    BatchSize::SmallInput,
+                )
+            });
+
+            group.bench_with_input("sonic_rs::to_serdejson_value", &vec, |b, data| {
+                b.iter_batched(
+                    || data,
+                    |bytes| sonic_rs_to_serdejson_value(&bytes),
                     BatchSize::SmallInput,
                 )
             });
@@ -107,6 +127,14 @@ macro_rules! bench_file {
                     BatchSize::SmallInput,
                 )
             });
+
+            group.bench_with_input("simd_json::slice_to_borrowed_value", &vec, |b, data| {
+                b.iter_batched(
+                    || data.clone(),
+                    |mut bytes| simdjson_to_borrowed_value(&mut bytes),
+                    BatchSize::SmallInput,
+                )
+            });
             group.throughput(Throughput::Bytes(vec.len() as u64));
         }
     };
@@ -119,5 +147,5 @@ bench_file!(twitter);
 bench_file!(github_events);
 
 // criterion_group!(benches, canada, otfcc, citm_catalog, twitter, lottie, github_events, twitterescaped, book, poet, fgo);
-criterion_group!(benches, twitter, citm_catalog, canada);
+criterion_group!(benches, twitter, canada, citm_catalog);
 criterion_main!(benches);

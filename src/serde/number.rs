@@ -1,5 +1,6 @@
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
 
+use crate::error::make_error;
 use crate::util::num::ParserNumber;
 use crate::util::private::Sealed;
 use serde::de::value::BorrowedStrDeserializer;
@@ -8,7 +9,7 @@ use serde::ser::SerializeStruct;
 /// Represents a JSON number, whether integer or floating point.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Number {
-    n: N,
+    pub(crate) n: N,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -260,7 +261,7 @@ macro_rules! deserialize_any {
 }
 
 macro_rules! deserialize_number {
-    ($deserialize:ident => $visit:ident) => {
+    ($deserialize:ident) => {
         fn $deserialize<V>(self, visitor: V) -> Result<V::Value, Error>
         where
             V: Visitor<'de>,
@@ -275,18 +276,18 @@ impl<'de> Deserializer<'de> for Number {
 
     deserialize_any!(owned);
 
-    deserialize_number!(deserialize_i8 => visit_i8);
-    deserialize_number!(deserialize_i16 => visit_i16);
-    deserialize_number!(deserialize_i32 => visit_i32);
-    deserialize_number!(deserialize_i64 => visit_i64);
-    deserialize_number!(deserialize_i128 => visit_i128);
-    deserialize_number!(deserialize_u8 => visit_u8);
-    deserialize_number!(deserialize_u16 => visit_u16);
-    deserialize_number!(deserialize_u32 => visit_u32);
-    deserialize_number!(deserialize_u64 => visit_u64);
-    deserialize_number!(deserialize_u128 => visit_u128);
-    deserialize_number!(deserialize_f32 => visit_f32);
-    deserialize_number!(deserialize_f64 => visit_f64);
+    deserialize_number!(deserialize_i8);
+    deserialize_number!(deserialize_i16);
+    deserialize_number!(deserialize_i32);
+    deserialize_number!(deserialize_i64);
+    deserialize_number!(deserialize_i128);
+    deserialize_number!(deserialize_u8);
+    deserialize_number!(deserialize_u16);
+    deserialize_number!(deserialize_u32);
+    deserialize_number!(deserialize_u64);
+    deserialize_number!(deserialize_u128);
+    deserialize_number!(deserialize_f32);
+    deserialize_number!(deserialize_f64);
 
     forward_to_deserialize_any! {
         bool char str string bytes byte_buf option unit unit_struct
@@ -300,18 +301,18 @@ impl<'de, 'a> Deserializer<'de> for &'a Number {
 
     deserialize_any!(ref);
 
-    deserialize_number!(deserialize_i8 => visit_i8);
-    deserialize_number!(deserialize_i16 => visit_i16);
-    deserialize_number!(deserialize_i32 => visit_i32);
-    deserialize_number!(deserialize_i64 => visit_i64);
-    deserialize_number!(deserialize_i128 => visit_i128);
-    deserialize_number!(deserialize_u8 => visit_u8);
-    deserialize_number!(deserialize_u16 => visit_u16);
-    deserialize_number!(deserialize_u32 => visit_u32);
-    deserialize_number!(deserialize_u64 => visit_u64);
-    deserialize_number!(deserialize_u128 => visit_u128);
-    deserialize_number!(deserialize_f32 => visit_f32);
-    deserialize_number!(deserialize_f64 => visit_f64);
+    deserialize_number!(deserialize_i8);
+    deserialize_number!(deserialize_i16);
+    deserialize_number!(deserialize_i32);
+    deserialize_number!(deserialize_i64);
+    deserialize_number!(deserialize_i128);
+    deserialize_number!(deserialize_u8);
+    deserialize_number!(deserialize_u16);
+    deserialize_number!(deserialize_u32);
+    deserialize_number!(deserialize_u64);
+    deserialize_number!(deserialize_u128);
+    deserialize_number!(deserialize_f32);
+    deserialize_number!(deserialize_f64);
 
     forward_to_deserialize_any! {
         bool char str string bytes byte_buf option unit unit_struct
@@ -373,6 +374,22 @@ macro_rules! impl_from_signed {
 
 impl_from_unsigned!(u8, u16, u32, u64, usize);
 impl_from_signed!(i8, i16, i32, i64, isize);
+
+impl TryFrom<f32> for Number {
+    type Error = crate::Error;
+    #[inline]
+    fn try_from(f: f32) -> Result<Self, Self::Error> {
+        Number::try_from(f as f64)
+    }
+}
+
+impl TryFrom<f64> for Number {
+    type Error = crate::Error;
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        Number::from_f64(value)
+            .ok_or_else(|| make_error("NaN or Infinity is not a valid JSON value".to_string()))
+    }
+}
 
 /// Represents a JSON number with arbitrary precision, like as Golang json.Number
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]

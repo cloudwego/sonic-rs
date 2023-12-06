@@ -2,10 +2,12 @@
 
 use libfuzzer_sys::fuzz_target;
 use serde_json::Value as JValue;
-use sonic_rs::dom_from_slice;
-use sonic_rs::dom_from_str;
+use sonic_rs::from_slice;
+use sonic_rs::from_str;
+use sonic_rs::value::JsonContainerTrait;
 use sonic_rs::JsonNumberTrait;
-use sonic_rs::JsonValue;
+use sonic_rs::JsonValueTrait;
+use sonic_rs::Value;
 use sonic_rs::{to_array_iter, to_array_iter_unchecked, to_object_iter, to_object_iter_unchecked};
 
 macro_rules! test_struct {
@@ -40,12 +42,15 @@ macro_rules! test_struct {
 fuzz_target!(|data: &[u8]| {
     match serde_json::from_slice::<JValue>(data) {
         Ok(jv) => {
-            let sv = dom_from_slice(data).unwrap();
-            compare_value(&jv, sv.as_value());
+            // compare from_slice result
+            let sv: Value = from_slice(data).unwrap();
+            compare_value(&jv, &sv);
+
+            // compare to_string result
             let sout = sonic_rs::to_string(&sv).unwrap();
             let jv2 = serde_json::from_str::<JValue>(&sout).unwrap();
-            let sv2 = dom_from_str(&sout).unwrap();
-            let eq = compare_value(&jv2, sv2.as_value());
+            let sv2: Value = from_str(&sout).unwrap();
+            let eq = compare_value(&jv2, &sv2);
 
             if jv.is_object() && eq {
                 for ret in to_object_iter(data) {
@@ -92,7 +97,7 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         Err(_) => {
-            let _ = dom_from_slice(data).unwrap_err();
+            let _ = from_slice::<Value>(data).unwrap_err();
         }
     }
 
@@ -105,8 +110,8 @@ fuzz_target!(|data: &[u8]| {
 
 fn compare_lazyvalue(jv: &JValue, sv: &sonic_rs::LazyValue) {
     let out = sv.as_raw_slice();
-    let sv2 = sonic_rs::dom_from_slice(out).unwrap();
-    compare_value(jv, sv2.as_value());
+    let sv2: sonic_rs::Value = sonic_rs::from_slice(out).unwrap();
+    compare_value(jv, &sv2);
 }
 
 fn compare_value(jv: &JValue, sv: &sonic_rs::Value) -> bool {

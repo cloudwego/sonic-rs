@@ -49,11 +49,11 @@ pub type JsonPointer<'a> = Vec<PointerNode>;
 #[macro_export]
 macro_rules! pointer {
     () => (
-        std::vec::Vec::<PointerNode>::new()
+        std::vec::Vec::<$crate::PointerNode>::new()
     );
     ($($x:expr),+ $(,)?) => (
         <[_]>::into_vec(
-            std::boxed::Box::new([$(PointerNode::from($x)),+])
+            std::boxed::Box::new([$($crate::PointerNode::from($x)),+])
         )
     );
 }
@@ -90,8 +90,6 @@ impl<'a> PointerTrait for &'a usize {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-
     #[test]
     fn test_json_pointer() {
         let pointers = pointer![];

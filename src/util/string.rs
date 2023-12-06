@@ -479,8 +479,10 @@ unsafe fn escape_unchecked(src: &mut *const u8, nb: &mut usize, dst: &mut *mut u
     }
 }
 
+#[inline(always)]
 fn cross_page(ptr: *const u8, step: usize) -> bool {
-    ((ptr as usize & 4095) + step) > 4096
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize };
+    ((ptr as usize & (page_size - 1)) + step) > page_size
 }
 
 #[inline(always)]
@@ -501,7 +503,10 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
         while nb >= LANS {
             let v = {
                 let raw = std::slice::from_raw_parts(sptr, LANS);
-                u8x32::from_slice_unaligned_unchecked(raw)
+                #[no_sanitize(address)]
+                {
+                    u8x32::from_slice_unaligned_unchecked(raw)
+                }
             };
             v.write_to_slice_unaligned_unchecked(std::slice::from_raw_parts_mut(dptr, LANS));
             let mask = escaped_mask(v);
@@ -518,7 +523,7 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
             }
         }
 
-        let mut temp: [u8; 64] = [0u8; 64];
+        let mut temp: [u8; LANS] = [0u8; LANS];
         while nb > 0 {
             let v = if cross_page(sptr, LANS) {
                 std::ptr::copy_nonoverlapping(sptr, temp[..].as_mut_ptr(), nb);
@@ -526,6 +531,7 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
             } else {
                 #[cfg(not(debug_assertions))]
                 {
+                    // disable memory sanitizer here
                     let raw = std::slice::from_raw_parts(sptr, LANS);
                     u8x32::from_slice_unaligned_unchecked(raw)
                 }

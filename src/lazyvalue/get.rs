@@ -192,7 +192,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{pointer, JsonPointer, PointerNode};
+    use crate::{pointer, JsonPointer};
     use std::str::{from_utf8_unchecked, FromStr};
 
     #[test]
