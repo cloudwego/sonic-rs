@@ -185,7 +185,7 @@ impl<'de> Iterator for UnsafeArrayIntoIter<'de> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{value::JsonValue, JsonType};
+    use crate::{value::JsonValueTrait, JsonType};
     use bytes::Bytes;
 
     #[test]

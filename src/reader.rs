@@ -51,7 +51,7 @@ where
 
 // Reader is a unified wrapper for inputs.
 pub trait Reader<'de>: Sealed {
-    fn remain(&self) -> isize;
+    fn remain(&self) -> usize;
     fn eat(&mut self, n: usize);
     fn backward(&mut self, n: usize);
     fn peek_n(&mut self, n: usize) -> Option<&'de [u8]>;
@@ -68,7 +68,10 @@ pub trait Reader<'de>: Sealed {
             a
         })
     }
-    unsafe fn cur_ptr(&mut self) -> *mut u8;
+    fn cur_ptr(&mut self) -> *mut u8;
+
+    /// # Safety
+    /// cur must be a valid pointer in the slice
     unsafe fn set_ptr(&mut self, cur: *mut u8);
     fn slice_unchecked(&self, start: usize, end: usize) -> &'de [u8];
 
@@ -89,8 +92,8 @@ impl<'a> SliceRead<'a> {
 
 impl<'a> Reader<'a> for SliceRead<'a> {
     #[inline(always)]
-    fn remain(&self) -> isize {
-        self.slice.len() as isize - self.index as isize
+    fn remain(&self) -> usize {
+        self.slice.len() - self.index
     }
 
     #[inline(always)]
@@ -134,13 +137,13 @@ impl<'a> Reader<'a> for SliceRead<'a> {
     }
 
     #[inline(always)]
-    unsafe fn cur_ptr(&mut self) -> *mut u8 {
-        todo!()
+    fn cur_ptr(&mut self) -> *mut u8 {
+        panic!("should only used in PaddedSliceRead");
     }
 
     #[inline(always)]
     unsafe fn set_ptr(&mut self, _cur: *mut u8) {
-        todo!()
+        panic!("should only used in PaddedSliceRead");
     }
 
     #[inline(always)]
@@ -169,14 +172,14 @@ impl<'a> Reader<'a> for SliceRead<'a> {
     }
 }
 
-pub(crate) struct UncheckedSliceRead<'a> {
+pub(crate) struct PaddedSliceRead<'a> {
     base: NonNull<u8>,
     cur: NonNull<u8>,
     len: usize,
     _life: PhantomData<&'a mut [u8]>,
 }
 
-impl<'a> UncheckedSliceRead<'a> {
+impl<'a> PaddedSliceRead<'a> {
     const PADDING_SIZE: usize = 64;
     pub fn new(slice: &'a mut [u8]) -> Self {
         let base = unsafe { NonNull::new_unchecked(slice.as_mut_ptr()) };
@@ -189,15 +192,16 @@ impl<'a> UncheckedSliceRead<'a> {
     }
 }
 
-impl<'a> Reader<'a> for UncheckedSliceRead<'a> {
+impl<'a> Reader<'a> for PaddedSliceRead<'a> {
     #[inline(always)]
     fn as_u8_slice(&self) -> &'a [u8] {
         unsafe { std::slice::from_raw_parts(self.base.as_ptr(), self.len) }
     }
 
     #[inline(always)]
-    fn remain(&self) -> isize {
-        self.len as isize - self.index() as isize
+    fn remain(&self) -> usize {
+        let remain = self.len as isize - self.index() as isize;
+        std::cmp::max(remain, 0) as usize
     }
 
     #[inline(always)]
@@ -241,7 +245,7 @@ impl<'a> Reader<'a> for UncheckedSliceRead<'a> {
     }
 
     #[inline(always)]
-    unsafe fn cur_ptr(&mut self) -> *mut u8 {
+    fn cur_ptr(&mut self) -> *mut u8 {
         self.cur.as_ptr()
     }
 

@@ -1,10 +1,13 @@
+#![feature(slice_range)]
+#![feature(no_sanitize)]
 #![cfg_attr(not(doctest), doc = include_str!("../README.md"))]
 #![allow(dead_code)]
+
 mod error;
 mod input;
 mod parser;
 mod pointer;
-mod reader;
+pub mod reader;
 mod util;
 
 pub mod format;
@@ -38,8 +41,8 @@ pub use crate::serde::{
 
 #[doc(inline)]
 pub use crate::value::{
-    dom_from_slice, dom_from_slice_unchecked, dom_from_str, Array, ArrayMut, Document, JsonType,
-    JsonValue, Object, ObjectMut, Value, ValueMut,
+    from_value, to_value, Array, JsonContainerTrait, JsonType, JsonValueMutTrait, JsonValueTrait,
+    Object, Value, ValueRef,
 };
 
 // re-export the serde trait

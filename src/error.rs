@@ -90,6 +90,10 @@ impl Error {
             | ErrorCode::ExpectedArrayStart
             | ErrorCode::ExpectedObjectStart
             | ErrorCode::InvalidSurrogateUnicodeCodePoint
+            | ErrorCode::ValueKeyMustBeString
+            | ErrorCode::FloatMustBeFinite
+            | ErrorCode::ExpectedQuote
+            | ErrorCode::ExpectedNumericKey
             | ErrorCode::RecursionLimitExceeded => Category::Syntax,
         }
     }
@@ -256,6 +260,17 @@ pub(crate) enum ErrorCode {
 
     #[error("Invalid surrogate Unicode code point")]
     InvalidSurrogateUnicodeCodePoint,
+    #[error("JSON `Value` key must be string")]
+    ValueKeyMustBeString,
+
+    #[error("Float must be finite")]
+    FloatMustBeFinite,
+
+    #[error("Expect a numeric key in Value")]
+    ExpectedNumericKey,
+
+    #[error("Expect a quote")]
+    ExpectedQuote,
 }
 
 impl Error {
@@ -467,8 +482,6 @@ fn starts_with_digit(slice: &str) -> bool {
 
 #[cfg(test)]
 mod test {
-
-    use crate::Value;
     use crate::{from_slice, from_str, Deserialize};
 
     #[test]
@@ -548,8 +561,8 @@ mod test {
     }
 
     #[test]
-    fn test_other_erros() {
-        let err = Value::try_from(f64::NAN).unwrap_err();
+    fn test_other_errors() {
+        let err = crate::Value::try_from(f64::NAN).unwrap_err();
         assert_eq!(
             format!("{}", err),
             "NaN or Infinity is not a valid JSON value"

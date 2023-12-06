@@ -17,7 +17,7 @@ fn serde_to_string(val: &serde_json::Value) {
     let _ = serde_json::to_string(val).unwrap();
 }
 
-fn sonic_rs_to_string(val: &sonic_rs::value::Document) {
+fn sonic_rs_to_string(val: &sonic_rs::Value) {
     let _ = sonic_rs::to_string(val).unwrap();
 }
 
@@ -60,7 +60,7 @@ macro_rules! bench_file {
                 let serde_out: serde_json::Value = serde_json::from_slice(&data).unwrap();
                 let expect = serde_json::to_string(&serde_out).unwrap();
 
-                let value = sonic_rs::value::dom_from_slice(&data).unwrap();
+                let value: sonic_rs::Value = sonic_rs::from_slice(&data).unwrap();
                 let got = sonic_rs::to_string(&value).unwrap();
                 assert!(
                     diff_json(&got, &expect),
@@ -71,7 +71,7 @@ macro_rules! bench_file {
             let mut group = c.benchmark_group(stringify!($name));
             group.sampling_mode(SamplingMode::Flat);
 
-            let value = sonic_rs::value::dom_from_slice(&data).unwrap();
+            let value: sonic_rs::Value = sonic_rs::from_slice(&data).unwrap();
             group.bench_with_input("sonic_rs::to_string", &value, |b, data| {
                 b.iter_batched(
                     || data,

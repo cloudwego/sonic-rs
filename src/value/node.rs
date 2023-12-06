@@ -1,341 +1,463 @@
-use super::value_trait::{JsonType, JsonValue};
-use super::Index;
-use super::IndexMut;
-use crate::error::make_error;
+use super::alloctor::SyncBump;
+use super::index::Index;
+use super::object::Pair;
+use super::shared::Shared;
+use super::value_trait::JsonContainerTrait;
+use super::value_trait::JsonValueMutTrait;
 use crate::error::Result;
 use crate::parser::Parser;
 use crate::pointer::{JsonPointer, PointerNode};
-use crate::reader::UncheckedSliceRead;
+use crate::reader::PaddedSliceRead;
+use crate::reader::Reader;
 use crate::serde::tri;
+use crate::util::arc::Arc;
+use crate::util::taggedptr::TaggedPtr;
 use crate::util::utf8::from_utf8;
+use crate::value::alloctor::AllocatorTrait;
+use crate::value::array::Array;
+use crate::value::from::get_shared_or_new;
+use crate::value::object::Object;
+use crate::value::value_trait::JsonValueTrait;
 use crate::visitor::JsonVisitor;
-use crate::{to_string, Number};
+use crate::JsonType;
+use crate::Number;
 use bumpalo::Bump;
 use core::mem::size_of;
-use serde::de::Visitor;
 use serde::ser::{Error, Serialize, SerializeMap, SerializeSeq};
-use serde::Deserialize;
 use std::alloc::Layout;
-use std::marker::PhantomData;
-use std::mem::{transmute, MaybeUninit};
-use std::ops;
+use std::fmt::Debug;
+use std::fmt::Display;
+use std::fmt::Formatter;
+use std::mem::{transmute, ManuallyDrop, MaybeUninit};
 use std::ptr::NonNull;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
+use std::str::from_utf8_unchecked;
 
-/// Value is a node in the DOM tree.
-pub struct Value<'dom> {
-    typ: NodeMeta,
-    val: NodeValue<'dom>,
+/// Represents any valid JSON value.
+pub struct Value {
+    pub(crate) meta: Meta,
+    pub(crate) data: Data,
 }
 
-impl<'dom> Default for Value<'dom> {
+unsafe impl Sync for Value {}
+unsafe impl Send for Value {}
+
+impl Clone for Value {
+    /// Clone the value, if the value is a root node, we will create a new allocator for it.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use sonic_rs::json;
+    ///
+    /// let a = json!({"a": [1, 2, 3]});
+    /// assert_eq!(a, a.clone());
+    ///
+    /// ```
+    fn clone(&self) -> Self {
+        match self.get_type() {
+            JsonType::Array | JsonType::Object if !self.is_empty() => {
+                let (shared, _) = get_shared_or_new();
+                let mut v = self.clone_in(shared);
+                v.mark_root();
+                v
+            }
+            JsonType::String => {
+                let s = self.str();
+                // TODO: optimize static string
+                if s.is_empty() {
+                    return Value::new_str("", std::ptr::null());
+                }
+                let (shared, _) = get_shared_or_new();
+                let mut v = Value::copy_str(s, shared);
+                v.mark_root();
+                v
+            }
+            JsonType::Array if self.is_empty() => Value::new_array(std::ptr::null(), 0),
+            JsonType::Object if self.is_empty() => Value::new_object(std::ptr::null(), 0),
+            _ => {
+                let mut v = Value {
+                    meta: self.meta,
+                    data: self.data,
+                };
+                v.mark_shared(std::ptr::null());
+                v
+            }
+        }
+    }
+}
+
+impl Debug for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let array_children = if self.is_array() {
+            Some(self.children::<Value>().unwrap_or(&[]))
+        } else {
+            None
+        };
+
+        let object_children = if self.is_object() {
+            Some(self.children::<Pair>().unwrap_or(&[]))
+        } else {
+            None
+        };
+
+        let shared = if self.is_static() {
+            None
+        } else {
+            Some(self.arc_shared())
+        };
+
+        let ret = f
+            .debug_struct("Value")
+            .field("data", &format!("{}", self))
+            .field("is_root", &self.is_root())
+            .field("shared_address", &self.meta.ptr())
+            .field("shared", &shared)
+            .field("array_children", &array_children)
+            .field("object_children", &object_children)
+            .finish();
+        std::mem::forget(shared);
+        ret
+    }
+}
+
+impl Default for Value {
     fn default() -> Self {
-        Self::new_uinit()
+        Value::new()
     }
 }
 
-impl From<bool> for Value<'_> {
-    fn from(val: bool) -> Self {
-        Self::new_bool(val)
+impl Value {
+    /// Convert into `Object`. If the value is not an object, return `None`.
+    ///
+    #[inline]
+    pub fn into_object(self) -> Option<Object> {
+        if self.is_object() {
+            Some(Object(self))
+        } else {
+            None
+        }
+    }
+
+    /// Convert into `Array`. If the value is not an array, return `None`.
+    ///
+    #[inline]
+    pub fn into_array(self) -> Option<Array> {
+        if self.is_array() {
+            Some(Array(self))
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn is_root(&self) -> bool {
+        (self.meta.tag() & ROOT_MASK) == 0b1100
+    }
+
+    pub(crate) fn is_inlined(&self) -> bool {
+        self.meta.tag() < STRING && !self.is_static()
+    }
+
+    pub(crate) fn is_shared(&self) -> bool {
+        !self.is_root() && !self.is_static()
+    }
+
+    pub(crate) fn unmark_root(&mut self) {
+        let tag = self.meta.tag();
+        if tag >= STRING {
+            self.meta.set_tag(tag & UNROOT_MASK);
+        }
+    }
+
+    pub(crate) fn unset_root(&mut self) {
+        drop(self.arc_shared());
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn mark_root(&mut self) {
+        let tag = self.meta.tag();
+        if tag >= STRING {
+            self.meta.set_tag(tag | ROOT_MASK);
+        } else {
+            self.meta.set_ptr(std::ptr::null());
+        }
+    }
+
+    pub(crate) fn clone_in(&self, shared: &Shared) -> Self {
+        // let arc_shared =
+        match self.get_type() {
+            JsonType::Array => {
+                let mut arr = Value::new_array(shared, self.len());
+                for v in self.children::<Value>().unwrap() {
+                    arr.append_value(v.clone_in(shared));
+                }
+                arr
+            }
+            JsonType::Object => {
+                let mut obj = Value::new_object(shared, self.len());
+                for (k, v) in self.children::<(Value, Value)>().unwrap() {
+                    obj.append_pair((k.clone_in(shared), v.clone_in(shared)));
+                }
+                obj
+            }
+            JsonType::String => Value::copy_str(self.as_str().unwrap(), shared),
+            _ => {
+                let mut v = Value {
+                    meta: self.meta,
+                    data: self.data,
+                };
+                v.mark_shared(shared);
+                v
+            }
+        }
+    }
+
+    #[inline]
+    pub(crate) fn set_type(&mut self, typ: u64) {
+        self.meta.set_tag(typ);
+    }
+
+    pub(crate) fn drop_slow(&mut self) {
+        if self.is_array() {
+            for child in self.children_mut_unchecked::<Value>() {
+                child.drop_slow();
+            }
+        } else if self.is_object() {
+            for child in self.children_mut_unchecked::<(Value, Value)>() {
+                child.0.drop_slow();
+                child.1.drop_slow();
+            }
+        }
+
+        if self.is_root() {
+            drop(self.arc_shared());
+        }
     }
 }
 
-impl From<u64> for Value<'_> {
-    fn from(val: u64) -> Self {
-        Self::new_u64(val)
-    }
-}
-
-impl From<i64> for Value<'_> {
-    fn from(val: i64) -> Self {
-        Self::new_i64(val)
-    }
-}
-
-impl TryFrom<f64> for Value<'_> {
-    type Error = crate::Error;
-
-    fn try_from(value: f64) -> std::result::Result<Self, Self::Error> {
-        Self::new_f64(value)
-            .ok_or_else(|| make_error("NaN or Infinity is not a valid JSON value".to_string()))
-    }
-}
-
-impl<'dom> std::fmt::Debug for Value<'dom> {
+impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(to_string(self).unwrap_or_else(|e| e.to_string()).as_str())
+        write!(f, "{}", crate::to_string(self).expect("invalid value"))
     }
 }
 
-/// Object is a JSON object.
-#[derive(Debug, Copy, Clone)]
-pub struct Object<'dom>(&'dom Value<'dom>);
+// Value Status:
+// IsRoot: have a refcnt for the shared allocator and it is often string, non-empty array, non-empty object
+// IsnotRoot: the children nodes, it is owned by the root node
+// IsCombined: the children maybe a root, it have other allocators
+// IsFlatten: the node or its children donot have any allocators
 
-/// ObjectMut is a mutable JSON object.
-#[derive(Debug)]
-pub struct ObjectMut<'dom>(ValueMut<'dom>);
+// The drop policy:
+// IsRoot + IsCombined: -> drop traverse
+// IsnotRoot + IsCombined: -> drop traverse
+// IsRoot + IsnotCombined: -> drop directly, refcnt - 1
+// IsnotRoot + IsnotCombined: -> ignore it
 
-impl<'dom> Object<'dom> {
-    pub fn capacity(&self) -> usize {
-        self.0.capacity()
-    }
+// To make sure correctness, when we drop a node that is not a root node, we must mark Shared as combined.
+// such as an assignment operation: `array[1] = new_value`.
+// In the internal codes, we manually drop the value, and only mark Shared as combined in necessary.
+impl Drop for Value {
+    fn drop(&mut self) {
+        if self.is_static() {
+            return;
+        }
 
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
+        // optimize the drop overhead
+        // when nodes been Combined and there may be inserted root node, we must traverse the tree
+        if self.shared().is_combined() {
+            self.drop_slow();
+            return;
+        }
 
-    pub fn contains_key(&self, key: &str) -> bool {
-        self.get(key).is_some()
-    }
-
-    pub fn get(&self, key: &str) -> Option<&Value<'dom>> {
-        self.0.get_key(key)
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-impl<'dom> ObjectMut<'dom> {
-    pub fn allocator(&self) -> &'dom Bump {
-        self.0.alloc
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.as_ref().is_empty()
-    }
-
-    pub fn capacity(&self) -> usize {
-        self.as_ref().capacity()
-    }
-
-    pub fn contains_key(&self, key: &str) -> bool {
-        self.as_ref().contains_key(key)
-    }
-
-    pub fn len(&self) -> usize {
-        self.as_ref().len()
-    }
-
-    pub fn get(&'dom self, key: &str) -> Option<&Value<'dom>> {
-        self.0.get(key)
-    }
-
-    pub fn get_mut(&'dom mut self, key: &str) -> Option<ValueMut<'dom>> {
-        if let Some(node) = self.0.val.get_mut(key) {
-            Some(ValueMut {
-                val: node,
-                alloc: self.0.alloc,
-            })
+        if self.is_root() {
+            drop(self.arc_shared());
         } else {
-            None
+            // If value is not root, it maybe dropped in place, and insert a new allocator in the document,
+            // we mark Combined flag in the shared, to notify the root node to traverse the tree when dropping root.
+            self.shared().set_combined()
         }
     }
-
-    // return old value if the k is exitsted
-    pub fn insert(&mut self, k: &str, v: Value<'dom>) -> Option<Value<'dom>> {
-        if let Some(node) = self.0.val.get_mut(k) {
-            let old = node.take();
-            *(node) = v;
-            Some(old)
-        } else {
-            self.0
-                .val
-                .append_object((Value::new_str(k, self.0.alloc), v), self.0.alloc);
-            None
-        }
-    }
-
-    pub fn remove(&mut self, k: &str) -> Option<Value<'dom>> {
-        self.0.val.remove_in_object(k)
-    }
-
-    pub fn pop(&mut self) -> Option<Value<'dom>> {
-        if self.is_empty() {
-            None
-        } else {
-            let children = self.0.val.children_mut_unchecked::<Value>();
-            let node = children[children.len() - 1].take();
-            self.0.val.add_len(-1);
-            Some(node)
-        }
-    }
-
-    pub fn reserve(&mut self, addtional: usize) {
-        self.0.val.reserve_object(addtional, self.0.alloc);
-    }
-
-    // as_ref only used in internal, so safe here.
-    fn as_ref(&self) -> Object<'dom> {
-        unsafe { *(self as *const Self as *const Object<'dom>) }
-    }
 }
-
-/// Array is a JSON array.
-#[derive(Debug, Copy, Clone)]
-pub struct Array<'dom>(&'dom Value<'dom>);
-
-/// ArrayMut is a mutable JSON array.
-pub struct ArrayMut<'dom>(ValueMut<'dom>);
-
-impl<'dom> Array<'dom> {
-    pub fn capacity(&self) -> usize {
-        self.0.capacity()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.len() == 0
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-impl<'dom> ops::Deref for Array<'dom> {
-    type Target = [Value<'dom>];
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        self.0.children_unchecked()
-    }
-}
-
-impl<'dom> ArrayMut<'dom> {
-    pub fn push(&mut self, node: Value<'dom>) {
-        self.0.val.append_array(node, self.0.alloc)
-    }
-
-    pub fn pop(&mut self) -> Option<Value<'dom>> {
-        if self.is_empty() {
-            None
-        } else {
-            let children = self.0.val.children_mut_unchecked::<Value>();
-            let node = children[children.len() - 1].take();
-            self.0.val.add_len(-1);
-            Some(node)
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.as_ref().is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.as_ref().len()
-    }
-
-    pub fn capacity(&self) -> usize {
-        self.as_ref().capacity()
-    }
-
-    pub fn reserve(&mut self, addtional: usize) {
-        self.0.val.reserve_array(addtional, self.0.alloc);
-    }
-
-    pub fn allocator(&self) -> &'dom Bump {
-        self.0.alloc
-    }
-
-    // as_ref only used in internal, so safe here.
-    fn as_ref(&self) -> Array<'dom> {
-        unsafe { *(self as *const Self as *const Array<'dom>) }
-    }
-}
-
-impl<'dom> ops::Deref for ArrayMut<'dom> {
-    type Target = [Value<'dom>];
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        self.0.val.children_unchecked()
-    }
-}
-
-impl<'dom> ops::DerefMut for ArrayMut<'dom> {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut [Value<'dom>] {
-        self.0.val.children_mut_unchecked()
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-struct NodeMeta(u64);
 
 #[derive(Copy, Clone)]
-union NodeValue<'dom> {
-    uval: u64,
-    ival: i64,
-    fval: f64,
-    parent: u64,
-    nptr: NonNull<Value<'dom>>,
-    first: NonNull<MetaNode>,
-
-    str_ptr: *const u8,
-    own_ptr: *mut u8,
-    _lifetime: PhantomData<&'dom Document>,
+pub(crate) union Meta {
+    ptr: TaggedPtr<Shared>,
+    val: u64,
 }
 
-impl<'a> JsonValue for Value<'a> {
-    type ValueType<'dom> = &'dom Value<'dom> where Self: 'dom;
+pub(crate) const TYPE_MASK: u64 = (std::mem::align_of::<Shared>() as u64) - 1;
+pub(crate) const ROOT_MASK: u64 = 0b1100;
+pub(crate) const UNROOT_MASK: u64 = 0b1011;
+/// shared ptr: | hi | valid ptr | tag |
+pub(crate) const SHARED_PTR_MASK: u64 = 0x0000FFFFFFFFFFFF & !TYPE_MASK;
+/// str ptr:    | hi | valid str ptr   |
+pub(crate) const STR_PTR_MASK: u64 = 0x0000FFFFFFFFFFFF;
 
-    fn get_type(&self) -> JsonType {
-        const TYPE_MASK: u64 = 0b111;
-        ((self.typ.0 & TYPE_MASK) as u8).into()
+/// Encoding format:
+/// static node
+pub(crate) const NULL: u64 = 0b0000;
+pub(crate) const FALSE: u64 = 0b0001;
+pub(crate) const TRUE: u64 = 0b0010;
+pub(crate) const _: u64 = 0b0011;
+pub(crate) const FLOAT: u64 = 0b0100;
+pub(crate) const UNSIGNED: u64 = 0b0101;
+pub(crate) const SIGNED: u64 = 0b0110;
+pub(crate) const _: u64 = 0b0111;
+/// dynamic node
+pub(crate) const STRING: u64 = 0b1000;
+pub(crate) const _: u64 = 0b1001;
+pub(crate) const ARRAY: u64 = 0b1010;
+pub(crate) const OBJECT: u64 = 0b1011;
+pub(crate) const ROOT_STRING: u64 = 0b1100;
+pub(crate) const _: u64 = 0b1101;
+pub(crate) const ROOT_ARRAY: u64 = 0b1110;
+pub(crate) const ROOT_OBJECT: u64 = 0b1111;
+
+impl Meta {
+    pub(crate) const fn new(typ: u64, shared: *const Shared) -> Self {
+        Self {
+            ptr: TaggedPtr::new(shared, typ as usize),
+        }
     }
 
+    pub(crate) fn ptr(&self) -> *const Shared {
+        unsafe { (self.val & SHARED_PTR_MASK) as *const _ }
+    }
+
+    pub(crate) fn set_ptr(&mut self, ptr: *const Shared) {
+        unsafe {
+            self.ptr.set_ptr(ptr);
+        }
+    }
+
+    pub(crate) fn set_tag(&mut self, tag: u64) {
+        unsafe {
+            self.ptr.set_tag(tag as usize);
+        }
+    }
+
+    pub(crate) fn tag(&self) -> u64 {
+        unsafe { self.ptr.tag() as u64 }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub(crate) union Data {
+    pub(crate) uval: u64,
+    pub(crate) ival: i64,
+    pub(crate) fval: f64,
+    pub(crate) sval: *const u8,
+    pub(crate) achildren: *mut Value,
+    pub(crate) ochildren: *mut Pair,
+    pub(crate) parent: u64,
+    pub(crate) info: NonNull<MetaNode>,
+}
+
+impl Debug for Data {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        unsafe {
+            match self.parent {
+                0 => write!(f, "parent: null"),
+                _ => write!(f, "parent: {}", self.parent),
+            }
+        }
+    }
+}
+
+// Metanode is used to store the length and capacity of the array and object. and should be aligned as Values.
+#[derive(Debug)]
+pub(crate) struct MetaNode {
+    len: u64,
+    cap: u64,
+    _pad: u64,
+}
+
+impl MetaNode {
+    fn from_nodes(slice: &mut [Value]) -> &Self {
+        debug_assert!(slice.len() >= Value::MEAT_NODE_COUNT);
+        unsafe { &mut *(slice.as_mut_ptr() as *mut MetaNode) }
+    }
+}
+
+thread_local! {
+   static NODE_BUF: std::cell::RefCell<Vec<ManuallyDrop<Value>>> = std::cell::RefCell::new(Vec::new());
+}
+
+impl super::value_trait::JsonValueTrait for Value {
+    type ValueType<'v> = &'v Value where Self: 'v;
+
+    #[inline]
+    fn get_type(&self) -> JsonType {
+        match self.typ() {
+            NULL => JsonType::Null,
+            FALSE | TRUE => JsonType::Boolean,
+            SIGNED | UNSIGNED | FLOAT => JsonType::Number,
+            STRING | ROOT_STRING => JsonType::String,
+            ARRAY | ROOT_ARRAY => JsonType::Array,
+            OBJECT | ROOT_OBJECT => JsonType::Object,
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline]
     fn as_number(&self) -> Option<Number> {
         match self.typ() {
-            Value::UNSIGNED => self.as_u64().map(|u| u.into()),
-            Value::SIGNED => self.as_i64().map(|i| i.into()),
-            Value::FLOAT => self.as_f64().and_then(Number::from_f64),
+            UNSIGNED => self.as_u64().map(|u| u.into()),
+            SIGNED => self.as_i64().map(|i| i.into()),
+            FLOAT => self.as_f64().and_then(Number::from_f64),
             _ => None,
         }
     }
 
+    #[inline]
     fn as_i64(&self) -> Option<i64> {
         match self.typ() {
-            Value::SIGNED => Some(self.i64()),
-            Value::UNSIGNED if self.u64() <= i64::MAX as u64 => Some(self.u64() as i64),
+            SIGNED => Some(self.i64()),
+            UNSIGNED if self.u64() <= i64::MAX as u64 => Some(self.u64() as i64),
             _ => None,
         }
     }
 
+    #[inline]
     fn as_u64(&self) -> Option<u64> {
         match self.typ() {
-            Value::UNSIGNED => Some(self.u64()),
-            Value::SIGNED if self.i64() >= 0 => Some(self.i64() as u64),
+            UNSIGNED => Some(self.u64()),
+            SIGNED if self.i64() >= 0 => Some(self.i64() as u64),
             _ => None,
         }
     }
 
+    #[inline]
     fn as_f64(&self) -> Option<f64> {
         match self.typ() {
-            Value::UNSIGNED => Some(self.u64() as f64),
-            Value::SIGNED => Some(self.i64() as f64),
-            Value::FLOAT => Some(self.f64()),
+            UNSIGNED => Some(self.u64() as f64),
+            SIGNED => Some(self.i64() as f64),
+            FLOAT => Some(self.f64()),
             _ => None,
         }
     }
 
+    #[inline]
     fn as_bool(&self) -> Option<bool> {
         match self.typ() {
-            Value::TRUE => Some(true),
-            Value::FALSE => Some(false),
+            TRUE => Some(true),
+            FALSE => Some(false),
             _ => None,
         }
     }
 
+    #[inline]
     fn as_str(&self) -> Option<&str> {
-        if self.typ() == Value::STRING {
+        if self.is_str() {
             Some(self.str())
         } else {
             None
         }
     }
 
-    fn pointer<'dom>(&'dom self, path: &JsonPointer) -> Option<Self::ValueType<'dom>> {
+    #[inline]
+    fn pointer(&self, path: &JsonPointer) -> Option<Self::ValueType<'_>> {
         let mut node = self;
         for p in path {
             if let Some(next) = node.at_pointer(p) {
@@ -347,166 +469,60 @@ impl<'a> JsonValue for Value<'a> {
         Some(node)
     }
 
-    fn get<'dom, I: Index>(&'_ self, index: I) -> Option<Self::ValueType<'_>> {
+    #[inline]
+    fn get<I: Index>(&self, index: I) -> Option<Self::ValueType<'_>> {
         index.value_index_into(self)
     }
 }
 
-impl<'dom> Value<'dom> {
-    const NULL: u64 = (JsonType::Null as u64);
-    const FALSE: u64 = (JsonType::Boolean as u64);
-    const TRUE: u64 = (JsonType::Boolean as u64) | (1 << 3);
-    const UNSIGNED: u64 = (JsonType::Number as u64);
-    const SIGNED: u64 = (JsonType::Number as u64) | (1 << 3);
-    const FLOAT: u64 = (JsonType::Number as u64) | (2 << 3);
-    const ARRAY: u64 = (JsonType::Array as u64);
-    const OBJECT: u64 = (JsonType::Object as u64);
-    const STRING: u64 = (JsonType::String as u64);
+impl JsonContainerTrait for Value {
+    type ArrayType = Array;
+    type ObjectType = Object;
 
-    // type bits
-    const LEN_BITS: u64 = 8;
+    #[inline]
+    fn as_array(&self) -> Option<&Self::ArrayType> {
+        if self.is_array() {
+            Some(unsafe { transmute(self) })
+        } else {
+            None
+        }
+    }
 
-    // the count of meta node
-    // layout as:
-    // [ meta nodes ][array/object children..]
-    const MEAT_NODE_COUNT: usize = size_of::<MetaNode>() / size_of::<Self>();
+    #[inline]
+    fn as_object(&self) -> Option<&Self::ObjectType> {
+        if self.is_object() {
+            Some(unsafe { transmute(self) })
+        } else {
+            None
+        }
+    }
 }
 
-impl<'dom> Value<'dom> {
-    /// Create a new `Value` from a null
-    #[inline(always)]
-    pub const fn new_uinit() -> Self {
-        Self {
-            typ: NodeMeta(Self::NULL),
-            val: NodeValue { uval: 0 },
-        }
-    }
+impl JsonValueMutTrait for Value {
+    type ValueType = Value;
+    type ArrayType = Array;
+    type ObjectType = Object;
 
-    /// Create a new `Value` from a i64
-    #[inline(always)]
-    pub const fn new_i64(val: i64) -> Self {
-        Self {
-            typ: NodeMeta(Self::SIGNED),
-            val: NodeValue { ival: val },
-        }
-    }
-
-    /// Create a new `Value` from a f64, if not finite return None.
-    #[inline(always)]
-    pub fn new_f64(val: f64) -> Option<Self> {
-        // not support f64::NAN and f64::INFINITY
-        if val.is_finite() {
-            Some(Self {
-                typ: NodeMeta(Self::FLOAT),
-                val: NodeValue { fval: val },
-            })
-        } else {
-            None
-        }
-    }
-
-    /// Create a new `Value` from a f64. Not checking the f64 is finite.
-    /// # Safety
-    /// The f64 must be finite. Because JSON RFC NOT support `NaN` and `Infinity`.
-    #[inline(always)]
-    pub unsafe fn new_f64_unchecked(val: f64) -> Self {
-        Self {
-            typ: NodeMeta(Self::FLOAT),
-            val: NodeValue { fval: val },
-        }
-    }
-
-    /// Create a new `Value` from a u64
-    #[inline(always)]
-    pub const fn new_u64(val: u64) -> Self {
-        Self {
-            typ: NodeMeta(Self::UNSIGNED),
-            val: NodeValue { uval: val },
-        }
-    }
-
-    /// Create a new `Value` from a bool
-    #[inline(always)]
-    pub const fn new_bool(val: bool) -> Self {
-        Self {
-            typ: NodeMeta(if val { Self::TRUE } else { Self::FALSE }),
-            val: NodeValue { uval: 0 },
-        }
-    }
-
-    /// Create a new `Value` from a empty object
-    #[inline(always)]
-    pub const fn new_object() -> Self {
-        Self {
-            typ: NodeMeta(JsonType::Object as u64),
-            val: NodeValue { uval: 0 },
-        }
-    }
-
-    /// Create a new `Value` from a empty array
-    #[inline(always)]
-    pub const fn new_array() -> Self {
-        Self {
-            typ: NodeMeta(JsonType::Array as u64),
-            val: NodeValue { uval: 0 },
-        }
-    }
-
-    /// create a new owned string value with the alloctor
-    #[inline(always)]
-    pub fn new_str(val: &str, alloc: &'dom Bump) -> Self {
-        let val = alloc.alloc_str(val);
-        Self {
-            typ: NodeMeta(Self::STRING | ((val.len() as u64) << Self::LEN_BITS)),
-            val: NodeValue {
-                str_ptr: val.as_bytes().as_ptr(),
-            },
-        }
-    }
-
-    /// create a new string from static
-    #[inline(always)]
-    pub fn new_str_static(val: &'static str) -> Self {
-        Self {
-            typ: NodeMeta(Self::STRING | ((val.len() as u64) << Self::LEN_BITS)),
-            val: NodeValue {
-                str_ptr: val.as_bytes().as_ptr(),
-            },
-        }
-    }
-
-    /// create a new borrow string, lifetime of Value will limited  by str
-    #[inline(always)]
-    pub fn new_str_borrow(val: &str) -> Self {
-        Self {
-            typ: NodeMeta(Self::STRING | ((val.len() as u64) << Self::LEN_BITS)),
-            val: NodeValue {
-                str_ptr: val.as_bytes().as_ptr(),
-            },
-        }
-    }
-
-    pub fn as_array(&'dom self) -> Option<Array<'dom>> {
-        if self.is_array() {
-            Some(Array(self))
-        } else {
-            None
-        }
-    }
-
-    pub fn as_object(&'dom self) -> Option<Object<'dom>> {
+    #[inline]
+    fn as_object_mut(&mut self) -> Option<&mut Self::ObjectType> {
         if self.is_object() {
-            Some(Object(self))
+            Some(unsafe { transmute(self) })
         } else {
             None
         }
     }
 
-    fn typ(&self) -> u64 {
-        self.typ.0 & 0xff
+    #[inline]
+    fn as_array_mut(&mut self) -> Option<&mut Self::ArrayType> {
+        if self.is_array() {
+            Some(unsafe { transmute(self) })
+        } else {
+            None
+        }
     }
 
-    fn pointer_mut(&mut self, path: &JsonPointer) -> Option<&mut Self> {
+    #[inline]
+    fn pointer_mut(&mut self, path: &JsonPointer) -> Option<&mut Self::ValueType> {
         let mut node = self;
         for p in path {
             if let Some(next) = node.at_pointer_mut(p) {
@@ -518,17 +534,314 @@ impl<'dom> Value<'dom> {
         Some(node)
     }
 
-    fn get_mut<I: IndexMut>(&mut self, index: I) -> Option<&mut Self> {
+    #[inline]
+    fn get_mut<I: Index>(&mut self, index: I) -> Option<&mut Self::ValueType> {
         index.index_into_mut(self)
     }
+}
 
-    fn take(&mut self) -> Self {
-        let node = Self {
-            val: self.val,
-            typ: self.typ,
+/// ValueRef is a immutable reference helper for Value.
+///
+/// # Example
+///
+/// ```
+/// use sonic_rs::{ValueRef, json, JsonValueTrait};
+///
+/// let v = json!({
+///    "name": "Xiaoming",
+///    "age": 18,
+/// });
+///
+/// match v.as_ref() {
+///     ValueRef::Object(obj) => {
+///        assert_eq!(obj.get(&"name").unwrap().as_str().unwrap(), "Xiaoming");
+///        assert_eq!(obj.get(&"age").unwrap().as_i64().unwrap(), 18);
+///    },
+///    _ => unreachable!(),
+/// }
+/// ```
+///
+pub enum ValueRef<'a> {
+    Null,
+    Bool(bool),
+    Number(Number),
+    String(&'a str),
+    Array(&'a Array),
+    Object(&'a Object),
+}
+
+impl Value {
+    const PADDING_SIZE: usize = 64;
+    pub(crate) const MEAT_NODE_COUNT: usize = 1;
+
+    /// Create a new `null` Value. It is also the default value of `Value`.
+    ///
+    #[inline]
+    pub const fn new() -> Self {
+        Value {
+            // without shared allocator
+            meta: Meta::new(NULL, std::ptr::null()),
+            data: Data { uval: 0 },
+        }
+    }
+
+    /// Create a reference `ValueRef` from a `&Value`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use sonic_rs::{ValueRef, json, JsonValueTrait};
+    ///
+    /// let v = json!({
+    ///    "name": "Xiaoming",
+    ///    "age": 18,
+    /// });
+    ///
+    /// match v.as_ref() {
+    ///     ValueRef::Object(obj) => {
+    ///        assert_eq!(obj.get(&"name").unwrap().as_str().unwrap(), "Xiaoming");
+    ///        assert_eq!(obj.get(&"age").unwrap().as_i64().unwrap(), 18);
+    ///    },
+    ///    _ => unreachable!(),
+    /// }
+    /// ```
+    ///
+    #[inline]
+    pub fn as_ref(&self) -> ValueRef<'_> {
+        match self.typ() {
+            NULL => ValueRef::Null,
+            FALSE => ValueRef::Bool(false),
+            TRUE => ValueRef::Bool(true),
+            UNSIGNED => ValueRef::Number(self.as_u64().unwrap().into()),
+            SIGNED => ValueRef::Number(self.as_i64().unwrap().into()),
+            FLOAT => ValueRef::Number(Number::from_f64(self.as_f64().unwrap()).unwrap()),
+            STRING | ROOT_STRING => ValueRef::String(self.as_str().unwrap()),
+            ARRAY | ROOT_ARRAY => ValueRef::Array(self.as_array().unwrap()),
+            OBJECT | ROOT_OBJECT => ValueRef::Object(self.as_object().unwrap()),
+            _ => unreachable!(),
+        }
+    }
+
+    /// Create a new string Value from a `&'static str` with zero-copy.
+    #[inline]
+    pub fn from_static_str(val: &'static str) -> Self {
+        let mut v = Value {
+            meta: Meta::new(STRING, std::ptr::null()),
+            data: Data { sval: val.as_ptr() },
         };
-        self.set_null();
-        node
+        v.set_str_len(val.len());
+        v
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn new_u64(val: u64, share: *const Shared) -> Self {
+        Value {
+            meta: Meta::new(UNSIGNED, share),
+            data: Data { uval: val },
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn new_in(share: Arc<Shared>) -> Self {
+        let mut value = Value {
+            meta: Meta::new(NULL, share.inner_ptr() as *const _),
+            data: Data { uval: 0 },
+        };
+        value.mark_root();
+        std::mem::forget(share);
+        value
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn new_i64(val: i64, share: *const Shared) -> Self {
+        Value {
+            meta: Meta::new(SIGNED, share),
+            data: Data { ival: val },
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub(crate) unsafe fn new_f64_unchecked(val: f64, share: *const Shared) -> Self {
+        Value {
+            meta: Meta::new(FLOAT, share),
+            data: Data { fval: val },
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn new_f64(val: f64, share: *const Shared) -> Option<Self> {
+        if val.is_finite() {
+            Some(Value {
+                meta: Meta::new(FLOAT, share),
+                data: Data { fval: val },
+            })
+        } else {
+            None
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn new_null(share: *const Shared) -> Self {
+        Value {
+            meta: Meta::new(NULL, share),
+            data: Data { uval: 0 },
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn new_array(share: *const Shared, capacity: usize) -> Self {
+        let mut array = Value {
+            meta: Meta::new(ARRAY, share),
+            data: Data {
+                achildren: std::ptr::null_mut(),
+            },
+        };
+        if capacity == 0 {
+            return array;
+        }
+        array.reserve::<Value>(capacity);
+        array
+    }
+
+    #[inline(always)]
+    fn at_pointer(&self, p: &PointerNode) -> Option<&Self> {
+        match p {
+            PointerNode::Key(key) => self.get_key(key),
+            PointerNode::Index(index) => self.get_index(*index),
+        }
+    }
+
+    #[inline(always)]
+    fn at_pointer_mut(&mut self, p: &PointerNode) -> Option<&mut Self> {
+        match p {
+            PointerNode::Key(key) => self.get_key_mut(key).map(|v| v.0),
+            PointerNode::Index(index) => self.get_index_mut(*index),
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn new_bool(val: bool, share: *const Shared) -> Self {
+        Value {
+            meta: Meta::new(if val { TRUE } else { FALSE }, share),
+            data: Data { uval: 0 },
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn new_str(val: &str, share: *const Shared) -> Self {
+        let mut v = Value {
+            meta: Meta::new(STRING, share),
+            // TODO: optimize
+            data: Data { sval: val.as_ptr() },
+        };
+        v.set_str_len(val.len());
+        v
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn copy_str(src: &str, share: &Shared) -> Self {
+        let s = share.alloc.alloc_str(src);
+        let mut v = Value {
+            meta: Meta::new(STRING, share),
+            data: Data { sval: s.as_ptr() },
+        };
+        v.set_str_len(s.len());
+        v
+    }
+
+    // create a new owned allocator, and copied the string
+    #[doc(hidden)]
+    #[inline]
+    pub fn new_str_owned<S: AsRef<str>>(src: S) -> Self {
+        let shared = unsafe { &*Shared::new_ptr() };
+        let s = shared.alloc.alloc_str(src.as_ref());
+        let mut v = Value {
+            meta: Meta::new(ROOT_STRING, shared),
+            data: Data { sval: s.as_ptr() },
+        };
+        v.set_str_len(s.len());
+        v
+    }
+
+    #[doc(hidden)]
+    pub fn new_object(share: *const Shared, capacity: usize) -> Self {
+        let mut object = Value {
+            meta: Meta::new(OBJECT, share),
+            data: Data {
+                achildren: std::ptr::null_mut(),
+            },
+        };
+        if capacity == 0 {
+            return object;
+        }
+        object.reserve::<Pair>(capacity);
+        object
+    }
+
+    pub(crate) fn check_shared(&mut self) -> &Shared {
+        debug_assert!(self.is_container() || self.is_str());
+        if self.is_static() {
+            self.mark_shared(Shared::new_ptr());
+        }
+        self.shared()
+    }
+
+    pub(crate) fn shared(&self) -> &Shared {
+        let addr = self.meta.ptr();
+        debug_assert!(!addr.is_null(), "the ptr of Shared is null");
+        debug_assert!((addr as usize) % 8 == 0, "the ptr of Shared is incorrect");
+        unsafe { &*addr }
+    }
+
+    #[inline]
+    pub(crate) fn arc_shared(&self) -> Arc<Shared> {
+        let addr = self.meta.ptr();
+        debug_assert!(!addr.is_null(), "the ptr of Shared is null");
+        debug_assert!((addr as usize) % 8 == 0, "the ptr of Shared is incorrect");
+        unsafe { Arc::from_raw(addr) }
+    }
+
+    #[inline]
+    pub(crate) fn shared_clone(&self) -> Arc<Shared> {
+        let addr = self.meta.ptr();
+        debug_assert!(!addr.is_null(), "the ptr of Shared is null");
+        debug_assert!((addr as usize) % 8 == 0, "the ptr of Shared is incorrect");
+        unsafe { Arc::clone_from_raw(addr) }
+    }
+
+    /// node is flat, such as null, true, false, number and new empty array or object
+    #[doc(hidden)]
+    #[inline]
+    pub fn is_static(&self) -> bool {
+        self.meta.ptr().is_null()
+    }
+
+    pub(crate) fn is_container(&self) -> bool {
+        self.is_array() || self.is_object()
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn mark_shared(&mut self, shared: *const Shared) {
+        self.meta.set_ptr(shared);
+    }
+
+    pub(crate) fn shared_parts(&self) -> *const Shared {
+        self.meta.ptr()
+    }
+
+    unsafe fn raw_allocator(&self) -> &Bump {
+        unsafe { &*self.shared().alloc.0.data_ptr() }
     }
 
     pub(crate) fn get_index(&self, index: usize) -> Option<&Self> {
@@ -551,19 +864,84 @@ impl<'dom> Value<'dom> {
         None
     }
 
+    #[inline]
+    pub(crate) fn set_str_len(&mut self, len: usize) {
+        // check length and the exisit ptr is valid
+        unsafe {
+            debug_assert!(len < crate::value::MAX_STR_SIZE);
+            debug_assert!(self.meta.val >> 48 == 0);
+            debug_assert!(self.data.uval >> 48 == 0);
+            let hi = len >> 16;
+            let lo = len & 0xFFFF;
+            self.meta.val |= (hi as u64) << 48;
+            self.data.uval |= (lo as u64) << 48;
+        }
+    }
+
+    #[inline]
     pub(crate) fn get_key(&self, key: &str) -> Option<&Self> {
+        self.get_key_value(key).map(|(_, v)| v)
+    }
+
+    pub(crate) fn get_key_value(&self, key: &str) -> Option<(&str, &Self)> {
         debug_assert!(self.is_object());
         if let Some(kv) = self.children::<(Self, Self)>() {
             for (k, v) in kv {
-                assert!(k.is_str());
-                if k.equal_str(key) {
-                    return Some(v);
+                let k = k.as_str().expect("key is not string");
+                if k == key {
+                    return Some((k, v));
                 }
             }
         }
         None
     }
 
+    pub(crate) fn children<T>(&self) -> Option<&[T]> {
+        if self.has_children() {
+            Some(self.children_unchecked::<T>())
+        } else {
+            None
+        }
+    }
+
+    pub(crate) unsafe fn children_ptr<T>(&self) -> *const T {
+        if self.has_children() {
+            self.data.achildren.add(Self::MEAT_NODE_COUNT).cast()
+        } else {
+            NonNull::<T>::dangling().as_ptr()
+        }
+    }
+
+    #[inline]
+    pub(crate) unsafe fn children_mut_ptr<T>(&mut self) -> *mut T {
+        if self.has_children() {
+            self.data.achildren.add(Self::MEAT_NODE_COUNT).cast()
+        } else {
+            NonNull::<T>::dangling().as_ptr()
+        }
+    }
+
+    #[inline]
+    fn children_unchecked<T>(&self) -> &[T] {
+        unsafe {
+            let start = self.data.achildren.add(Self::MEAT_NODE_COUNT);
+            let ptr = start as *const T;
+            let len = self.len();
+            from_raw_parts(ptr, len)
+        }
+    }
+
+    #[inline]
+    fn children_unchecked_mut<T>(&mut self) -> &mut [T] {
+        unsafe {
+            let start = self.data.achildren.add(Self::MEAT_NODE_COUNT);
+            let ptr = start as *mut T;
+            let len = self.len();
+            from_raw_parts_mut(ptr, len)
+        }
+    }
+
+    #[inline]
     pub(crate) fn get_key_offset(&self, key: &str) -> Option<usize> {
         debug_assert!(self.is_object());
         if let Some(kv) = self.children::<(Self, Self)>() {
@@ -577,178 +955,310 @@ impl<'dom> Value<'dom> {
         None
     }
 
-    pub(crate) fn get_key_mut(&mut self, key: &str) -> Option<&mut Self> {
+    #[inline]
+    pub(crate) fn get_key_mut(&mut self, key: &str) -> Option<(&mut Self, usize)> {
         if let Some(kv) = self.children_mut::<(Self, Self)>() {
-            for (k, v) in kv.iter_mut() {
+            for (i, (k, v)) in kv.iter_mut().enumerate() {
                 debug_assert!(k.is_str());
                 if k.equal_str(key) {
-                    return Some(v);
+                    return Some((v, i));
                 }
             }
         }
         None
     }
 
-    #[inline(always)]
-    fn at_pointer(&self, p: &PointerNode) -> Option<&Self> {
-        match p {
-            PointerNode::Key(key) => self.get_key(key),
-            PointerNode::Index(index) => self.get_index(*index),
-        }
-    }
-
-    #[inline(always)]
-    fn at_pointer_mut(&mut self, p: &PointerNode) -> Option<&mut Self> {
-        match p {
-            PointerNode::Key(key) => self.get_key_mut(key),
-            PointerNode::Index(index) => self.get_index_mut(*index),
-        }
-    }
-
-    fn reserve_array(&mut self, additional: usize, alloc: &'dom Bump) {
+    #[inline]
+    pub(crate) fn insert_value(&mut self, index: usize, src: Value) {
         debug_assert!(self.is_array());
-        let new_cap = self.len() + additional;
-        if new_cap > self.capacity() {
-            let children = alloc.alloc_slice_fill_default(new_cap + Self::MEAT_NODE_COUNT);
-            if self.capacity() == 0 {
-                let first = MetaNode::from_nodes(children);
-                first.cap = new_cap as u64;
-                self.set_meta_ptr(first);
-                return;
-            }
-            let old = self.children::<Self>().unwrap();
+        self.reserve::<Value>(1);
+        let children = self.children_mut_unchecked::<MaybeUninit<Value>>();
+        let len = children.len();
+        assert!(
+            index <= children.len(),
+            "index({}) should <= len({})",
+            index,
+            len
+        );
+        if index < len {
             unsafe {
-                let src = old.as_ptr();
-                let dst =
-                    children[Self::MEAT_NODE_COUNT..old.len() + Self::MEAT_NODE_COUNT].as_mut_ptr();
-                let count = self.len();
-                std::ptr::copy_nonoverlapping(src, dst, count);
+                std::ptr::copy(
+                    children.as_ptr().add(index),
+                    children.as_mut_ptr().add(index + 1),
+                    len - index,
+                );
             }
-            let first = MetaNode::from_nodes(children);
-            first.cap = new_cap as u64;
-            self.set_meta_ptr(first);
+        }
+        unsafe {
+            let dst = &mut *children.as_mut_ptr().add(index);
+            write_value(dst, src, self.shared());
+            self.add_len(1);
         }
     }
 
-    fn reserve_object(&mut self, additional: usize, alloc: &'dom Bump) {
-        debug_assert!(self.is_object());
-        let new_cap = self.len() + additional;
-        if new_cap > self.capacity() {
-            let children: &mut [Value] =
-                alloc.alloc_slice_fill_default(new_cap * 2 + Self::MEAT_NODE_COUNT);
-            if self.capacity() == 0 {
-                let first = MetaNode::from_nodes(children);
-                first.cap = new_cap as u64;
-                self.set_meta_ptr(first);
-                return;
-            }
-            let old = self.children::<(Self, Self)>().unwrap();
-            let len = old.len() * 2;
-            let old = unsafe { from_raw_parts(old.as_ptr() as *const Value, len) };
-            unsafe {
-                let src = old.as_ptr();
-                let dst =
-                    children[Self::MEAT_NODE_COUNT..old.len() + Self::MEAT_NODE_COUNT].as_mut_ptr();
-                std::ptr::copy_nonoverlapping(src, dst, len);
-            }
-            let first = MetaNode::from_nodes(children);
-            first.cap = new_cap as u64;
-            self.set_meta_ptr(first);
-        }
-    }
-
-    fn set_meta_ptr(&mut self, first: &mut MetaNode) {
-        self.val.first = unsafe { NonNull::new_unchecked(first) };
-    }
-
+    #[inline]
     fn equal_str(&self, val: &str) -> bool {
         debug_assert!(self.is_str());
         self.str().len() == val.len() && self.str() == val
     }
 
-    pub(crate) fn len(&self) -> usize {
-        debug_assert!(self.is_object() || self.is_str() || self.is_array());
-        self.typ.0 as usize >> 8
-    }
-
-    fn has_children(&self) -> bool {
-        unsafe { self.val.uval != 0 }
-    }
-
-    fn capacity(&self) -> usize {
+    #[inline]
+    pub(crate) fn capacity(&self) -> usize {
         debug_assert!(self.is_object() || self.is_array());
         if self.has_children() {
-            let first = unsafe { self.val.first.as_ref() };
-            first.cap as usize
+            unsafe { self.data.info.as_ref().cap as usize }
         } else {
             0
         }
     }
 
-    fn append_array(&mut self, node: Self, alloc: &'dom Bump) {
-        self.reserve_array(1, alloc);
-        debug_assert!(self.capacity() > self.len());
-        let children = self.children_mut_unchecked::<Self>();
-        let len = children.len();
-        unsafe {
-            *children.as_mut_ptr().add(len) = node;
-        }
-        self.add_len(1);
+    #[inline]
+    fn allocator(&self) -> &SyncBump {
+        &self.shared().alloc
     }
 
-    pub(crate) fn append_object(&mut self, pair: (Self, Self), alloc: &'dom Bump) -> &mut Self {
-        self.reserve_object(1, alloc);
-        let children = self.children_mut_unchecked::<(Self, Self)>();
+    #[inline]
+    pub(crate) fn clear(&mut self) {
+        debug_assert!(self.is_object() || self.is_array());
+
+        if self.is_empty() {
+            return;
+        }
+
+        // we need traverse the tree to drop the children
+        if self.shared().is_combined() {
+            if self.is_array() {
+                for child in self.children_mut_unchecked::<Value>() {
+                    child.drop_slow();
+                }
+            } else if self.is_object() {
+                for child in self.children_mut_unchecked::<(Value, Value)>() {
+                    child.0.drop_slow();
+                    child.1.drop_slow();
+                }
+            }
+        }
+        unsafe { self.set_len(0) }
+    }
+
+    #[inline]
+    pub(crate) fn remove_index(&mut self, index: usize) -> Value {
+        debug_assert!(self.is_array());
+        let children = self.children_mut_unchecked::<Value>();
         let len = children.len();
-        let ret = unsafe {
-            let ptr = children.as_mut_ptr().add(len);
-            *ptr = pair;
-            &mut (*ptr).1
+        assert!(
+            index < len,
+            "remove index({}) should be < len({})",
+            index,
+            len
+        );
+        let val = children[index].take();
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                children.as_ptr().add(index + 1),
+                children.as_mut_ptr().add(index),
+                len - index - 1,
+            );
+        }
+        self.add_len(-1);
+        val
+    }
+
+    #[inline]
+    pub(crate) fn remove_pair_index(&mut self, index: usize) -> (Value, Value) {
+        debug_assert!(self.is_object());
+        let children = self.children_mut_unchecked::<Pair>();
+        let len = children.len();
+        assert!(
+            index < len,
+            "remove index({}) should be < len({})",
+            index,
+            len
+        );
+
+        // key is always not a root, ignored it
+        let children = self.children_mut_unchecked::<(Self, Self)>();
+        // key will be dropped
+        let key = children[index].0.take();
+        let val = children[index].1.take();
+        unsafe {
+            let dst = children.as_mut_ptr().add(index);
+            let src = children.as_ptr().add(index + 1);
+            let size = len - index - 1;
+            std::ptr::copy(src, dst, size);
+        }
+        self.add_len(-1);
+        (key, val)
+    }
+
+    #[inline]
+    pub(crate) fn remove_key(&mut self, k: &str) -> Option<Value> {
+        debug_assert!(self.is_object());
+        if let Some(i) = self.get_key_offset(k) {
+            let (_, val) = self.remove_pair_index(i);
+            Some(val)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn iter<T>(&self) -> std::slice::Iter<'_, T> {
+        self.children::<T>().unwrap_or(&[]).iter()
+    }
+
+    pub(crate) fn iter_mut<T>(&mut self) -> std::slice::IterMut<'_, T> {
+        self.children_mut::<T>().unwrap_or(&mut []).iter_mut()
+    }
+
+    /// Take the value from the node, and set the node as a empty node.
+    /// Take will creat a new root node.
+    ///
+    /// # Examples
+    /// ```
+    /// use sonic_rs::json;
+    /// use sonic_rs::JsonValueTrait;
+    ///
+    /// let mut value = json!({"a": 123});
+    /// assert_eq!(value.take()["a"], 123);
+    /// assert!(value.is_null());
+    ///
+    /// let mut value = json!(null);
+    /// assert!(value.take().is_null());
+    /// assert!(value.is_null());
+    /// ```
+    #[inline]
+    pub fn take(&mut self) -> Self {
+        replace_value(self, Value::default())
+    }
+
+    #[inline]
+    pub(crate) unsafe fn set_len(&mut self, len: usize) {
+        debug_assert!(self.is_object() || self.is_array());
+        let meta = unsafe { self.data.info.as_mut() };
+        meta.len = len as u64;
+    }
+
+    #[inline]
+    pub(crate) fn grow<T>(&mut self, capacity: usize) {
+        if self.is_static() {
+            self.mark_shared(Shared::new_ptr());
+            self.mark_root();
+        }
+        let old = self.children::<T>();
+        let nodes = capacity * (size_of::<T>() / size_of::<Value>()) + Self::MEAT_NODE_COUNT;
+        let new_buffer: *mut Value = self.allocator().alloc_slice(nodes).as_mut_ptr();
+
+        if let Some(children) = old {
+            unsafe {
+                let src = children.as_ptr();
+                let dst: *mut T = new_buffer.add(Self::MEAT_NODE_COUNT).cast();
+                std::ptr::copy_nonoverlapping(src, dst, children.len());
+            }
+        }
+
+        // set the capacity and length
+        let first: &mut MetaNode = unsafe { &mut *new_buffer.cast() };
+        first.cap = capacity as u64;
+        first.len = old.map_or(0, |s| s.len()) as u64;
+        self.data.achildren = new_buffer.cast();
+    }
+
+    #[inline]
+    pub(crate) fn reserve<T>(&mut self, additional: usize) {
+        debug_assert!(self.is_object() || self.is_array());
+        debug_assert!(size_of::<T>() == size_of::<Value>() || size_of::<T>() == size_of::<Pair>());
+
+        let cur_cap = self.capacity();
+        let required_cap = self
+            .len()
+            .checked_add(additional)
+            .expect("capacity overflow");
+        let default_cap = if size_of::<T>() == size_of::<Value>() {
+            super::array::DEFAULT_ARRAY_CAP
+        } else {
+            super::object::DEFAULT_OBJ_CAP
         };
+
+        if required_cap > self.capacity() {
+            let cap = std::cmp::max(cur_cap * 2, required_cap);
+            let cap = std::cmp::max(default_cap, cap);
+            self.grow::<T>(cap);
+        }
+    }
+
+    #[doc(hidden)]
+    #[inline]
+    pub fn append_value(&mut self, val: Value) -> &mut Value {
+        debug_assert!(self.is_array());
+        self.reserve::<Value>(1);
+
+        let children = self.children_mut_unchecked::<MaybeUninit<Value>>();
+        let len = children.len();
+        let end = unsafe { &mut *children.as_mut_ptr().add(len) };
+        write_value(end, val, self.shared());
         self.add_len(1);
+        let ret = unsafe { end.assume_init_mut() };
         ret
     }
 
-    fn remove_in_object(&mut self, k: &str) -> Option<Self> {
+    #[doc(hidden)]
+    #[inline]
+    pub fn append_pair(&mut self, pair: Pair) -> &mut Pair {
         debug_assert!(self.is_object());
-        if let Some(i) = self.get_key_offset(k) {
-            let children = self.children_mut_unchecked::<(Self, Self)>();
-            let node = (children[i].0.take(), children[i].1.take());
-            // move the later nodes to first
-            let len: usize = children.len();
-            unsafe {
-                let dst = children.as_mut_ptr().add(i);
-                let src = children.as_ptr().add(i + 1);
+        self.reserve::<Pair>(1);
 
-                let size = (len - i - 1) * size_of::<Self>();
-                std::ptr::copy(src, dst, size);
-            }
-            self.add_len(-1);
-            Some(node.1)
-        } else {
-            None
-        }
+        let children = self.children_mut_unchecked::<(MaybeUninit<Value>, MaybeUninit<Value>)>();
+        let len = children.len();
+
+        let end_key = unsafe { &mut (*children.as_mut_ptr().add(len)).0 };
+        let end_value = unsafe { &mut (*children.as_mut_ptr().add(len)).1 };
+        write_value(end_key, pair.0, self.shared());
+        write_value(end_value, pair.1, self.shared());
+        self.add_len(1);
+        unsafe { &mut *(end_key as *mut _ as *mut Pair) }
     }
 
-    // if object, return as a doubled size slice
-    pub(crate) fn children<T>(&self) -> Option<&[T]> {
-        if self.has_children() {
-            Some(self.children_unchecked::<T>())
-        } else {
-            None
-        }
+    fn add_len(&mut self, additional: isize) {
+        debug_assert!(self.is_array() || self.is_object());
+        let meta = unsafe { self.data.info.as_mut() };
+        meta.len = (meta.len as isize + additional) as u64;
     }
 
-    fn children_unchecked<T>(&self) -> &[T] {
-        unsafe {
-            let start = self.val.nptr.as_ptr().add(Self::MEAT_NODE_COUNT);
-            let ptr = start as *const T;
-            let len = self.len();
-            from_raw_parts(ptr, len)
+    #[inline]
+    pub(crate) fn pop(&mut self) -> Option<Value> {
+        debug_assert!(self.is_array());
+        if self.is_empty() {
+            return None;
         }
+
+        let children = self.children_mut_unchecked::<Value>();
+        let len = children.len();
+        let val = children[len - 1].take();
+        self.add_len(-1);
+        Some(val)
     }
 
-    fn children_mut<T>(&mut self) -> Option<&mut [T]> {
+    #[inline]
+    pub(crate) fn pop_pair(&mut self) -> Option<Pair> {
+        debug_assert!(self.is_object());
+        if self.is_empty() {
+            return None;
+        }
+
+        let children = self.children_mut_unchecked::<Pair>();
+        let len = children.len();
+        let pair = (children[len - 1].0.take(), children[len - 1].1.take());
+        self.add_len(-1);
+        Some(pair)
+    }
+
+    #[inline]
+    fn has_children(&self) -> bool {
+        unsafe { self.data.achildren as usize != 0 }
+    }
+
+    #[inline]
+    pub(crate) fn children_mut<T>(&mut self) -> Option<&mut [T]> {
         if self.has_children() {
             Some(self.children_mut_unchecked::<T>())
         } else {
@@ -756,292 +1266,25 @@ impl<'dom> Value<'dom> {
         }
     }
 
+    #[inline]
     fn children_mut_unchecked<T>(&mut self) -> &mut [T] {
         unsafe {
-            let start = self.val.nptr.as_ptr().add(Self::MEAT_NODE_COUNT);
+            let start = self.data.achildren.add(Self::MEAT_NODE_COUNT);
             let ptr = start as *mut T;
             let len = self.len();
             from_raw_parts_mut(ptr, len)
         }
     }
 
-    fn str(&self) -> &str {
-        debug_assert!(self.typ() == Self::STRING);
-        let s = unsafe {
-            let ptr = self.val.own_ptr;
-            let len = self.len();
-            let slice = std::slice::from_raw_parts(ptr, len);
-            std::str::from_utf8_unchecked(slice)
-        };
-        s
-    }
-
-    fn array(&self) -> &[Self] {
-        if self.len() == 0 {
-            return &[];
-        }
-        let slice = unsafe {
-            let ptr = self.val.nptr;
-            let len = self.len();
-            // add 1 to skip the metanode
-            std::slice::from_raw_parts(ptr.as_ptr().add(1), len)
-        };
-        slice
-    }
-
-    fn object(&self) -> &[(Self, Self)] {
-        if self.len() == 0 {
-            return &[];
-        }
-        let slice = unsafe {
-            let ptr = self.val.nptr.as_ptr().add(1);
-            let len = self.len();
-            // add 1 to skip the metanode
-            std::slice::from_raw_parts(ptr as *const (Self, Self), len)
-        };
-        slice
-    }
-
-    fn set_null(&mut self) {
-        self.typ.0 = Self::NULL;
-    }
-
-    fn set_len(&mut self, len: usize) {
-        debug_assert!(self.len() == 0);
-        self.typ.0 |= (len as u64) << Self::LEN_BITS;
-    }
-
-    fn add_len(&mut self, inc: isize) {
-        if inc > 0 {
-            self.typ.0 += (inc as u64) << Self::LEN_BITS;
-        } else {
-            self.typ.0 -= ((-inc) as u64) << Self::LEN_BITS;
-        }
-    }
-
-    fn set_bool(&mut self, val: bool) {
-        if val {
-            self.typ.0 = Self::TRUE;
-        } else {
-            self.typ.0 = Self::FALSE;
-        }
-    }
-
-    fn i64(&self) -> i64 {
-        unsafe { self.val.ival }
-    }
-
-    fn u64(&self) -> u64 {
-        unsafe { self.val.uval }
-    }
-
-    fn f64(&self) -> f64 {
-        unsafe { self.val.fval }
-    }
-}
-
-struct MetaNode {
-    cap: u64,
-    _remain: u64,
-}
-
-impl MetaNode {
-    fn from_nodes<'dom>(slice: &'dom mut [Value]) -> &'dom mut Self {
-        debug_assert!(slice.len() >= Value::MEAT_NODE_COUNT);
-        unsafe { &mut *(slice.as_mut_ptr() as *mut MetaNode) }
-    }
-}
-
-struct ValueInner {
-    _typ: u64,
-    _val: u64,
-}
-
-pub struct Document {
-    root: ValueInner,
-    alloc: Bump,
-}
-
-unsafe impl Send for Document {}
-
-impl std::fmt::Debug for Document {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.as_value().fmt(f)
-    }
-}
-
-impl Default for Document {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Parse a json into a document.
-pub fn dom_from_str(json: &str) -> Result<Document> {
-    let mut dom = Document::new();
-    dom.parse_bytes_impl(json.as_bytes())?;
-    Ok(dom)
-}
-
-/// Parse a json into a document.
-///
-/// If the json is valid utf-8, recommend to use `dom_from_slice_unchecked` instead.
-pub fn dom_from_slice(json: &[u8]) -> Result<Document> {
-    // validate the utf-8 at first for slice
-    let json = {
-        let json = from_utf8(json)?;
-        json.as_bytes()
-    };
-
-    let mut dom = Document::new();
-    dom.parse_bytes_impl(json)?;
-    Ok(dom)
-}
-
-/// Parse a json into a document.
-///
-/// # Safety
-/// The json must be valid utf-8.
-pub unsafe fn dom_from_slice_unchecked(json: &[u8]) -> Result<Document> {
-    let mut dom = Document::new();
-    dom.parse_bytes_impl(json)?;
-    Ok(dom)
-}
-
-/// ValueMut is a mutable reference to a `Value`.
-#[derive(Debug)]
-pub struct ValueMut<'dom> {
-    val: &'dom mut Value<'dom>,
-    alloc: &'dom Bump,
-}
-
-impl<'d> JsonValue for ValueMut<'d> {
-    type ValueType<'dom> = &'dom Value<'dom> where Self: 'dom;
-
-    fn as_bool(&self) -> Option<bool> {
-        self.val.as_bool()
-    }
-
-    fn as_number(&self) -> Option<Number> {
-        self.val.as_number()
-    }
-
-    fn get_type(&self) -> JsonType {
-        self.val.get_type()
-    }
-
-    fn as_str(&self) -> Option<&str> {
-        self.val.as_str()
-    }
-
-    fn get<I: Index>(&'_ self, index: I) -> Option<Self::ValueType<'_>> {
-        index.value_index_into(self.val)
-    }
-
-    fn pointer(&'_ self, path: &JsonPointer) -> Option<Self::ValueType<'_>> {
-        self.val.pointer(path)
-    }
-}
-
-impl<'dom> ValueMut<'dom> {
-    pub fn allocator(&self) -> &'dom Bump {
-        self.alloc
-    }
-
-    pub fn into_object_mut(self) -> Option<ObjectMut<'dom>> {
-        if self.is_object() {
-            Some(ObjectMut(self))
-        } else {
-            None
-        }
-    }
-
-    pub fn into_array_mut(self) -> Option<ArrayMut<'dom>> {
-        if self.is_array() {
-            Some(ArrayMut(self))
-        } else {
-            None
-        }
-    }
-
-    pub fn pointer_mut(&'dom mut self, path: &JsonPointer) -> Option<ValueMut<'dom>> {
-        if let Some(val) = self.val.pointer_mut(path) {
-            Some(Self {
-                val,
-                alloc: self.alloc,
-            })
-        } else {
-            None
-        }
-    }
-
-    pub fn get_mut<I: IndexMut>(&'dom mut self, index: I) -> Option<ValueMut<'dom>> {
-        if let Some(val) = index.index_into_mut(self.val) {
-            Some(Self {
-                val,
-                alloc: self.alloc,
-            })
-        } else {
-            None
-        }
-    }
-
-    pub fn take(&mut self) -> Value<'dom> {
-        self.val.take()
-    }
-}
-
-impl Document {
-    const PADDING_SIZE: usize = 64;
-
-    pub fn new() -> Document {
-        Self {
-            alloc: Bump::new(),
-            root: ValueInner { _typ: 0, _val: 0 },
-        }
-    }
-
-    pub fn as_value(&self) -> &Value {
-        unsafe { transmute(&self.root) }
-    }
-
-    pub fn as_value_mut(&'_ mut self) -> ValueMut<'_> {
-        ValueMut {
-            val: unsafe { transmute(&mut self.root) },
-            alloc: &self.alloc,
-        }
-    }
-
-    pub fn as_array_mut(&'_ mut self) -> Option<ArrayMut<'_>> {
-        if self.as_value().is_array() {
-            Some(ArrayMut(ValueMut {
-                val: unsafe { transmute(&mut self.root) },
-                alloc: &self.alloc,
-            }))
-        } else {
-            None
-        }
-    }
-
-    pub fn as_object_mut(&'_ mut self) -> Option<ObjectMut<'_>> {
-        if self.as_value().is_object() {
-            Some(ObjectMut(ValueMut {
-                val: unsafe { transmute(&mut self.root) },
-                alloc: &self.alloc,
-            }))
-        } else {
-            None
-        }
-    }
-
-    fn parse_bytes_impl(&mut self, json: &[u8]) -> Result<()> {
-        let alloc = &self.alloc;
+    #[inline(never)]
+    pub(crate) fn parse_with_padding(&mut self, json: &[u8]) -> Result<usize> {
+        let alloc = unsafe { self.raw_allocator() };
         let len = json.len();
 
         // allocate the padding buffer for the input json
         let real_size = len + Self::PADDING_SIZE;
         let layout = Layout::array::<u8>(real_size).map_err(Error::custom)?;
-        let dst = alloc.try_alloc_layout(layout).map_err(Error::custom)?;
+        let dst = alloc.alloc_layout(layout);
         let json_buf = unsafe {
             let dst = dst.as_ptr();
             std::ptr::copy_nonoverlapping(json.as_ptr(), dst, len);
@@ -1050,274 +1293,404 @@ impl Document {
             *(dst.add(len)) = b'x';
             *(dst.add(len + 1)) = b'"';
             *(dst.add(len + 2)) = b'x';
-
             std::slice::from_raw_parts_mut(dst, len + Self::PADDING_SIZE)
         };
-        let slice = UncheckedSliceRead::new(json_buf);
+        let slice = PaddedSliceRead::new(json_buf);
         let mut parser = Parser::new(slice);
 
-        // a simple wrapper for visitor
-        #[derive(Debug)]
-        struct DocumentVisitor<'a> {
-            alloc: &'a Bump,
-            nodes: Vec<Value<'static>>,
-            parent: usize,
-        }
-
-        impl<'a> DocumentVisitor<'a> {
-            // the array and object's logic is same.
-            fn visit_container(&mut self, len: usize) -> bool {
-                let visitor = self;
-                let alloc = visitor.alloc;
-                let parent = visitor.parent;
-                let old = unsafe { visitor.nodes[parent].val.parent as usize };
-                visitor.parent = old;
-                if len > 0 {
-                    unsafe {
-                        let visited_children = &visitor.nodes[(parent + 1)..];
-                        let real_count = visited_children.len() + Value::MEAT_NODE_COUNT;
-                        let layout = {
-                            if let Ok(layout) = Layout::array::<Value>(real_count) {
-                                layout
-                            } else {
-                                return false;
-                            }
-                        };
-                        let mut children = {
-                            if let Ok(c) = alloc.try_alloc_layout(layout) {
-                                c
-                            } else {
-                                return false;
-                            }
-                        };
-
-                        // copy visited nodes into document
-                        let src = visited_children.as_ptr();
-                        let dst = children.as_ptr() as *mut Value;
-                        let dst = dst.add(Value::MEAT_NODE_COUNT);
-                        std::ptr::copy_nonoverlapping(src, dst, visited_children.len());
-
-                        // set the capacity and length
-                        let meta = &mut *(children.as_mut() as *mut _ as *mut MetaNode);
-                        meta.cap = len as u64;
-                        let container = &mut visitor.nodes[parent];
-                        container.set_len(len);
-                        container.val.nptr =
-                            NonNull::new_unchecked(children.as_mut() as *mut _ as *mut Value);
-
-                        // must reset the length, because we copy the children into bumps
-                        visitor.nodes.set_len(parent + 1);
-                    }
-                }
-                true
-            }
-
-            fn push_node(&mut self, node: Value<'static>) -> bool {
-                if self.nodes.len() == self.nodes.capacity() {
-                    false
-                } else {
-                    self.nodes.push(node);
-                    true
-                }
-            }
-        }
-
-        impl<'de, 'a: 'de> JsonVisitor<'de> for DocumentVisitor<'a> {
-            #[inline(always)]
-            fn visit_bool(&mut self, val: bool) -> bool {
-                self.push_node(Value::new_bool(val))
-            }
-
-            #[inline(always)]
-            fn visit_f64(&mut self, val: f64) -> bool {
-                // # Safety
-                // we have checked the f64 in parsing number.
-                let node = unsafe { Value::new_f64_unchecked(val) };
-                self.push_node(node)
-            }
-
-            #[inline(always)]
-            fn visit_i64(&mut self, val: i64) -> bool {
-                self.push_node(Value::new_i64(val))
-            }
-
-            #[inline(always)]
-            fn visit_u64(&mut self, val: u64) -> bool {
-                self.push_node(Value::new_u64(val))
-            }
-
-            #[inline(always)]
-            fn visit_array_start(&mut self, _hint: usize) -> bool {
-                let ret = self.push_node(Value::new_array());
-                // record the parent container position
-                let len = self.nodes.len();
-                self.nodes[len - 1].val.parent = self.parent as u64;
-                self.parent = len - 1;
-                ret
-            }
-
-            #[inline(always)]
-            fn visit_array_end(&mut self, len: usize) -> bool {
-                self.visit_container(len)
-            }
-
-            #[inline(always)]
-            fn visit_object_start(&mut self, _hint: usize) -> bool {
-                let ret = self.push_node(Value::new_object());
-                let len = self.nodes.len();
-                self.nodes[len - 1].val.parent = self.parent as u64;
-                self.parent = len - 1;
-                ret
-            }
-
-            #[inline(always)]
-            fn visit_object_end(&mut self, len: usize) -> bool {
-                self.visit_container(len)
-            }
-
-            #[inline(always)]
-            fn visit_null(&mut self) -> bool {
-                self.push_node(Value::new_uinit())
-            }
-
-            #[inline(always)]
-            fn visit_str(&mut self, value: &str) -> bool {
-                let alloc = self.alloc;
-                let value = alloc.alloc_str(value);
-                self.push_node(Value::new_str_borrow(value))
-            }
-
-            #[inline(always)]
-            fn visit_borrowed_str(&mut self, value: &'de str) -> bool {
-                self.push_node(Value::new_str_borrow(value))
-            }
-
-            #[inline(always)]
-            fn visit_key(&mut self, key: &str) -> bool {
-                self.visit_str(key)
-            }
-
-            #[inline(always)]
-            fn visit_borrowed_key(&mut self, key: &'de str) -> bool {
-                self.visit_borrowed_str(key)
-            }
-        }
-
-        let alloc = &self.alloc;
         // optimize: use a pre-allocated vec.
         // If json is valid, the max number of value nodes should be
         // half of the valid json length + 2. like as [1,2,3,1,2,3...]
         // if the capacity is not enough, we will return a error.
-        let nodes = Vec::with_capacity((json.len() / 2) + 2);
-        let parent = 0;
+        let nodes = NODE_BUF.with(|buf| {
+            let mut nodes = buf.borrow_mut();
+            nodes.clear();
+            nodes.reserve((json.len() / 2) + 2);
+            unsafe {
+                let ptr = (&mut *nodes) as *mut Vec<ManuallyDrop<Value>>;
+                &mut *ptr
+            }
+        });
+
         let mut visitor = DocumentVisitor {
-            alloc,
-            nodes,
-            parent,
+            shared: unsafe { &*(self.shared() as *const Shared) },
+            nodes: nodes.into(),
+            parent: 0,
         };
-        parser.parse_value_goto(&mut visitor)?;
-        // check trailing spaces
-        parser.parse_trailing()?;
-        self.root = unsafe { transmute(visitor.nodes[0].take()) };
+        parser.parse_value_with_padding(&mut visitor)?;
+        self.data = visitor.nodes()[0].data;
+        self.meta = visitor.nodes()[0].meta;
+        self.mark_root();
+        Ok(parser.read.index())
+    }
+
+    #[inline(never)]
+    pub(crate) fn parse_without_padding<'de, R: Reader<'de>>(
+        &mut self,
+        parser: &mut Parser<R>,
+    ) -> Result<()> {
+        let remain_len = parser.read.remain();
+        let nodes = NODE_BUF.with(|buf| {
+            let mut nodes = buf.borrow_mut();
+            nodes.clear();
+            nodes.reserve((remain_len / 2) + 2);
+            unsafe {
+                let ptr = (&mut *nodes) as *mut Vec<ManuallyDrop<Value>>;
+                &mut *ptr
+            }
+        });
+
+        let mut visitor = DocumentVisitor {
+            shared: unsafe { &*(self.shared() as *const Shared) },
+            nodes: nodes.into(),
+            parent: 0,
+        };
+        parser.parse_value_without_padding(&mut visitor)?;
+        self.data = visitor.nodes()[0].data;
+        self.meta = visitor.nodes()[0].meta;
+        self.mark_root();
         Ok(())
     }
-}
 
-impl JsonValue for Document {
-    type ValueType<'dom> = &'dom Value<'dom> where Self: 'dom;
-
-    fn get_type(&self) -> JsonType {
-        self.as_value().get_type()
+    fn typ(&self) -> u64 {
+        self.meta.tag()
     }
 
-    fn as_bool(&self) -> Option<bool> {
-        self.as_value().as_bool()
+    fn i64(&self) -> i64 {
+        unsafe { self.data.ival }
     }
 
-    fn as_number(&self) -> Option<Number> {
-        self.as_value().as_number()
+    fn u64(&self) -> u64 {
+        unsafe { self.data.uval }
     }
 
-    fn as_str(&self) -> Option<&str> {
-        self.as_value().as_str()
+    fn f64(&self) -> f64 {
+        unsafe { self.data.fval }
     }
 
-    fn get<I: Index>(&self, index: I) -> Option<Self::ValueType<'_>> {
-        self.as_value().get(index)
+    fn str(&self) -> &str {
+        unsafe {
+            let ptr = (self.data.uval & STR_PTR_MASK) as *const u8;
+            let len = self.str_len();
+            let slice = std::slice::from_raw_parts(ptr, len);
+            from_utf8_unchecked(slice)
+        }
     }
 
-    fn pointer(&self, path: &JsonPointer) -> Option<Self::ValueType<'_>> {
-        self.as_value().pointer(path)
+    pub(crate) fn str_len(&self) -> usize {
+        debug_assert!(self.is_str());
+        unsafe {
+            let hi = (self.meta.val >> 48) as usize;
+            let lo = (self.data.uval >> 48) as usize;
+            hi << 16 | lo
+        }
     }
-}
 
-use serde::de;
-use std::result::Result as StdResult;
-struct DomKey;
-
-pub(crate) const TOKEN: &str = "$sonic_rs::private::Document";
-
-// Serde for document
-impl<'de> Deserialize<'de> for Document {
-    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
-    where
-        D: ::serde::Deserializer<'de>,
-    {
-        struct DomVisitor;
-
-        impl<'de> Visitor<'de> for DomVisitor {
-            type Value = Document;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("a valid json")
+    pub(crate) fn len(&self) -> usize {
+        unsafe {
+            if (self.data.achildren as usize) == 0 {
+                return 0;
             }
+            self.data.info.as_ref().len as usize
+        }
+    }
 
-            fn visit_bytes<E>(self, dom_binary: &[u8]) -> StdResult<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                // we pass the document from dom_binary
-                unsafe {
-                    assert!(dom_binary.len() == size_of::<Document>());
-                    let mut dom: MaybeUninit<Document> = MaybeUninit::zeroed();
-                    std::ptr::copy_nonoverlapping(
-                        dom_binary.as_ptr() as *const Document,
-                        dom.as_mut_ptr(),
-                        1,
-                    );
-                    Ok(dom.assume_init())
-                }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn array(&self) -> &[Value] {
+        if self.is_empty() {
+            return &[];
+        }
+        unsafe {
+            let children = self.data.achildren;
+            let meta = &*(children as *const MetaNode);
+            from_raw_parts(children.add(Value::MEAT_NODE_COUNT), meta.len as usize)
+        }
+    }
+
+    fn object(&self) -> &[(Value, Value)] {
+        if self.is_empty() {
+            return &[];
+        }
+        unsafe {
+            let children = self.data.achildren;
+            let meta = &*(children as *const MetaNode);
+            from_raw_parts(
+                children.add(Value::MEAT_NODE_COUNT) as *mut Pair,
+                meta.len as usize,
+            )
+        }
+    }
+
+    #[inline]
+    pub(crate) fn state(&mut self) -> ValueState<'_> {
+        if self.is_static() {
+            ValueState::Static(self)
+        } else if self.is_root() {
+            ValueState::Root(self)
+        } else if self.is_inlined() {
+            ValueState::Inlined(self)
+        } else {
+            ValueState::Shared(self)
+        }
+    }
+}
+
+pub(crate) enum ValueState<'a> {
+    // Value without a shared allocator
+    Static(&'a mut Value),
+    // Value with a share allocator
+    Shared(&'a mut Value),
+    // Value is root and with a owned allocator
+    Root(&'a mut Value),
+    // Value is static but is a children and with shared allocator ptr
+    Inlined(&'a mut Value),
+}
+
+#[derive(Default, Debug)]
+pub(crate) struct OwnedValue(Value);
+
+impl From<OwnedValue> for Value {
+    #[inline]
+    fn from(v: OwnedValue) -> Self {
+        v.0
+    }
+}
+
+// Replace dst with a new `OwnedValue`, and return the old `Value` as a `OwnedValue`.
+#[inline]
+pub(crate) fn replace_value(dst: &mut Value, mut src: Value) -> Value {
+    match dst.state() {
+        ValueState::Static(dst) => {
+            let old = std::mem::replace(dst, src);
+            return old;
+        }
+        ValueState::Shared(_) | ValueState::Inlined(_) => {}
+        ValueState::Root(dst) => return std::mem::replace(dst, src),
+    }
+
+    let dst_shared = dst.shared();
+    match src.state() {
+        ValueState::Static(src) | ValueState::Inlined(src) => {
+            src.mark_shared(dst_shared);
+        }
+        ValueState::Root(src) => {
+            if std::ptr::eq(src.shared_parts(), dst_shared) {
+                drop(src.arc_shared());
+                src.unmark_root();
+            } else {
+                dst_shared.set_combined();
             }
         }
+        ValueState::Shared(_) => unreachable!("should not be shared"),
+    }
 
-        deserializer.deserialize_newtype_struct(TOKEN, DomVisitor)
+    // make old from `Shared` into `Owned`
+    let mut old = std::mem::replace(dst, src);
+    old.mark_root();
+    if old.is_root() {
+        std::mem::forget(old.shared_clone());
+    }
+    old
+}
+
+// Write dst with a new `OwnedValue`. The dst is a uninitialized value and should not be drop.
+// The uninitialized value is allocated in the `shared` allocator.
+#[inline]
+pub(crate) fn write_value(dst: &mut MaybeUninit<Value>, mut src: Value, shared: &Shared) {
+    match src.state() {
+        ValueState::Static(sv) => {
+            sv.mark_shared(shared);
+            dst.write(src);
+        }
+        ValueState::Root(sv) => {
+            if std::ptr::eq(sv.shared_parts(), shared) {
+                sv.unmark_root();
+                drop(sv.arc_shared());
+            } else {
+                shared.set_combined();
+            }
+            dst.write(src);
+        }
+        ValueState::Shared(sv) | ValueState::Inlined(sv) => {
+            assert!(
+                std::ptr::eq(sv.shared_parts(), shared),
+                "should be same allocator"
+            );
+            dst.write(src);
+        }
     }
 }
 
-impl Serialize for Document {
-    #[inline]
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: ::serde::Serializer,
-    {
-        self.as_value().serialize(serializer)
+// a simple wrapper for visitor
+pub(crate) struct DocumentVisitor<'a> {
+    pub(crate) shared: &'a Shared,
+    pub(crate) nodes: NonNull<Vec<ManuallyDrop<Value>>>,
+    pub(crate) parent: usize,
+}
+
+impl<'a> DocumentVisitor<'a> {
+    // the array and object's logic is same.
+    fn visit_container(&mut self, len: usize) -> bool {
+        let visitor = self;
+        let alloc = unsafe { &*visitor.shared.alloc.0.data_ptr() };
+        let parent = visitor.parent;
+        let old = unsafe { visitor.nodes()[parent].data.parent as usize };
+        visitor.parent = old;
+        if len == 0 {
+            let container = &mut visitor.nodes()[parent];
+            container.data.achildren = std::ptr::null_mut();
+            return true;
+        }
+        unsafe {
+            let visited_children = &visitor.nodes()[(parent + 1)..];
+            let real_count = visited_children.len() + Value::MEAT_NODE_COUNT;
+            let layout = {
+                if let Ok(layout) = Layout::array::<Value>(real_count) {
+                    layout
+                } else {
+                    return false;
+                }
+            };
+            let mut children = alloc.alloc_layout(layout);
+            // copy visited nodes into document
+            let src = visited_children.as_ptr();
+            let dst = children.as_ptr() as *mut ManuallyDrop<Value>;
+            let dst = dst.add(Value::MEAT_NODE_COUNT);
+            std::ptr::copy_nonoverlapping(src, dst, visited_children.len());
+
+            // set the capacity and length
+            let meta = &mut *(children.as_mut() as *mut _ as *mut MetaNode);
+            meta.cap = len as u64;
+            meta.len = len as u64;
+            let container = &mut visitor.nodes()[parent];
+            container.data.achildren = children.as_mut() as *mut _ as *mut Value;
+            // must reset the length, because we copy the children into bumps
+            visitor.nodes().set_len(parent + 1);
+        }
+        true
+    }
+
+    #[inline(always)]
+    fn push_node(&mut self, node: Value) -> bool {
+        if self.nodes().len() == self.nodes().capacity() {
+            false
+        } else {
+            self.nodes().push(ManuallyDrop::new(node));
+            true
+        }
+    }
+
+    #[inline(always)]
+    fn shared(&self) -> *const Shared {
+        self.shared
+    }
+
+    #[inline(always)]
+    fn nodes(&mut self) -> &mut Vec<ManuallyDrop<Value>> {
+        unsafe { self.nodes.as_mut() }
     }
 }
-impl<'dom> Serialize for Value<'dom> {
+
+impl<'de, 'a: 'de> JsonVisitor<'de> for DocumentVisitor<'a> {
+    #[inline(always)]
+    fn visit_bool(&mut self, val: bool) -> bool {
+        self.push_node(Value::new_bool(val, self.shared as *const _))
+    }
+
+    #[inline(always)]
+    fn visit_f64(&mut self, val: f64) -> bool {
+        // # Safety
+        // we have checked the f64 in parsing number.
+        let node = unsafe { Value::new_f64_unchecked(val, self.shared as *const _) };
+        self.push_node(node)
+    }
+
+    #[inline(always)]
+    fn visit_i64(&mut self, val: i64) -> bool {
+        self.push_node(Value::new_i64(val, self.shared as *const _))
+    }
+
+    #[inline(always)]
+    fn visit_u64(&mut self, val: u64) -> bool {
+        self.push_node(Value::new_u64(val, self.shared as *const _))
+    }
+
+    #[inline(always)]
+    fn visit_array_start(&mut self, _hint: usize) -> bool {
+        let ret = self.push_node(Value::new_array(self.shared as *const _, 0));
+        // record the parent container position
+        let len = self.nodes().len();
+        self.nodes()[len - 1].data.parent = self.parent as u64;
+        self.parent = len - 1;
+        ret
+    }
+
+    #[inline(always)]
+    fn visit_array_end(&mut self, len: usize) -> bool {
+        self.visit_container(len)
+    }
+
+    #[inline(always)]
+    fn visit_object_start(&mut self, _hint: usize) -> bool {
+        let ret = self.push_node(Value::new_object(self.shared as *const _, 0));
+        let len = self.nodes().len();
+        self.nodes()[len - 1].data.parent = self.parent as u64;
+        self.parent = len - 1;
+        ret
+    }
+
+    #[inline(always)]
+    fn visit_object_end(&mut self, len: usize) -> bool {
+        self.visit_container(len)
+    }
+
+    #[inline(always)]
+    fn visit_null(&mut self) -> bool {
+        self.push_node(Value::new_null(self.shared as *const _))
+    }
+
+    // this api should never used for parsing with padding buffer
+    #[inline(always)]
+    fn visit_str(&mut self, value: &str) -> bool {
+        let alloc = unsafe { &*self.shared.alloc.0.data_ptr() };
+        let value = alloc.alloc_str(value);
+        self.push_node(Value::new_str(value, self.shared as *const _))
+    }
+
+    #[inline(always)]
+    fn visit_borrowed_str(&mut self, value: &'de str) -> bool {
+        self.push_node(Value::new_str(value, self.shared as *const _))
+    }
+
+    #[inline(always)]
+    fn visit_key(&mut self, key: &str) -> bool {
+        self.visit_str(key)
+    }
+
+    #[inline(always)]
+    fn visit_borrowed_key(&mut self, key: &'de str) -> bool {
+        self.visit_borrowed_str(key)
+    }
+}
+
+impl Serialize for Value {
     #[inline]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: ::serde::Serializer,
     {
         match self.typ() {
-            Self::NULL => serializer.serialize_unit(),
-            Self::TRUE => serializer.serialize_bool(true),
-            Self::FALSE => serializer.serialize_bool(false),
-            Self::SIGNED => serializer.serialize_i64(self.i64()),
-            Self::UNSIGNED => serializer.serialize_u64(self.u64()),
-            Self::FLOAT => serializer.serialize_f64(self.f64()),
-            Self::STRING => serializer.serialize_str(self.str()),
-            Self::ARRAY => {
+            NULL => serializer.serialize_unit(),
+            TRUE => serializer.serialize_bool(true),
+            FALSE => serializer.serialize_bool(false),
+            SIGNED => serializer.serialize_i64(self.i64()),
+            UNSIGNED => serializer.serialize_u64(self.u64()),
+            FLOAT => serializer.serialize_f64(self.f64()),
+            STRING | ROOT_STRING => serializer.serialize_str(self.str()),
+            ARRAY | ROOT_ARRAY => {
                 let nodes = self.array();
                 let mut seq = tri!(serializer.serialize_seq(Some(nodes.len())));
                 for n in nodes {
@@ -1325,7 +1698,7 @@ impl<'dom> Serialize for Value<'dom> {
                 }
                 seq.end()
             }
-            Self::OBJECT => {
+            OBJECT | ROOT_OBJECT => {
                 let entrys = self.object();
                 let mut map = tri!(serializer.serialize_map(Some(entrys.len())));
                 for (k, v) in entrys {
@@ -1338,19 +1711,49 @@ impl<'dom> Serialize for Value<'dom> {
     }
 }
 
+pub fn dom_from_slice(json: &[u8]) -> Result<Value> {
+    // validate the utf-8 at first for slice
+    let json = {
+        let json = from_utf8(json)?;
+        json.as_bytes()
+    };
+
+    let mut dom = Value::new_null(Shared::new_ptr());
+    dom.parse_with_padding(json)?;
+    Ok(dom)
+}
+
+pub fn dom_from_slice_unchecked(json: &[u8]) -> Result<Value> {
+    let mut dom = Value::new_null(Shared::new_ptr());
+    dom.parse_with_padding(json)?;
+    Ok(dom)
+}
+
+pub fn dom_from_str(json: &str) -> Result<Value> {
+    // validate the utf-8 at first for slice
+    let json = {
+        let json = from_utf8(json.as_bytes())?;
+        json.as_bytes()
+    };
+
+    let mut dom = Value::new_null(Shared::new_ptr());
+    dom.parse_with_padding(json)?;
+    Ok(dom)
+}
+
 #[cfg(test)]
 mod test {
-
     use super::*;
+    use crate::from_slice;
     use crate::{
         error::{make_error, Result},
         pointer,
     };
-    use std::{collections::HashMap, path::Path};
+    use std::path::Path;
 
     fn test_value(data: &str) -> Result<()> {
         let serde_value: serde_json::Result<serde_json::Value> = serde_json::from_str(data);
-        let dom = dom_from_slice(data.as_bytes());
+        let dom: Result<Value> = from_slice(data.as_bytes());
         if let Ok(serde_value) = serde_value {
             let dom = dom.unwrap();
             let sonic_out = crate::to_string(&dom)?;
@@ -1379,7 +1782,7 @@ mod test {
 
     fn diff_json(data: &str) {
         let serde_value: serde_json::Value = serde_json::from_str(data).unwrap();
-        let dom = dom_from_slice(data.as_bytes()).unwrap();
+        let dom: Value = from_slice(data.as_bytes()).unwrap();
         let sonic_out = crate::to_string(&dom).unwrap();
         let serde_value2: serde_json::Value = serde_json::from_str(&sonic_out).unwrap();
         let expect = serde_json::to_string_pretty(&serde_value).unwrap();
@@ -1441,7 +1844,7 @@ mod test {
     }
 
     #[test]
-    fn test_node_from_files() {
+    fn test_node_from_files3() {
         use std::fs::DirEntry;
         let path = env!("CARGO_MANIFEST_DIR").to_string() + "/benches/testdata/";
         println!("dir is {}", path);
@@ -1483,7 +1886,7 @@ mod test {
         ];
 
         for data in testdata {
-            let ret = dom_from_slice(data.as_bytes());
+            let ret: Result<Value> = from_slice(data.as_bytes());
             assert!(ret.is_err(), "failed json is {}", data);
         }
     }
@@ -1531,9 +1934,7 @@ mod test {
 
     #[test]
     fn test_value_is() {
-        let dom = dom_from_str(TEST_JSON).unwrap();
-        let value = dom.as_value();
-        assert!(dom.get("bool").is_true());
+        let value = dom_from_str(TEST_JSON).unwrap();
         assert!(value.get("bool").is_boolean());
         assert!(value.get("bool").is_true());
         assert!(value.get("uint").is_u64());
@@ -1550,181 +1951,91 @@ mod test {
 
     #[test]
     fn test_value_get() {
-        let dom = dom_from_str(TEST_JSON).unwrap();
-        let value = dom.as_value();
-        assert_eq!(dom.get("int").as_i64().unwrap(), -1);
+        let value = dom_from_str(TEST_JSON).unwrap();
         assert_eq!(value.get("int").as_i64().unwrap(), -1);
         assert_eq!(value["array"].get(0).as_i64().unwrap(), 1);
 
-        assert_eq!(dom.pointer(&pointer!["array", 2]).as_i64().unwrap(), 3);
         assert_eq!(value.pointer(&pointer!["array", 2]).as_u64().unwrap(), 3);
-
-        assert_eq!(
-            dom.pointer(&pointer!["object", "a"]).as_str().unwrap(),
-            "aaa"
-        );
         assert_eq!(
             value.pointer(&pointer!["object", "a"]).as_str().unwrap(),
             "aaa"
         );
-        assert_eq!(dom.pointer(&pointer!["objempty", "a"]).as_str(), None);
         assert_eq!(value.pointer(&pointer!["objempty", "a"]).as_str(), None);
 
-        assert_eq!(dom.pointer(&pointer!["arrempty", 1]).as_str(), None);
         assert_eq!(value.pointer(&pointer!["arrempty", 1]).as_str(), None);
 
-        assert!(!dom.pointer(&pointer!["unknown"]).is_str());
         assert!(!value.pointer(&pointer!["unknown"]).is_str());
     }
 
     #[test]
-    fn test_value_object() {
-        let mut dom = dom_from_str(TEST_JSON).unwrap();
-        let value = dom.as_value();
-        assert!(value.is_object());
-
-        let object = value.as_object().unwrap();
-        assert_eq!(object.len(), 10);
-        assert!(object.get("bool").as_bool().unwrap());
-
-        let mut object = dom.as_object_mut().unwrap();
-        object.insert("inserted", Value::new_bool(true));
-        assert_eq!(object.len(), 11);
-        assert!(object.contains_key("inserted"));
-        assert!(object.remove("inserted").unwrap().is_true());
-        assert!(!object.contains_key("inserted"));
-
-        object.reserve(12);
-        assert_eq!(object.capacity(), 22);
-
-        object.insert("inserted", Value::new_bool(true));
-        assert!(object.contains_key("inserted"));
-    }
-
-    #[test]
-    fn test_value_object_empty() {
-        let mut dom = dom_from_str(TEST_JSON).unwrap();
-        let value = dom.as_value_mut();
-        assert!(value.is_object());
-
-        let mut object = value.into_object_mut().unwrap();
-        let mut empty = object
-            .get_mut("objempty")
-            .and_then(|s| s.into_object_mut())
-            .unwrap();
-
-        assert_eq!(empty.len(), 0);
-        empty.insert(
-            "inserted",
-            Value::new_str("new inserted", empty.allocator()),
-        );
-        empty.insert("inserted2", Value::new_bool(true));
-        assert_eq!(empty.len(), 2);
-        assert!(empty.remove("inserted2").is_true());
-        assert!(empty.contains_key("inserted"));
-        let value = empty.get_mut("inserted").unwrap().take();
-        assert!(value.as_str().unwrap() == "new inserted");
-    }
-
-    #[test]
-    fn test_value_array() {
-        let mut dom = dom_from_str(TEST_JSON).unwrap();
-        let mut root = dom.as_value_mut();
-        let value = root.get_mut("array").unwrap();
-        assert!(value.is_array());
-        let mut array = value.into_array_mut().unwrap();
-        assert_eq!(array.len(), 3);
-        assert_eq!(array[1].as_u64().unwrap(), 2);
-        array.push(Value::new_str_static("pushed"));
-        assert!(array[3].is_str());
-        array.pop();
-        assert!(array[2].is_number());
-        assert_eq!(array.len(), 3);
-
-        let iter = array.iter();
-        assert_eq!(iter.len(), 3);
-        for (i, v) in iter.enumerate() {
-            assert_eq!(v.as_u64().unwrap(), (i + 1) as u64);
-        }
-    }
-
-    #[test]
-    fn test_value_array_empty() {
-        let mut dom = dom_from_str(TEST_JSON).unwrap();
-        let mut root = dom.as_value_mut();
-        let mut empty = root
-            .get_mut("arrempty")
-            .and_then(|s| s.into_array_mut())
-            .unwrap();
-
-        assert_eq!(empty.len(), 0);
-        empty.push(Value::new_str("new inserted", empty.allocator()));
-        empty.push(Value::new_bool(true));
-        assert_eq!(empty.len(), 2);
-        assert!(empty.pop().is_true());
-        let value = empty.get_mut(0).unwrap().take();
-        assert!(value.as_str().unwrap() == "new inserted");
-    }
-
-    #[test]
     fn test_invalid_utf8() {
+        use crate::from_slice;
+        use crate::from_slice_unchecked;
+
         let data = [b'"', 0x80, 0x90, b'"'];
-        let dom = dom_from_slice(&data);
+        let ret: Result<Value> = from_slice(&data);
         assert_eq!(
-            dom.err().unwrap().to_string(),
+            ret.err().unwrap().to_string(),
             "Invalid UTF-8 characters in json at line 1 column 1\n\n\t\"��\"\n\t.^..\n"
         );
-        let dom = unsafe { dom_from_slice_unchecked(&data) };
-        assert!(dom.is_ok());
+
+        let dom: Result<Value> = unsafe { from_slice_unchecked(&data) };
+        assert!(dom.is_ok(), "{}", dom.unwrap_err());
 
         let data = [b'"', b'"', 0x80];
-        let dom = dom_from_slice(&data);
+        let dom: Result<Value> = from_slice(&data);
         assert_eq!(
             dom.err().unwrap().to_string(),
             "Invalid UTF-8 characters in json at line 1 column 2\n\n\t\"\"�\n\t..^\n"
         );
 
         let data = [0x80, b'"', b'"'];
-        let dom = dom_from_slice(&data);
+        let dom: Result<Value> = unsafe { from_slice_unchecked(&data) };
         assert_eq!(
             dom.err().unwrap().to_string(),
-            "Invalid UTF-8 characters in json at line 1 column 0\n\n\t�\"\"\n\t^..\n"
+            "Invalid JSON value at line 1 column 0\n\n\t�\"\"\n\t^..\n"
         );
     }
 
     #[test]
-    fn test_string_borrow() {
-        let s = String::from("borrowed");
-        let value2 = Value::new_str_borrow(&s);
-
-        let mut map = HashMap::new();
-        map.insert("v2", value2);
-
-        assert_eq!(to_string(&map).unwrap().as_str(), r#"{"v2":"borrowed"}"#);
-    }
-
-    #[test]
-    fn test_value_from() {
-        assert_eq!(Value::from(1_u64).as_u64().unwrap(), 1);
-        assert_eq!(Value::from(-1_i64).as_i64().unwrap(), -1);
-
-        assert!(Value::try_from(f64::INFINITY).is_err());
-        assert!(Value::try_from(f64::NAN).is_err());
-        assert_eq!(
-            Value::try_from(f64::MAX).unwrap().as_f64().unwrap(),
-            f64::MAX
-        );
-    }
-
-    #[test]
-    fn test_document_serde() {
-        use crate::{Deserialize, Serialize};
-        #[derive(Serialize, Deserialize)]
-        struct Person {
-            any: Document,
+    fn test_value_serde() {
+        use crate::{array, object};
+        use serde::Deserialize;
+        use serde::Serialize;
+        #[derive(Deserialize, Debug, Serialize, PartialEq)]
+        struct Foo {
+            value: Value,
+            object: Object,
+            array: Array,
         }
-        let json = r#"{"any": {"name": "John", "age": 30}}"#;
-        let person: Person = crate::from_str(json).unwrap();
-        assert_eq!(person.any.get("name").as_str().unwrap(), "John");
+
+        let foo: Foo = crate::from_str(
+            r#"
+        {
+            "value": "hello",
+            "object": {"a": "b"},
+            "array": [1,2,3]
+        }"#,
+        )
+        .unwrap();
+
+        assert_eq!(ManuallyDrop::new(foo.value.arc_shared()).refcnt(), 3);
+        assert_eq!(
+            foo,
+            Foo {
+                value: Value::from("hello"),
+                object: object! {"a": "b"},
+                array: array![1, 2, 3],
+            }
+        );
+
+        let _ = crate::from_str::<Foo>(
+            r#"{
+                "value": "hello",
+                "object": {"a": "b"},
+                "array": [1,2,3
+            }"#,
+        )
+        .unwrap_err();
     }
 }

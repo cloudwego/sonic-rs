@@ -1,26 +1,21 @@
 //! Deserialize JSON data to a Rust data structure.
 
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
-
-use std::ptr::slice_from_raw_parts;
-
+use crate::error::{
+    Error,
+    ErrorCode::{self, EofWhileParsing, RecursionLimitExceeded},
+    Result,
+};
 use crate::parser::{as_str, Parser};
 use crate::reader::{Reader, Reference, SliceRead};
-use crate::util::num::ParserNumber;
-use crate::{
-    error::{
-        Error,
-        ErrorCode::{self, EofWhileParsing, RecursionLimitExceeded},
-        Result,
-    },
-    Document,
-};
-
-use serde::de::{self, Expected, Unexpected};
-use serde::forward_to_deserialize_any;
-
 use crate::serde::number::BorrowedJsonNumberDeserializer;
 use crate::serde::raw::BorrowedRawDeserializer;
+use crate::util::num::ParserNumber;
+use crate::value::node::Value;
+use serde::de::{self, Expected, Unexpected};
+use serde::forward_to_deserialize_any;
+use std::mem::ManuallyDrop;
+use std::ptr::slice_from_raw_parts;
 
 const MAX_ALLOWED_DEPTH: u8 = u8::MAX;
 
@@ -89,7 +84,7 @@ impl ParserNumber {
     }
 }
 
-macro_rules! deserialize_number {
+macro_rules! impl_deserialize_number {
     ($method:ident) => {
         fn $method<V>(self, visitor: V) -> Result<V::Value>
         where
@@ -110,7 +105,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         }
     }
 
-    fn deserialize_number<V>(&mut self, visitor: V) -> Result<V::Value>
+    pub(crate) fn deserialize_number<V>(&mut self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
@@ -162,7 +157,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
             },
             b'"' => {
                 self.scratch.clear();
-                match self.parser.parse_str(&mut self.scratch) {
+                match self.parser.parse_str_impl(&mut self.scratch) {
                     Ok(s) => de::Error::invalid_type(Unexpected::Str(&s), exp),
                     Err(err) => return err,
                 }
@@ -240,20 +235,35 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         visitor.visit_borrowed_str(raw)
     }
 
-    fn deserialize_document<V>(&mut self, visitor: V) -> Result<V::Value>
+    fn deserialize_value<V>(&mut self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
+        let shared = self.parser.get_shared_inc_count();
+        let mut val = Value::new_null(shared.data_ptr());
+        let val = if self.parser.read.index() == 0 {
+            // get n to check trailing characters in later
+            let n = val.parse_with_padding(self.parser.read.as_u8_slice())?;
+            self.parser.read.eat(n);
+            val
+        } else {
+            // deserialize some json parts into `Value`, not use padding buffer, avoid the memory copy
+            val.parse_without_padding(&mut self.parser)?;
+            val
+        };
+
+        // deserialize `Value` must be root node
+        debug_assert!(val.is_static() || val.is_root());
+        if !val.shared_parts().is_null() {
+            std::mem::forget(shared);
+        }
+
+        let val = ManuallyDrop::new(val);
         // #Safety
         // the json is validate before parsing json, and we pass the document using visit_bytes here.
         unsafe {
-            let raw = as_str(self.parser.skip_one_unchecked()?);
-            let dom = crate::dom_from_slice_unchecked(raw.as_bytes())?;
-            let binary = &*slice_from_raw_parts(
-                &dom as *const _ as *const u8,
-                std::mem::size_of::<Document>(),
-            );
-            std::mem::forget(dom);
+            let binary =
+                &*slice_from_raw_parts(&val as *const _ as *const u8, std::mem::size_of::<Value>());
             visitor.visit_bytes(binary)
         }
     }
@@ -327,7 +337,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
             b'0'..=b'9' => tri!(self.parser.parse_number(false)).visit(visitor),
             b'"' => {
                 self.scratch.clear();
-                match tri!(self.parser.parse_str(&mut self.scratch)) {
+                match tri!(self.parser.parse_str_impl(&mut self.scratch)) {
                     Reference::Borrowed(s) => visitor.visit_borrowed_str(s),
                     Reference::Copied(s) => visitor.visit_str(s),
                 }
@@ -380,16 +390,16 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         }
     }
 
-    deserialize_number!(deserialize_i8);
-    deserialize_number!(deserialize_i16);
-    deserialize_number!(deserialize_i32);
-    deserialize_number!(deserialize_i64);
-    deserialize_number!(deserialize_u8);
-    deserialize_number!(deserialize_u16);
-    deserialize_number!(deserialize_u32);
-    deserialize_number!(deserialize_u64);
-    deserialize_number!(deserialize_f32);
-    deserialize_number!(deserialize_f64);
+    impl_deserialize_number!(deserialize_i8);
+    impl_deserialize_number!(deserialize_i16);
+    impl_deserialize_number!(deserialize_i32);
+    impl_deserialize_number!(deserialize_i64);
+    impl_deserialize_number!(deserialize_u8);
+    impl_deserialize_number!(deserialize_u16);
+    impl_deserialize_number!(deserialize_u32);
+    impl_deserialize_number!(deserialize_u64);
+    impl_deserialize_number!(deserialize_f32);
+    impl_deserialize_number!(deserialize_f64);
 
     fn deserialize_i128<V>(self, visitor: V) -> Result<V::Value>
     where
@@ -470,7 +480,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         let value = match peek {
             b'"' => {
                 self.scratch.clear();
-                match tri!(self.parser.parse_str(&mut self.scratch)) {
+                match tri!(self.parser.parse_str_impl(&mut self.scratch)) {
                     Reference::Borrowed(s) => visitor.visit_borrowed_str(s),
                     Reference::Copied(s) => visitor.visit_str(s),
                 }
@@ -583,8 +593,8 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 return self.deserialize_json_number(visitor);
             } else if name == crate::lazyvalue::TOKEN {
                 return self.deserialize_lazy_value(visitor);
-            } else if name == crate::value::TOKEN {
-                return self.deserialize_document(visitor);
+            } else if name == crate::value::de::TOKEN {
+                return self.deserialize_value(visitor);
             }
         }
 
@@ -976,26 +986,53 @@ impl<'de, 'a, R: Reader<'de> + 'a> de::VariantAccess<'de> for UnitVariantAccess<
 }
 
 /// Only deserialize from this after peeking a '"' byte! Otherwise it may
+/// deserialize invalid JSON successfully./// Only deserialize from this after peeking a '"' byte! Otherwise it may
 /// deserialize invalid JSON successfully.
 struct MapKey<'a, R: 'a> {
     de: &'a mut Deserializer<R>,
 }
 
-macro_rules! deserialize_integer_key {
-    ($method:ident => $visit:ident) => {
+macro_rules! deserialize_numeric_key {
+    ($method:ident) => {
         fn $method<V>(self, visitor: V) -> Result<V::Value>
         where
             V: de::Visitor<'de>,
         {
-            self.de.scratch.clear();
-            let string = tri!(self.de.parser.parse_str(&mut self.de.scratch));
-            match (string.parse(), string) {
-                (Ok(integer), _) => visitor.$visit(integer),
-                (Err(_), Reference::Borrowed(s)) => visitor.visit_borrowed_str(s),
-                (Err(_), Reference::Copied(s)) => visitor.visit_str(s),
+            let value = tri!(self.de.deserialize_number(visitor));
+            if self.de.parser.read.next() != Some(b'"') {
+                return Err(self.de.parser.error(ErrorCode::ExpectedQuote));
             }
+
+            Ok(value)
         }
     };
+
+    ($method:ident, $delegate:ident) => {
+        fn $method<V>(self, visitor: V) -> Result<V::Value>
+        where
+            V: de::Visitor<'de>,
+        {
+            match self.de.parser.read.peek() {
+                Some(b'0'..=b'9' | b'-') => {}
+                _ => return Err(self.de.parser.error(ErrorCode::ExpectedNumericKey)),
+            }
+
+            let value = tri!(self.de.$delegate(visitor));
+
+            if self.de.parser.read.next() != Some(b'"') {
+                return Err(self.de.parser.error(ErrorCode::ExpectedQuote));
+            }
+
+            Ok(value)
+        }
+    };
+}
+
+impl<'de, 'a, R> MapKey<'a, R>
+where
+    R: Reader<'de>,
+{
+    deserialize_numeric_key!(deserialize_number, deserialize_number);
 }
 
 impl<'de, 'a, R> de::Deserializer<'de> for MapKey<'a, R>
@@ -1010,22 +1047,51 @@ where
         V: de::Visitor<'de>,
     {
         self.de.scratch.clear();
-        match tri!(self.de.parser.parse_str(&mut self.de.scratch)) {
+        match tri!(self.de.parser.parse_str_impl(&mut self.de.scratch)) {
             Reference::Borrowed(s) => visitor.visit_borrowed_str(s),
             Reference::Copied(s) => visitor.visit_str(s),
         }
     }
 
-    deserialize_integer_key!(deserialize_i8 => visit_i8);
-    deserialize_integer_key!(deserialize_i16 => visit_i16);
-    deserialize_integer_key!(deserialize_i32 => visit_i32);
-    deserialize_integer_key!(deserialize_i64 => visit_i64);
-    deserialize_integer_key!(deserialize_i128 => visit_i128);
-    deserialize_integer_key!(deserialize_u8 => visit_u8);
-    deserialize_integer_key!(deserialize_u16 => visit_u16);
-    deserialize_integer_key!(deserialize_u32 => visit_u32);
-    deserialize_integer_key!(deserialize_u64 => visit_u64);
-    deserialize_integer_key!(deserialize_u128 => visit_u128);
+    deserialize_numeric_key!(deserialize_i8);
+    deserialize_numeric_key!(deserialize_i16);
+    deserialize_numeric_key!(deserialize_i32);
+    deserialize_numeric_key!(deserialize_i64);
+    deserialize_numeric_key!(deserialize_i128, deserialize_i128);
+    deserialize_numeric_key!(deserialize_u8);
+    deserialize_numeric_key!(deserialize_u16);
+    deserialize_numeric_key!(deserialize_u32);
+    deserialize_numeric_key!(deserialize_u64);
+    deserialize_numeric_key!(deserialize_u128, deserialize_u128);
+    deserialize_numeric_key!(deserialize_f32);
+    deserialize_numeric_key!(deserialize_f64);
+
+    fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        let mut value = match self.de.parser.read.next() {
+            Some(b't') => {
+                tri!(self.de.parser.parse_literal("rue"));
+                visitor.visit_bool(true)
+            }
+            Some(b'f') => {
+                tri!(self.de.parser.parse_literal("alse"));
+                visitor.visit_bool(false)
+            }
+            None => Err(self.de.parser.error(ErrorCode::EofWhileParsing)),
+            Some(peek) => Err(self.de.peek_invalid_type(peek, &visitor)),
+        };
+
+        if self.de.parser.read.next() != Some(b'"') {
+            value = Err(self.de.parser.error(ErrorCode::ExpectedQuote));
+        }
+
+        match value {
+            Ok(value) => Ok(value),
+            Err(err) => Err(self.de.parser.fix_position(err)),
+        }
+    }
 
     #[inline]
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
@@ -1041,13 +1107,10 @@ where
     where
         V: de::Visitor<'de>,
     {
-        {
-            if name == crate::serde::raw::TOKEN {
-                return self.de.deserialize_raw_value(visitor);
-            } else if name == crate::serde::number::TOKEN {
-                return self.de.deserialize_json_number(visitor);
-            }
+        if name == crate::serde::raw::TOKEN {
+            return self.de.deserialize_raw_value(visitor);
         }
+
         let _ = name;
         visitor.visit_newtype_struct(self)
     }
@@ -1083,11 +1146,10 @@ where
     }
 
     forward_to_deserialize_any! {
-        bool f32 f64 char str string unit unit_struct seq tuple tuple_struct map
-        struct identifier ignored_any
+        char str string unit unit_struct seq tuple tuple_struct map struct
+        identifier ignored_any
     }
 }
-
 //////////////////////////////////////////////////////////////////////////////
 
 fn from_trait<'de, R, T>(read: R) -> Result<T>

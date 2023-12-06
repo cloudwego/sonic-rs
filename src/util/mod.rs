@@ -1,6 +1,10 @@
-pub mod arch;
-pub mod num;
-pub mod private;
-pub mod string;
-pub mod unicode;
-pub mod utf8;
+pub(crate) mod arc;
+pub(crate) mod arch;
+pub(crate) mod num;
+pub(crate) mod offset;
+pub(crate) mod private;
+pub(crate) mod reborrow;
+pub(crate) mod string;
+pub(crate) mod taggedptr;
+pub(crate) mod unicode;
+pub(crate) mod utf8;

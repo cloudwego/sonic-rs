@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use faststr::FastStr;
-use sonic_rs::{to_array_iter, to_object_iter_unchecked, JsonValue};
-
+use sonic_rs::JsonValueTrait;
+use sonic_rs::{to_array_iter, to_object_iter_unchecked};
 fn main() {
     let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6]"#);
     let iter = to_array_iter(&json);
