@@ -89,6 +89,7 @@ impl Error {
             | ErrorCode::ExpectedArrayCommaOrEnd
             | ErrorCode::ExpectedArrayStart
             | ErrorCode::ExpectedObjectStart
+            | ErrorCode::InvalidSurrogateUnicodeCodePoint
             | ErrorCode::RecursionLimitExceeded => Category::Syntax,
         }
     }
@@ -252,6 +253,9 @@ pub(crate) enum ErrorCode {
 
     #[error("Unexpected visited type in JSON visitor")]
     UnexpectedVisitType,
+
+    #[error("Invalid surrogate Unicode code point")]
+    InvalidSurrogateUnicodeCodePoint,
 }
 
 impl Error {

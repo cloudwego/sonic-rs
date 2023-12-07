@@ -1,7 +1,7 @@
 use crate::error::ErrorCode::{
     self, ControlCharacterWhileParsingString, InvalidEscape, InvalidUnicodeCodePoint,
 };
-use crate::util::unicode::{handle_unicode_codepoint, handle_unicode_codepoint_mut};
+use crate::util::unicode::handle_unicode_codepoint_mut;
 use packed_simd::u8x32;
 use std::mem::MaybeUninit;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
@@ -169,99 +169,6 @@ pub(crate) unsafe fn parse_string_inplace(
             break 'find_and_move;
         }
     } // slow loop for escaped chars
-}
-
-// return the size of the actual parsed string, parse string into the dst
-// len(dst) >= len(src) + 32
-#[inline(always)]
-pub(crate) unsafe fn parse_string_unchecked(
-    src: &mut *const u8,
-    mut dst: *mut u8,
-) -> std::result::Result<usize, ErrorCode> {
-    const LANS: usize = 32;
-    let sdst = dst;
-
-    // loop for string with escaped chars
-    loop {
-        'find_and_move: loop {
-            let v = unsafe {
-                let ptr = *src;
-                let chunk = from_raw_parts(ptr, LANS);
-                u8x32::from_slice_unaligned_unchecked(chunk)
-            };
-            let block = StringBlock {
-                bs_bits: (v.eq(u8x32::splat(b'\\'))).bitmask(),
-                quote_bits: (v.eq(u8x32::splat(b'"'))).bitmask(),
-                unescaped_bits: (v.le(u8x32::splat(0x1f))).bitmask(),
-            };
-            if block.has_quote_first() {
-                while **src != b'"' {
-                    *dst = **src;
-                    dst = dst.add(1);
-                    *src = src.add(1);
-                }
-                *src = src.add(1); // skip ending quote
-                return Ok(dst.offset_from(sdst) as usize);
-            }
-            if block.has_unesacped() {
-                return Err(ControlCharacterWhileParsingString);
-            }
-            if !block.has_backslash() {
-                let chunk = from_raw_parts_mut(dst, LANS);
-                v.write_to_slice_unaligned_unchecked(chunk);
-                *src = src.add(LANS);
-                dst = dst.add(LANS);
-                continue 'find_and_move;
-            }
-            // TODO: loop unrooling here
-            while **src != b'\\' {
-                *dst = **src;
-                dst = dst.add(1);
-                *src = src.add(1);
-            }
-            break 'find_and_move;
-        }
-
-        'esacpe: loop {
-            let escaped_char: u8 = *src.add(1);
-            if escaped_char == b'u' {
-                if !handle_unicode_codepoint(src, &mut dst) {
-                    return Err(InvalidUnicodeCodePoint);
-                }
-            } else {
-                *dst = ESCAPED_TAB[escaped_char as usize];
-                if *dst == 0 {
-                    return Err(InvalidEscape);
-                }
-                *src = src.add(2);
-                dst = dst.add(1);
-            }
-
-            // fast path for continous escaped chars
-            if **src == b'\\' {
-                continue 'esacpe;
-            }
-            break 'esacpe;
-        }
-    } // slow loop for escaped chars
-}
-
-// A very slow methods to parse escaped JSON strings
-// json is always a format-well escaped string.
-#[inline(always)]
-pub(crate) fn parse_valid_escaped_string(
-    json: &[u8],
-    buf: &mut Vec<u8>,
-) -> std::result::Result<usize, ErrorCode> {
-    buf.reserve(json.len() + 32);
-    unsafe {
-        let mut src = json.as_ptr();
-        let dst = buf.as_mut_ptr().add(buf.len());
-        let new_len = parse_string_unchecked(&mut src, dst)?;
-        buf.set_len(new_len);
-        let cnt = src.offset_from(json.as_ptr()) as usize;
-        Ok(cnt)
-    }
 }
 
 pub const QUOTE_TAB: [(u8, [u8; 8]); 256] = [
@@ -617,8 +524,16 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
                 std::ptr::copy_nonoverlapping(sptr, temp[..].as_mut_ptr(), nb);
                 u8x32::from_slice_unaligned_unchecked(&temp[..])
             } else {
-                let raw = std::slice::from_raw_parts(sptr, LANS);
-                u8x32::from_slice_unaligned_unchecked(raw)
+                #[cfg(not(debug_assertions))]
+                {
+                    let raw = std::slice::from_raw_parts(sptr, LANS);
+                    u8x32::from_slice_unaligned_unchecked(raw)
+                }
+                #[cfg(debug_assertions)]
+                {
+                    std::ptr::copy_nonoverlapping(sptr, temp[..].as_mut_ptr(), nb);
+                    u8x32::from_slice_unaligned_unchecked(&temp[..])
+                }
             };
             v.write_to_slice_unaligned_unchecked(std::slice::from_raw_parts_mut(dptr, LANS));
 

@@ -347,4 +347,45 @@ mod test {
             "Invalid UTF-8 characters in json at line 1 column 4\n\n\t\"\0\0\0��\"\n\t....^..\n"
         );
     }
+
+    macro_rules! test_struct {
+        ($ty:ty, $data:expr) => {
+            match serde_json::from_slice::<$ty>($data) {
+                Ok(jv) => {
+                    let sv = crate::from_slice::<$ty>($data).expect(&format!(
+                        "parse valid json {:?} failed for type {}",
+                        $data,
+                        stringify!($ty)
+                    ));
+                    assert_eq!(sv, jv);
+
+                    // fuzz the struct to_string
+                    let sout = crate::to_string(&sv).unwrap();
+                    let jout = serde_json::to_string(&jv).unwrap();
+                    let sv = crate::from_str::<$ty>(&sout).unwrap();
+                    let jv = serde_json::from_str::<$ty>(&jout).unwrap();
+                    assert_eq!(sv, jv);
+                }
+                Err(err) => {
+                    let _ = crate::from_slice::<$ty>($data).expect_err(&format!(
+                        "parse invalid json {:?} wrong for type {}, should error: {}",
+                        $data,
+                        stringify!($ty),
+                        err
+                    ));
+                }
+            }
+        };
+    }
+
+    // the testcase is found by fuzzing tests
+    #[test]
+    fn test_more_structs() {
+        // invalid json: has control chars
+        test_struct!(String, &[34, 58, 55, 10, 0, 34, 32, 10]);
+        test_struct!(String, &[34, b'\\', b't', 9, 34]);
+        test_struct!(String, &[34, 92, 34, 34]);
+        test_struct!(String, b"\"\\umap9map009\"");
+        test_struct!(Foo, &b"[\"5XXXXXXZX:XXZX:[\",-0]"[..]);
+    }
 }

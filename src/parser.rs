@@ -156,7 +156,7 @@ where
     fn error_index(&self) -> usize {
         // when parsing strings , we need record the error postion.
         // it must be smaller than reader.index().
-        std::cmp::min(self.error_index, self.read.index() - 1)
+        std::cmp::min(self.error_index, self.read.index().saturating_sub(1))
     }
 
     /// Error caused by a byte from next_char().
@@ -711,11 +711,12 @@ where
             return perr!(self, EofWhileParsing);
         };
 
+        // only check surrogate here, and we will check the code pointer later when use `codepoint_to_utf8`
         if (0xD800..0xDC00).contains(&point1) {
             // parse the second utf8 code point of surrogate
             let point2 = if let Some(asc) = self.read.next_n(6) {
                 if asc[0] != b'\\' || asc[1] != b'u' {
-                    return perr!(self, InvalidUnicodeCodePoint);
+                    return perr!(self, InvalidSurrogateUnicodeCodePoint);
                 }
                 unsafe { hex_to_u32_nocheck(&*(asc.as_ptr().add(2) as *const _ as *const [u8; 4])) }
             } else {
@@ -726,13 +727,13 @@ where
             let low_bit = point2.wrapping_sub(0xdc00);
             if (low_bit >> 10) != 0 {
                 // invalid surrogate
-                return perr!(self, InvalidUnicodeCodePoint);
+                return perr!(self, InvalidSurrogateUnicodeCodePoint);
             }
 
             Ok((((point1 - 0xd800) << 10) | low_bit).wrapping_add(0x10000))
         } else if (0xDC00..0xE000).contains(&point1) {
             // invalid surrogate
-            perr!(self, InvalidUnicodeCodePoint)
+            perr!(self, InvalidSurrogateUnicodeCodePoint)
         } else {
             Ok(point1)
         }
@@ -746,6 +747,9 @@ where
                     buf.reserve(4);
                     let ptr = buf.as_mut_ptr().add(buf.len());
                     let cnt = codepoint_to_utf8(code, ptr);
+                    if cnt == 0 {
+                        return perr!(self, InvalidUnicodeCodePoint);
+                    }
                     buf.set_len(buf.len() + cnt);
                 }
                 Some(c) if ESCAPED_TAB[c as usize] != 0 => {
@@ -825,6 +829,7 @@ where
                     self.read.eat(1);
                     self.parse_escaped_char(buf)?;
                 }
+                b'\x00'..=b'\x1f' => return perr!(self, ControlCharacterWhileParsingString),
                 _ => {
                     buf.push(c);
                     self.read.eat(1);
@@ -897,6 +902,7 @@ where
                     self.read.eat(1);
                     return unsafe { self.parse_string_escaped(buf) };
                 }
+                b'\x00'..=b'\x1f' => return perr!(self, ControlCharacterWhileParsingString),
                 _ => self.read.eat(1),
             }
         }

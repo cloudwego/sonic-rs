@@ -8,6 +8,35 @@ use sonic_rs::JsonNumberTrait;
 use sonic_rs::JsonValue;
 use sonic_rs::{to_array_iter, to_array_iter_unchecked, to_object_iter, to_object_iter_unchecked};
 
+macro_rules! test_struct {
+    ($ty:ty, $data:expr) => {
+        match serde_json::from_slice::<$ty>($data) {
+            Ok(jv) => {
+                let sv = sonic_rs::from_slice::<$ty>($data).expect(&format!(
+                    "parse valid json {:?} failed for type {}",
+                    $data,
+                    stringify!($ty)
+                ));
+                assert_eq!(sv, jv);
+
+                // fuzz the struct to_string
+                let sout = sonic_rs::to_string(&sv).unwrap();
+                let jout = serde_json::to_string(&jv).unwrap();
+                let sv = sonic_rs::from_str::<$ty>(&sout).unwrap();
+                let jv = serde_json::from_str::<$ty>(&jout).unwrap();
+                assert_eq!(sv, jv);
+            }
+            Err(_) => {
+                let _ = sonic_rs::from_slice::<$ty>($data).expect_err(&format!(
+                    "parse invalid json {:?} wrong for type {}",
+                    $data,
+                    stringify!($ty)
+                ));
+            }
+        }
+    };
+}
+
 fuzz_target!(|data: &[u8]| {
     match serde_json::from_slice::<JValue>(data) {
         Ok(jv) => {
@@ -66,6 +95,12 @@ fuzz_target!(|data: &[u8]| {
             let _ = dom_from_slice(data).unwrap_err();
         }
     }
+
+    test_struct!(TestStruct, data);
+    test_struct!(Foo, data);
+    test_struct!(Enum, data);
+    test_struct!(String, data);
+    test_struct!(f64, data);
 });
 
 fn compare_lazyvalue(jv: &JValue, sv: &sonic_rs::LazyValue) {
@@ -119,4 +154,98 @@ fn compare_value(jv: &JValue, sv: &sonic_rs::Value) -> bool {
         JValue::String(ref s) => assert!(sv.is_str() && sv.as_str().unwrap() == s),
     }
     true
+}
+
+use faststr::FastStr;
+use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
+use std::{collections::HashMap, hash::Hash, marker::PhantomData};
+
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+struct Foo {
+    name: FastStr,
+    id: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize, Hash, Eq, PartialEq)]
+enum Enum {
+    Zero = 0,
+    One = 1,
+    Two = 2,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+enum FieldEnum {
+    Integer(i8),
+    Tuple((FastStr, i32)),
+    Struct(Foo),
+    Unit,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+enum FieldlessEnum {
+    Tuple(),
+    Struct {},
+    Unit,
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+struct Wrapper<'a>(&'a str);
+
+// A unit struct
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+struct Unit;
+
+// A uint struct
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+struct Phan<T> {
+    phan: String,
+    _data: PhantomData<T>,
+}
+
+// A tuple struct
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+struct Pair(i32, f32);
+
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+struct TestStruct<'a> {
+    fieldless: FieldlessEnum,
+    enummap: HashMap<Enum, FieldlessEnum>,
+    enum_: Enum,
+
+    // basic types
+    boolean: bool,
+    integer: i32,
+    float: f64,
+    int128: i128,
+    uint128: u128,
+    char_: char,
+
+    // string or bytes
+    str_: &'a str,
+    // bytes_: &'a [u8],
+    string: String,
+    faststr: FastStr,
+    #[serde(borrow)]
+    cow: Cow<'a, str>,
+
+    // containers
+    vector: Vec<u32>,
+    array: [u32; 1],
+    empty_array: [u8; 0],
+    map: HashMap<FastStr, f64>,
+    map_opkey: HashMap<Option<FastStr>, f64>,
+
+    // enum types
+    option: Option<String>,
+    fieldenum: FieldEnum,
+
+    // tuple or struct
+    tuple: (u64, String),
+    tuple_struct: Pair,
+    unit_struct: Unit,
+
+    #[serde(borrow)]
+    wrapper: Wrapper<'a>,
+    phan_struct: Phan<()>,
 }
