@@ -171,6 +171,10 @@ pub(crate) fn parse_number(
         *index += 1;
 
         if *index >= data.len() || !matches!(data[*index], b'.' | b'e' | b'E') {
+            // view -0 as float number
+            if negative {
+                return Ok(ParserNumber::Float(0.0));
+            }
             return Ok(ParserNumber::Unsigned(0));
         }
 
