@@ -12,3 +12,8 @@ pub use iterator::{
     ArrayIntoIter, ObjectIntoIter, UnsafeArrayIntoIter, UnsafeObjectIntoIter,
 };
 pub use value::LazyValue;
+
+pub(crate) mod de;
+pub(crate) mod ser;
+
+pub(crate) const TOKEN: &str = "$sonic_rs::LazyValue";
