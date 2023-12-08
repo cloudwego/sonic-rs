@@ -19,7 +19,7 @@ use crate::JsonType;
 use crate::{from_str, JsonValue};
 
 /// LazyValue is a raw value from json text. Mainly used for get few values from json fastly.
-/// LazyValue is only generated when using `get` for `Iterator`.
+/// LazyValue is only generated when using `get` or `Iterator` or `from_string`.
 #[derive(Debug)]
 pub struct LazyValue<'de> {
     // the raw slice from origin json
@@ -150,13 +150,6 @@ impl<'de> LazyValue<'de> {
         }
     }
 
-    pub(crate) fn new(raw: JsonSlice<'de>) -> Self {
-        Self {
-            raw,
-            own: UnsafeCell::new(Vec::new()),
-        }
-    }
-
     pub fn into_cow_str(self) -> Result<Cow<'de, str>> {
         let mut parser = Parser::new(SliceRead::new(self.raw.as_ref()));
         parser.read.eat(1);
@@ -181,6 +174,13 @@ impl<'de> LazyValue<'de> {
                     self.own.into_inner(),
                 )))
             },
+        }
+    }
+
+    pub(crate) fn new(raw: JsonSlice<'de>) -> Self {
+        Self {
+            raw,
+            own: UnsafeCell::new(Vec::new()),
         }
     }
 }

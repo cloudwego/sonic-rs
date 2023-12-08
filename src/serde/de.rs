@@ -34,7 +34,9 @@ macro_rules! tri {
     ($e:expr $(,)?) => {
         match $e {
             Ok(val) => val,
-            Err(err) => return Err(err),
+            Err(err) => {
+                return Err(err);
+            }
         }
     };
 }
@@ -223,6 +225,14 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         visitor.visit_map(BorrowedRawDeserializer {
             raw_value: Some(raw),
         })
+    }
+
+    fn deserialize_lazy_value<V>(&mut self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        let raw = as_str(self.parser.skip_one()?);
+        visitor.visit_borrowed_str(raw)
     }
 
     // we deserialize json number from string or number types
@@ -539,7 +549,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
 
     /// Parses a newtype struct as the underlying value.
     #[inline]
-    fn deserialize_newtype_struct<V>(self, name: &str, visitor: V) -> Result<V::Value>
+    fn deserialize_newtype_struct<V>(self, name: &'static str, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
@@ -548,6 +558,8 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 return self.deserialize_raw_value(visitor);
             } else if name == crate::serde::number::TOKEN {
                 return self.deserialize_json_number(visitor);
+            } else if name == crate::lazyvalue::TOKEN {
+                return self.deserialize_lazy_value(visitor);
             }
         }
 
