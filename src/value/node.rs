@@ -12,7 +12,6 @@ use crate::reader::Reader;
 use crate::serde::tri;
 use crate::util::arc::Arc;
 use crate::util::taggedptr::TaggedPtr;
-use crate::util::utf8::from_utf8;
 use crate::value::alloctor::AllocatorTrait;
 use crate::value::array::Array;
 use crate::value::from::get_shared_or_new;
@@ -34,6 +33,27 @@ use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::str::from_utf8_unchecked;
 
 /// Represents any valid JSON value.
+/// `Value` can be parsed from a JSON and from any type that implements `serde::Serialize`.
+///
+/// # Example
+/// ```
+/// use sonic_rs::json;
+/// use sonic_rs::value::Value;
+///
+/// let v1 = json!({"a": 123});
+/// let v2: Value = sonic_rs::from_str(r#"{"a": 123}"#).unwrap();
+/// let v3 = {
+///     let map = HashMap::new();
+///     map.insert("a", 123);
+///     sonic_rs::to_value(&map).unwrap()
+/// };
+///
+/// assert_eq!(v1, v2);
+/// assert_eq!(v2, v3);
+///
+/// assert_eq!(v1["a"], 123);
+/// ```
+///
 pub struct Value {
     pub(crate) meta: Meta,
     pub(crate) data: Data,
@@ -623,6 +643,7 @@ impl Value {
     }
 
     /// Create a new string Value from a `&'static str` with zero-copy.
+    ///
     #[inline]
     pub fn from_static_str(val: &'static str) -> Self {
         let mut v = Value {
@@ -1711,36 +1732,6 @@ impl Serialize for Value {
     }
 }
 
-pub fn dom_from_slice(json: &[u8]) -> Result<Value> {
-    // validate the utf-8 at first for slice
-    let json = {
-        let json = from_utf8(json)?;
-        json.as_bytes()
-    };
-
-    let mut dom = Value::new_null(Shared::new_ptr());
-    dom.parse_with_padding(json)?;
-    Ok(dom)
-}
-
-pub fn dom_from_slice_unchecked(json: &[u8]) -> Result<Value> {
-    let mut dom = Value::new_null(Shared::new_ptr());
-    dom.parse_with_padding(json)?;
-    Ok(dom)
-}
-
-pub fn dom_from_str(json: &str) -> Result<Value> {
-    // validate the utf-8 at first for slice
-    let json = {
-        let json = from_utf8(json.as_bytes())?;
-        json.as_bytes()
-    };
-
-    let mut dom = Value::new_null(Shared::new_ptr());
-    dom.parse_with_padding(json)?;
-    Ok(dom)
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1934,7 +1925,7 @@ mod test {
 
     #[test]
     fn test_value_is() {
-        let value = dom_from_str(TEST_JSON).unwrap();
+        let value: Value = crate::from_str(TEST_JSON).unwrap();
         assert!(value.get("bool").is_boolean());
         assert!(value.get("bool").is_true());
         assert!(value.get("uint").is_u64());
@@ -1951,7 +1942,7 @@ mod test {
 
     #[test]
     fn test_value_get() {
-        let value = dom_from_str(TEST_JSON).unwrap();
+        let value: Value = crate::from_str(TEST_JSON).unwrap();
         assert_eq!(value.get("int").as_i64().unwrap(), -1);
         assert_eq!(value["array"].get(0).as_i64().unwrap(), 1);
 

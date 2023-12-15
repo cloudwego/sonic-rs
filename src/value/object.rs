@@ -7,12 +7,33 @@ use crate::util::reborrow::DormantMutRef;
 use crate::value::node::Value;
 use std::marker::PhantomData;
 
-/// Represents the JSON object. It is a key-value array. Its order is as same as origin JSON.
+/// Represents the JSON object. The inner implement is a key-value array. Its order is as same as origin JSON.
 ///
-/// The key is not sorted and the find operation is O(n). If you are hea Recommend to use `BTreeMap<String, Value>` or `HashMap<String, Value>` instead.
+/// # Examples
+/// ```
+/// use sonic_rs::{from_str, Obejct};
+///
+/// let mut obj: Object = from_str(r#"{"a": 1, "b": true, "c": null}"#).unwrap();
+///
+/// assert_eq!(obj["a"], 1);
+/// assert_eq!(obj.insert(&"d", "e"), None);
+/// assert_eq!(obj["d"], "e");
+/// assert_eq!(obj.len(), 3); // allow duplicated keys
+/// ```
 ///
 /// # Warning
-/// `Object` is allowed to have duplicated keys. If you want to use it as a map, recommend to use `BTreeMap<String, Value>` or `HashMap<String, Value>` instead.
+/// The key in `Object` is not sorted and the `get` operation is O(n). And `Object` is allowed to have duplicated keys.
+///
+/// # Examples
+/// ```
+/// use sonic_rs::{from_str, Object};
+///
+/// let obj: Object = from_str(r#"{"a": 1, "a": true, "a": null}"#).unwrap();
+///
+/// assert_eq!(obj["a"], 1);
+/// assert_eq!(obj.len(), 3); // allow duplicated keys
+/// ```
+/// If you care about that, recommend to use `HashMap` or `BTreeMap` instead. The parse performance is slower than `Object`.
 ///
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[repr(transparent)]

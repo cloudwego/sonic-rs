@@ -43,7 +43,27 @@ pub trait JsonValueTrait {
     where
         Self: 'v;
 
-    /// get the type of the `JsonValue`.
+    /// Gets the type of the `JsonValue`. Returns `JsonType::Null` as default if `self` is `Option::None` or `Result::Err(_)`.
+    ///
+    /// # Examples
+    /// ```
+    /// use sonic_rs::value::JsonType;
+    /// use sonic_rs::value::JsonValueTrait;
+    /// use sonic_rs::value::Value;
+    /// use sonic_rs::Result;
+    ///
+    /// let json = sonic_rs:from_str(r#"{"a": 1, "b": true}"#).unwrap();
+    ///
+    /// assert_eq!(json.get_type(), JsonType::Object);
+    ///
+    /// let v: Option<&Value> = json.get("c");
+    /// assert!(v.is_none());
+    /// assert_eq!(v.get_type(), JsonType::Null);
+    ///
+    /// let v: Result<Value> =  sonic_rs::from_str(r#"{"invalid json"#);
+    /// assert!(v.is_err());
+    /// assert_eq!(v.get_type(), JsonType::Null);
+    /// ```
     fn get_type(&self) -> JsonType;
 
     /// Returns true if the `JsonValue` is a `bool`.
@@ -140,7 +160,7 @@ pub trait JsonValueTrait {
     fn as_bool(&self) -> Option<bool>;
 
     /// Returns the value from index if the `JsonValue` is an `array` or `object`
-    /// The index may be usize or &str. The `usize` is for array, the `&str` is for object. If not found, return `None`.
+    /// The index may be usize or &str. The `usize` is for array, the `&str` is for object. Returns None otherwise.
     ///
     /// # Examples
     /// ```
@@ -155,7 +175,7 @@ pub trait JsonValueTrait {
     /// ```
     fn get<I: Index>(&self, index: I) -> Option<Self::ValueType<'_>>;
 
-    /// Returns the value from pointer path if the `JsonValue` is an `array` or `object`
+    /// Returns the value from pointer path if the `JsonValue` is an array or object. Returns None otherwise.
     fn pointer(&self, path: &JsonPointer) -> Option<Self::ValueType<'_>>;
 }
 

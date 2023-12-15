@@ -14,7 +14,21 @@ use std::ptr::NonNull;
 use std::slice::from_raw_parts;
 use std::slice::from_raw_parts_mut;
 
-/// Array represents a JSON array. Its most APIs are as `Array<Value>`.
+/// Array represents a JSON array. Its APIs are likes `Array<Value>`.
+///
+/// # Example
+/// ```
+/// use sonic_rs::{array, Array};
+///
+/// let mut arr: Array = sonic_rs::from_str("[1, 2, 3]").unwrap();
+/// assert_eq!(arr[0], 1);
+///
+/// let mut arr = array![1, 2, 3];
+/// assert_eq!(arr[0], 1);
+///
+/// let j = sonic_rs::json!([1, 2, 3]);
+/// assert_eq!(j.as_array().unwrap()[0], 1);
+/// ```
 ///
 #[derive(Debug, Eq, PartialEq, Clone)]
 #[repr(transparent)]
@@ -682,6 +696,7 @@ pub struct Drain<'a> {
 }
 
 impl<'a> Drain<'a> {
+    /// Returns the remaining items of its iterator as a slice.
     #[inline]
     pub fn as_slice(&self) -> &'a [Value] {
         self.iter.as_slice()
