@@ -28,6 +28,6 @@ sanitize_single() {
 
 for san in address leak; do
 	echo "Running tests with $san"
-	# sanitize $san "x86_64-unknown-linux-gnu"
-    sanitize_single $san "x86_64-unknown-linux-gnu"
+	sanitize $san "x86_64-unknown-linux-gnu"
+    # sanitize_single $san "x86_64-unknown-linux-gnu"
 done

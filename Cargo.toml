@@ -28,8 +28,7 @@ bytes = "1.4"
 thiserror = "1.0"
 simdutf8 = "0.1"
 parking_lot = "0.12"
-static_assertions = "1.1"
-libc = "0.2.150"
+libc = "0.2"
 
 [dev-dependencies]
 jemallocator =  "0.5"
@@ -57,10 +56,6 @@ codegen-units = 1
 panic = 'unwind'
 incremental = false
 overflow-checks = false
-
-[build]
-sanitizers = true
-debug = true
 
 [[bench]]
 name = "deserialize_struct"
