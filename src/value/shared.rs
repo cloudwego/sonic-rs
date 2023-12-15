@@ -1,5 +1,7 @@
 use super::alloctor::SyncBump;
 use crate::util::{arc::Arc, taggedptr::TaggedPtr};
+use std::cell::UnsafeCell;
+
 use std::{
     fmt::{Debug, Formatter},
     mem::ManuallyDrop,
@@ -70,3 +72,72 @@ impl Clone for TaggedPtr<Shared> {
 }
 
 impl Copy for TaggedPtr<Shared> {}
+
+//////////////////////////////////////////////////////////////////////////////
+
+// We use a thread local to make the allocator can be used in whole `From` trait.
+thread_local! {
+    static SHARED: UnsafeCell<*const Shared> = const { UnsafeCell::new(std::ptr::null()) };
+}
+
+pub(crate) fn get_shared() -> *const Shared {
+    SHARED.with(|shared| unsafe { *shared.get() })
+}
+
+pub(crate) fn get_shared_or_new() -> (&'static Shared, bool) {
+    let shared = SHARED.with(|shared| unsafe { *shared.get() });
+    if shared.is_null() {
+        let arc = ManuallyDrop::new(Arc::new(Shared::new()));
+        (unsafe { &*arc.data_ptr() }, true)
+    } else {
+        (unsafe { &*shared }, false)
+    }
+}
+
+pub(crate) fn set_shared(new_shared: *const Shared) {
+    SHARED.with(|shared| unsafe { *((*shared).get()) = new_shared });
+}
+
+pub(crate) struct SharedCtxGuard {
+    old: *const Shared,
+}
+
+impl SharedCtxGuard {
+    /// assign `new_shared` into SharedCtx
+    pub(crate) fn assign(new_shared: *const Shared) -> Self {
+        let old = get_shared();
+        set_shared(new_shared);
+        Self { old }
+    }
+}
+
+impl Drop for SharedCtxGuard {
+    fn drop(&mut self) {
+        set_shared(self.old);
+    }
+}
+
+pub(crate) struct CheckCtxGuard {
+    is_root: bool,
+}
+
+impl CheckCtxGuard {
+    /// assign `new_shared` into SharedCtx
+    pub(crate) fn new() -> Self {
+        let old = get_shared();
+        if old.is_null() {
+            set_shared(Shared::new_ptr());
+            Self { is_root: true }
+        } else {
+            Self { is_root: false }
+        }
+    }
+}
+
+impl Drop for CheckCtxGuard {
+    fn drop(&mut self) {
+        if self.is_root {
+            set_shared(std::ptr::null());
+        }
+    }
+}

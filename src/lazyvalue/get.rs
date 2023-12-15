@@ -1,43 +1,44 @@
 use super::LazyValue;
 use crate::error::Result;
+use crate::index::Index;
 use crate::input::JsonInput;
 use crate::parser::Parser;
-use crate::pointer::{PointerTrait, PointerTree};
+use crate::pointer::PointerTree;
 use crate::reader::Reader;
 use crate::reader::SliceRead;
 use crate::util::utf8::from_utf8;
 use bytes::Bytes;
 use faststr::FastStr;
 
-/// get_from_str_unchecked returns the raw value from path.
+/// Gets a field from path. And return it as a `LazyValue`. If
+/// not found, return a err.
 ///
 /// # Safety
 /// The JSON must be valid and well-formed, otherwise it may return unexpected result.
+///
+/// # Examples
+/// ```
+/// use sonic_rs::get_from_str_unchecked;
+/// let lv = unsafe { get_from_str_unchecked(r#"{"a": 1}"#, &["a"]).unwrap() };
+/// assert_eq!(lv.as_raw_str(), "1");
+///
+/// /// not found the field "a"
+/// let lv = unsafe { get_from_str_unchecked(r#"{"a": 1}"#, &["b"]) };
+/// assert!(lv.is_err());
+/// ```
+///
 pub unsafe fn get_from_str_unchecked<Path: IntoIterator>(
     json: &str,
     path: Path,
 ) -> Result<LazyValue<'_>>
 where
-    Path::Item: PointerTrait,
+    Path::Item: Index,
 {
     get_unchecked(json, path)
 }
 
-/// get_from_slice_unchecked returns the raw value from path.
-///
-/// # Safety
-/// The JSON must be valid and well-formed, otherwise it may return unexpected result.
-pub unsafe fn get_from_slice_unchecked<Path: IntoIterator>(
-    json: &[u8],
-    path: Path,
-) -> Result<LazyValue<'_>>
-where
-    Path::Item: PointerTrait,
-{
-    get_unchecked(json, path)
-}
-
-/// get_from_bytes_unchecked returns the raw value from path.
+/// Gets a field from path. And return it as a `LazyValue`. If
+/// not found, return a err.
 ///
 /// # Safety
 /// The JSON must be valid and well-formed, otherwise it may return unexpected result.
@@ -46,12 +47,13 @@ pub unsafe fn get_from_bytes_unchecked<Path: IntoIterator>(
     path: Path,
 ) -> Result<LazyValue<'_>>
 where
-    Path::Item: PointerTrait,
+    Path::Item: Index,
 {
     get_unchecked(json, path)
 }
 
-/// get_from_bytes_unchecked returns the raw value from path.
+/// Gets a field from path. And return it as a `LazyValue`. If
+/// not found, return a err.
 ///
 /// # Safety
 /// The JSON must be valid and well-formed, otherwise it may return unexpected result.
@@ -60,22 +62,67 @@ pub unsafe fn get_from_faststr_unchecked<Path: IntoIterator>(
     path: Path,
 ) -> Result<LazyValue<'_>>
 where
-    Path::Item: PointerTrait,
+    Path::Item: Index,
 {
     get_unchecked(json, path)
 }
 
-/// get_unchecked returns the raw value from path.
+/// Gets a field from path. And return it as a `LazyValue`. If
+/// not found, return a err.
 ///
 /// # Safety
 /// The JSON must be valid and well-formed, otherwise it may return unexpected result.
+///
+/// # Examples
+/// ```
+/// use sonic_rs::get_from_slice_unchecked;
+/// let lv = unsafe { get_from_slice_unchecked(br#"{"a": 1}"#, &["a"]).unwrap() };
+/// assert_eq!(lv.as_raw_str(), "1");
+///
+/// /// not found the field "a"
+/// let lv = unsafe { get_from_slice_unchecked(br#"{"a": 1}"#, &["b"]) };
+/// assert!(lv.is_err());
+/// ```
+///
+pub unsafe fn get_from_slice_unchecked<Path: IntoIterator>(
+    json: &[u8],
+    path: Path,
+) -> Result<LazyValue<'_>>
+where
+    Path::Item: Index,
+{
+    get_unchecked(json, path)
+}
+
+/// Gets a field from path. And return it as a `LazyValue`. If
+/// not found, return a err.
+///
+/// The input `json` is allowed to be `&FastStr`, `&[u8]`, `&str`, `&String` or `&bytes::Bytes`.
+///
+/// # Safety
+/// The JSON must be valid and well-formed, otherwise it may return unexpected result.
+///
+/// # Examples
+/// ```
+/// use sonic_rs::get_unchecked;
+/// use faststr::FastStr;
+///
+/// let lv = unsafe { get_unchecked(r#"{"a": 1}"#, &["a"]).unwrap() };
+/// assert_eq!(lv.as_raw_str(), "1");
+///
+/// /// not found the field "a"
+/// let fs = FastStr::new(r#"{"a": 1}"#);
+/// let lv = unsafe { get_unchecked(&fs, &["b"]) };
+/// assert!(lv.is_err());
+/// ```
+///
 pub unsafe fn get_unchecked<'de, Input, Path: IntoIterator>(
     json: Input,
     path: Path,
 ) -> Result<LazyValue<'de>>
 where
     Input: JsonInput<'de>,
-    Path::Item: PointerTrait,
+    Path::Item: Index,
 {
     let slice = json.to_u8_slice();
     let reader = SliceRead::new(slice);
@@ -85,12 +132,29 @@ where
         .map(|sub| LazyValue::new(json.from_subset(sub)))
 }
 
-/// get_many_unchecked returns the raw value from the PointerTree. The result is a Vec<LazyValue>.
-/// And the order of the result is the same as the order of the tree. If the tree is empty,
-/// it will return the whole json.
+/// get_many returns multiple fields from the `PointerTree`.
+///
+/// The result is a `Result<Vec<LazyValue>>`. The order of the `Vec` is same as the order of the tree.
+///  
+/// If json is invalid, or the field not be found, it will return a err.
 ///
 /// # Safety
 /// The JSON must be valid and well-formed, otherwise it may return unexpected result.
+///
+/// # Examples
+/// ```
+/// use sonic_rs::pointer;
+/// let json = r#"
+///     {"u": 123, "a": {"b" : {"c": [null, "found"]}}}"#;
+/// // build a pointer tree, representing multile json path
+/// let mut tree = sonic_rs::PointerTree::new();
+/// tree.add_path(&["u"]);
+/// tree.add_path(&pointer!["a", "b", "c", 1]);
+/// let nodes = unsafe { sonic_rs::get_many_unchecked(json, &tree).unwrap() };
+/// // the node order is as the order of `add_path`
+/// assert_eq!(nodes[0].as_raw_str(), "123");
+/// assert_eq!(nodes[1].as_raw_str(), "\"found\"");
+/// ```
 pub unsafe fn get_many_unchecked<'de, Input>(
     json: Input,
     tree: &PointerTree,
@@ -108,47 +172,98 @@ where
         .collect())
 }
 
-/// Returns the raw value from path.
+/// Gets a field from path. And return it as a `LazyValue`. If
+/// not found or JSON is invalid, it will return a err.
+///
+/// # Examples
+/// ```
+/// use sonic_rs::get_from_str;
+/// let lv = get_from_str(r#"{"a": 1}"#, &["a"]).unwrap();
+/// assert_eq!(lv.as_raw_str(), "1");
+///
+/// /// not found the field "a"
+/// let lv = get_from_str(r#"{"a": 1}"#, &["b"]);
+/// assert!(lv.is_err());
+/// ```
 ///
 pub fn get_from_str<Path: IntoIterator>(json: &str, path: Path) -> Result<LazyValue<'_>>
 where
-    Path::Item: PointerTrait,
+    Path::Item: Index,
 {
     get(json, path)
 }
 
-/// Returns the raw value from path.
+/// Gets a field from path. And return it as a `LazyValue`. If
+/// not found or JSON is invalid, it will return a err.
+///
+/// # Examples
+/// ```
+/// use sonic_rs::get_from_slice;
+/// let lv = get_from_slice(br#"{"a": 1}"#, &["a"]).unwrap();
+/// assert_eq!(lv.as_raw_str(), "1");
+///
+/// /// not found the field "a"
+/// let lv = get_from_slice(br#"{"a": 1}"#, &["b"]);
+/// assert!(lv.is_err());
+/// ```
 ///
 pub fn get_from_slice<Path: IntoIterator>(json: &[u8], path: Path) -> Result<LazyValue<'_>>
 where
-    Path::Item: PointerTrait,
+    Path::Item: Index,
 {
     get(json, path)
 }
 
-/// Returns the raw value from path.
-///
+/// Gets a field from path. And return it as a `LazyValue`. If
+/// not found or JSON is invalid, it will return a err.
 pub fn get_from_bytes<Path: IntoIterator>(json: &Bytes, path: Path) -> Result<LazyValue<'_>>
 where
-    Path::Item: PointerTrait,
+    Path::Item: Index,
 {
     get(json, path)
 }
 
-/// Returns the raw value from path.
+/// Gets a field from path. And return it as a `LazyValue`. If
+/// not found or JSON is invalid, it will return a err.
 pub fn get_from_faststr<Path: IntoIterator>(json: &FastStr, path: Path) -> Result<LazyValue<'_>>
 where
-    Path::Item: PointerTrait,
+    Path::Item: Index,
 {
     get(json, path)
 }
 
-/// Returns the raw value from path.
+/// Gets a field from path. And return it as a `LazyValue`. If
+/// not found, return a err.
+///
+/// The input `json` is allowed to be `&FastStr`, `&[u8]`, `&str`, `&String` or `&bytes::Bytes`.
+///
+/// # Safety
+/// The JSON must be valid and well-formed, otherwise it may return unexpected result.
+///
+/// # Examples
+/// ```
+/// use sonic_rs::get;
+/// use faststr::FastStr;
+/// use bytes::Bytes;
+///
+/// let lv =  get(r#"{"a": 1}"#, &["a"]).unwrap();
+/// assert_eq!(lv.as_raw_str(), "1");
+///
+/// /// not found the field "a"
+/// let fs = FastStr::new(r#"{"a": 1}"#);
+/// let lv = get(&fs, &["b"]);
+/// assert!(lv.is_err());
+///
+/// /// the JSON is invalid
+/// let b = Bytes::from(r#"{"a": tru }"#);
+/// let lv = get(&b, &["a"]);
+/// assert!(lv.is_err());
+/// ```
 ///
 pub fn get<'de, Input, Path: IntoIterator>(json: Input, path: Path) -> Result<LazyValue<'de>>
 where
     Input: JsonInput<'de>,
-    Path::Item: PointerTrait,
+    Path::Item: Index,
 {
     let slice = json.to_u8_slice();
     let reader = SliceRead::new(slice);
@@ -165,9 +280,26 @@ where
     Ok(node)
 }
 
-/// get_many returns the raw value from the PointerTree. The result is a Vec<LazyValue>.
-/// And the order of the result is the same as the order of the tree. If the tree is empty,
-/// it will return the whole json.
+/// get_many returns multiple fields from the `PointerTree`.
+///
+/// The result is a `Result<Vec<LazyValue>>`. The order of the `Vec` is same as the order of the tree.
+///  
+/// If json is invalid, or the field not be found, it will return a err.
+///
+/// # Examples
+/// ```
+/// use sonic_rs::pointer;
+/// let json = r#"
+///     {"u": 123, "a": {"b" : {"c": [null, "found"]}}}"#;
+/// // build a pointer tree, representing multile json path
+/// let mut tree = sonic_rs::PointerTree::new();
+/// tree.add_path(&["u"]);
+/// tree.add_path(&pointer!["a", "b", "c", 1]);
+/// let nodes = sonic_rs::get_many(json, &tree).unwrap();
+/// // the node order is as the order of `add_path`
+/// assert_eq!(nodes[0].as_raw_str(), "123");
+/// assert_eq!(nodes[1].as_raw_str(), "\"found\"");
+/// ```
 pub fn get_many<'de, Input>(json: Input, tree: &PointerTree) -> Result<Vec<LazyValue<'de>>>
 where
     Input: JsonInput<'de>,

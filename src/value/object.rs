@@ -1,6 +1,6 @@
-use super::from::SharedCtxGuard;
 use super::node::replace_value;
 use super::shared::Shared;
+use super::shared::SharedCtxGuard;
 use super::value_trait::JsonValueTrait;
 use crate::serde::tri;
 use crate::util::reborrow::DormantMutRef;
@@ -11,14 +11,14 @@ use std::marker::PhantomData;
 ///
 /// # Examples
 /// ```
-/// use sonic_rs::{from_str, Obejct};
+/// use sonic_rs::{from_str, Object};
 ///
 /// let mut obj: Object = from_str(r#"{"a": 1, "b": true, "c": null}"#).unwrap();
 ///
 /// assert_eq!(obj["a"], 1);
 /// assert_eq!(obj.insert(&"d", "e"), None);
 /// assert_eq!(obj["d"], "e");
-/// assert_eq!(obj.len(), 3); // allow duplicated keys
+/// assert_eq!(obj.len(), 4);
 /// ```
 ///
 /// # Warning

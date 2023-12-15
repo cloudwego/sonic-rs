@@ -66,7 +66,7 @@ impl TryFrom<f64> for Value {
 /// let lazy = sonic_rs::get(r#"{"a": 111e9999999, "b": 2}"#, &["a"]).unwrap();
 /// let x1: Result<Value> = lazy.try_into();
 ///
-/// assert!(x1.unwrap_err().to_string().contains("Number is bigger than the maximum value"));
+/// assert!(x1.unwrap_err().to_string().contains("Float number must be finite"));
 /// ```
 impl<'de> TryFrom<LazyValue<'de>> for Value {
     type Error = crate::Error;

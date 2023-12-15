@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 use crate::error::Result;
 use crate::get_unchecked;
+use crate::index::Index;
 use crate::input::JsonSlice;
 use crate::parser::Parser;
 use crate::reader::Reader;
@@ -15,12 +16,49 @@ use crate::reader::Reference;
 use crate::reader::SliceRead;
 use crate::serde::Deserializer;
 use crate::serde::Number;
-use crate::value::index::Index;
 use crate::JsonType;
 use crate::{from_str, JsonValueTrait};
 
-/// LazyValue is a raw value from json text. Mainly used for get few values from json fastly.
-/// LazyValue is only generated when using `get` or `Iterator` or `from_string`.
+/// LazyValue is a value that wrappers the raw JSON text. It is similar as `RawValue` but with
+/// more APIs. It is used for lazy parsing, which means the JSON text is not parsed until it is
+/// used.
+///
+/// # Examples
+///
+/// ```
+/// use sonic_rs::{get, JsonValueTrait, LazyValue, Value};
+///
+/// // get a lazyvalue from a json, the "a"'s value will not be parsed
+/// let input = r#"{
+///  "a": "hello world",
+///  "b": true,
+///  "c": [0, 1, 2],
+///  "d": {
+///     "sonic": "rs"
+///   }
+/// }"#;
+/// let lv_a: LazyValue = get(input, &["a"]).unwrap();
+/// let lv_c: LazyValue = get(input, &["c"]).unwrap();
+///
+/// // use as_raw_xx to get the unparsed JSON text
+/// assert_eq!(lv_a.as_raw_str(), "\"hello world\"");
+/// assert_eq!(lv_c.as_raw_str(), "[0, 1, 2]");
+///
+/// // use as_xx to get the parsed value
+/// assert_eq!(lv_a.as_str().unwrap(), "hello world");
+/// assert_eq!(lv_c.as_str(), None);
+/// assert!(lv_c.is_array());
+///
+/// // if we want parse LazyValue into `Value`, just use try_from
+/// let mut value = Value::try_from(lv_c).unwrap();
+/// value[0] = 1.into();
+/// assert_eq!(value, [1, 1, 2]);
+///
+/// // also, we can parse LazyValue into Rust types
+/// let lv_d: LazyValue = get(input, &["d", "sonic"]).unwrap();
+/// let mut v: String = sonic_rs::from_str(lv_d.as_raw_str()).unwrap();
+/// assert_eq!(v, "rs");
+/// ```
 #[derive(Debug)]
 pub struct LazyValue<'de> {
     // the raw slice from origin json
@@ -74,10 +112,16 @@ impl<'de> JsonValueTrait for LazyValue<'de> {
         index.lazyvalue_index_into(self)
     }
 
-    fn pointer(&self, path: &crate::JsonPointer) -> Option<Self::ValueType<'_>> {
+    fn pointer<P: IntoIterator>(&self, path: P) -> Option<Self::ValueType<'_>>
+    where
+        P::Item: Index,
+    {
+        let path = path.into_iter();
         match &self.raw {
-            JsonSlice::Raw(r) => unsafe { get_unchecked(*r, path.iter()).ok() },
-            JsonSlice::FastStr(f) => unsafe { get_unchecked(f, path.iter()).ok() },
+            // #Safety
+            // LazyValue is built with JSON validation, so we can use get_unchecked here.
+            JsonSlice::Raw(r) => unsafe { get_unchecked(*r, path).ok() },
+            JsonSlice::FastStr(f) => unsafe { get_unchecked(f, path).ok() },
         }
     }
 }

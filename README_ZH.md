@@ -139,8 +139,8 @@ canada/serde_json::from_str
 
 该测试将把 JSON 解析成 document。由于以下几个原因，Sonic-rs 会看起来更快一些：
 - 如上所述，在 sonic-rs 中没有临时数据结构，例如 `tape`。
-- Sonic-rs 为整个 document 使用内存区，从而减少内存分配、提高缓存友好性和可变性。
-- sonic-rs document中的 JSON 对象实际上是一个向量。Sonic-rs 不会构建 hashmap。
+- Sonic-rs 使用内存池为整个 document 使用内存区，从而减少内存分配、提高缓存友好性和可变性。
+- 如果 JSON 是object, 解析到`sonic_rs::Value`后，底层是一个 Key-Value pair 的数组，而不会建立 HashMap 或 BTreeMap, 因此没有建表开销。
 
 `cargo bench --bench deserialize_value -- --quiet`
 
@@ -299,44 +299,50 @@ fn main() {
 }
 ```
 
-### 从 JSON 中获取字段
+### 按路径从 JSON 中获取特定字段
 
-使用 `pointer` 路径从 JSON 中获取特定字段。返回的是 `LazyValue`，本质上是一段未解析的 JSON 切片。
+按`pointer` 路径从 JSON 中获取特定字段。返回的是 `LazyValue`，本质上是一段未解析的 JSON 切片。
 
 sonic-rs 提供了 `get` 和 `get_unchecked` 两种接口。请注意，如果使用 `unchecked` 接口，需要保证 输入的JSON 是格式良好且合法的，否则可能返回非预期结果。
 
 ```rs
-use sonic_rs::{get_from_str, pointer, JsonValue, PointerNode};
+use sonic_rs::JsonValueTrait;
+use sonic_rs::{get, get_unchecked, pointer};
 
 fn main() {
     let path = pointer!["a", "b", "c", 1];
     let json = r#"
         {"u": 123, "a": {"b" : {"c": [null, "found"]}}}
     "#;
-    let target = get(json, &path).unwrap() };
-    // or let target = unsafe { get_unchecked(json, &path).unwrap() };
+    let target = unsafe { get_unchecked(json, &path).unwrap() };
     assert_eq!(target.as_raw_str(), r#""found""#);
     assert_eq!(target.as_str().unwrap(), "found");
+
+    let target = get(json, &path);
+    assert_eq!(target.as_str().unwrap(), "found");
+    assert_eq!(target.unwrap().as_raw_str(), r#""found""#);
 
     let path = pointer!["a", "b", "c", "d"];
     let json = r#"
         {"u": 123, "a": {"b" : {"c": [null, "found"]}}}
     "#;
     // not found from json
-    let target = unsafe { get_from_str(json, &path) };
+    let target = get(json, &path);
     assert!(target.is_err());
 }
+
 ```
 
 
 # 解析/序列化 document
 
-在 sonic-rs 中，JSON 可以被解析未可修改的document。需要注意，document 是由 bump 分配器管理。建议将 document 转换为 Object/ObjectMut 或 Array/ArrayMut。这样能够确保强类型，同时在使用时可以对 allocator 无感知。
+将 JSON 解析为 `sonic_rs::Value`.
 
 ```rs
-use sonic_rs::value::{dom_from_slice, Value};
-use sonic_rs::PointerNode;
-use sonic_rs::{pointer, JsonValue};
+use sonic_rs::{from_str, json};
+use sonic_rs::JsonValueMutTrait;
+use sonic_rs::{pointer, JsonValueTrait, Value};
+
 fn main() {
     let json = r#"{
         "name": "Xiaoming",
@@ -351,9 +357,7 @@ fn main() {
         ]
     }"#;
 
-    let mut dom = dom_from_slice(json.as_bytes()).unwrap();
-    // get the value from dom
-    let root = dom.as_value();
+    let mut root: Value = from_str(json).unwrap();
 
     // get key from value
     let age = root.get("age").as_i64();
@@ -368,21 +372,34 @@ fn main() {
     assert_eq!(phones.as_str().unwrap(), "+123456");
 
     // convert to mutable object
-    let mut obj = dom.as_object_mut().unwrap();
-    let value = Value::new_bool(true);
-    obj.insert("inserted", value);
-    assert!(obj.contains_key("inserted"));
+    let obj = root.as_object_mut().unwrap();
+    obj.insert(&"inserted", true);
+    assert!(obj.contains_key(&"inserted"));
+
+    let mut object = json!({ "A": 65, "B": 66, "C": 67 });
+    *object.get_mut("A").unwrap() = json!({
+        "code": 123,
+        "success": false,
+        "payload": {}
+    });
+
+    let mut val = json!(["A", "B", "C"]);
+    *val.get_mut(2).unwrap() = json!("D");
+
+    // serialize
+    assert_eq!(serde_json::to_string(&val).unwrap(), r#"["A","B","D"]"#);
 }
 ```
 
 ### JSON Iterator
 
-将 JSON object 或 Array 解析为惰性迭代器。迭代器的 Item 是 `LazyValue` 或 `Result<LazyValue>`。
+将 JSON object 或 array 解析为惰性迭代器。
 
 ```rs
 use bytes::Bytes;
-use sonic_rs::{to_array_iter, JsonValue};
-
+use faststr::FastStr;
+use sonic_rs::JsonValueTrait;
+use sonic_rs::{to_array_iter, to_object_iter_unchecked};
 fn main() {
     let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6]"#);
     let iter = to_array_iter(&json);
@@ -393,12 +410,34 @@ fn main() {
     let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6"#);
     let iter = to_array_iter(&json);
     for elem in iter {
+        // do something for each elem
+
         // deal with errors when invalid json
         if elem.is_err() {
             assert_eq!(
                 elem.err().unwrap().to_string(),
                 "Expected this character to be either a ',' or a ']' while parsing at line 1 column 17"
             );
+        }
+    }
+
+    let json = FastStr::from(r#"{"a": null, "b":[1, 2, 3]}"#);
+    let iter = unsafe { to_object_iter_unchecked(&json) };
+    for ret in iter {
+        // deal with errors
+        if ret.is_err() {
+            println!("{}", ret.unwrap_err());
+            return;
+        }
+
+        let (k, v) = ret.unwrap();
+        if k == "a" {
+            assert!(v.is_null());
+        } else if k == "b" {
+            let iter = to_array_iter(v.as_raw_str());
+            for (i, v) in iter.enumerate() {
+                assert_eq!(i + 1, v.as_u64().unwrap() as usize);
+            }
         }
     }
 }
@@ -413,61 +452,7 @@ fn main() {
 
 ### 错误处理
 
-sonic-rs的错误处理参考了 serde-json,同时加上了对错误位置的描述。
-
-```rs
-use sonic_rs::{from_slice, from_str, Deserialize};
-
-fn main() {
-    #[allow(dead_code)]
-    #[derive(Debug, Deserialize)]
-    struct Foo {
-        a: Vec<i32>,
-        c: String,
-    }
-
-    // deal with Eof errors
-    let err = from_str::<Foo>("{\"a\": [").unwrap_err();
-    assert!(err.is_eof());
-    eprintln!("{}", err);
-    // EOF while parsing at line 1 column 6
-
-    //     {"a": [
-    //     ......^
-    assert_eq!(
-        format!("{}", err),
-        "EOF while parsing at line 1 column 6\n\n\t{\"a\": [\n\t......^\n"
-    );
-
-    // deal with Data errors
-    let err = from_str::<Foo>("{ \"b\":[]}").unwrap_err();
-    eprintln!("{}", err);
-    assert!(err.is_data());
-    // println as follows:
-    // missing field `a` at line 1 column 8
-    //
-    //     { "b":[]}
-    //     ........^
-    assert_eq!(
-        format!("{}", err),
-        "missing field `a` at line 1 column 8\n\n\t{ \"b\":[]}\n\t........^\n"
-    );
-
-    // deal with Syntax errors
-    let err = from_slice::<Foo>(b"{\"b\":\"\x80\"}").unwrap_err();
-    eprintln!("{}", err);
-    assert!(err.is_syntax());
-    // println as follows:
-    // Invalid UTF-8 characters in json at line 1 column 6
-    //
-    //     {"b":"�"}
-    //     ......^...
-    assert_eq!(
-        format!("{}", err),
-        "Invalid UTF-8 characters in json at line 1 column 6\n\n\t{\"b\":\"�\"}\n\t......^...\n"
-    );
-}
-```
+sonic-rs的错误处理参考了 serde-json,同时加上了对错误位置的描述, 例子在[handle_error.rs](examples/handle_error.rs).
 
 ## 常见问题
 

@@ -35,17 +35,17 @@ fn sonic_rs_from_slice_unchecked(data: &[u8]) {
     let _: sonic_rs::Value = unsafe { sonic_rs::from_slice_unchecked(data).unwrap() };
 }
 
-fn sonic_rs_skip_one(data: &[u8]) {
-    unsafe {
-        let data = from_utf8_unchecked(data);
-        let empty: &[&str] = &[];
-        let _ = sonic_rs::get_unchecked(data, empty).unwrap();
-    }
-}
+// fn sonic_rs_skip_one(data: &[u8]) {
+//     unsafe {
+//         let data = from_utf8_unchecked(data);
+//         let empty: &[&str] = &[];
+//         let _ = sonic_rs::get_unchecked(data, empty).unwrap();
+//     }
+// }
 
-fn sonic_rs_to_serdejson_value(data: &[u8]) {
-    let _: serde_json::Value = sonic_rs::from_slice(data).unwrap();
-}
+// fn sonic_rs_to_serdejson_value(data: &[u8]) {
+//     let _: serde_json::Value = sonic_rs::from_slice(data).unwrap();
+// }
 
 macro_rules! bench_file {
     ($name:ident) => {
@@ -88,21 +88,21 @@ macro_rules! bench_file {
                 )
             });
 
-            group.bench_with_input("sonic_rs::skip_one", &vec, |b, data| {
-                b.iter_batched(
-                    || data,
-                    |bytes| sonic_rs_skip_one(&bytes),
-                    BatchSize::SmallInput,
-                )
-            });
+            // group.bench_with_input("sonic_rs::skip_one", &vec, |b, data| {
+            //     b.iter_batched(
+            //         || data,
+            //         |bytes| sonic_rs_skip_one(&bytes),
+            //         BatchSize::SmallInput,
+            //     )
+            // });
 
-            group.bench_with_input("sonic_rs::to_serdejson_value", &vec, |b, data| {
-                b.iter_batched(
-                    || data,
-                    |bytes| sonic_rs_to_serdejson_value(&bytes),
-                    BatchSize::SmallInput,
-                )
-            });
+            // group.bench_with_input("sonic_rs::to_serdejson_value", &vec, |b, data| {
+            //     b.iter_batched(
+            //         || data,
+            //         |bytes| sonic_rs_to_serdejson_value(&bytes),
+            //         BatchSize::SmallInput,
+            //     )
+            // });
 
             group.bench_with_input("serde_json::from_slice", &vec, |b, data| {
                 b.iter_batched(

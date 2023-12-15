@@ -6,8 +6,7 @@ pub use value_trait::{JsonContainerTrait, JsonType, JsonValueMutTrait, JsonValue
 pub mod alloctor;
 pub mod array;
 pub mod de;
-mod from;
-pub mod index;
+pub(crate) mod from;
 pub mod shared;
 #[macro_use]
 mod macros;

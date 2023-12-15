@@ -6,11 +6,65 @@ use crate::parser::{Parser, DEFAULT_KEY_BUF_CAPACITY};
 use crate::reader::SliceRead;
 use faststr::FastStr;
 
-/// A lazied iterator for JSON object.
-pub struct ObjectIntoIter<'de>(ObjectInner<'de>);
+/// A lazied iterator for JSON object text. It will parse the JSON when iterating.
+///
+/// The item of the iterator is `Result<LazyValue>`.  
+///
+/// If the JSON is invalid, it will return error in iterator.
+///
+/// # Examples
+///```
+/// use sonic_rs::JsonValueTrait;
+/// use sonic_rs::to_object_iter;
+/// use faststr::FastStr;
+///
+/// let json = FastStr::from(r#"{"a": null, "b":[1, 2, 3]}"#);
+/// let iter = to_object_iter(&json);
+///
+/// for ret in iter {
+///     // deal with errors
+///     if ret.is_err() {
+///         println!("{}", ret.unwrap_err());
+///         return;
+///     }
+///     let (k, v) = ret.unwrap();
+///     if k == "a" {
+///         assert!(v.is_null());
+///     } else if k == "b" {
+///         assert_eq!(v.as_raw_str(), "[1, 2, 3]");
+///     }
+/// }
+/// ```
+pub struct ObjectJsonIter<'de>(ObjectInner<'de>);
 
-/// A lazied iterator for JSON array.
-pub struct ArrayIntoIter<'de>(ArrayInner<'de>);
+/// A lazied iterator for JSON array text. It will parse the JSON when iterating.
+///
+/// The item of the iterator is `Result<(FastStr, LazyValue)>`.
+///
+/// If the JSON is invalid, it will return error in iterator.
+///
+/// # Examples
+/// ```
+/// use sonic_rs::JsonValueTrait;
+/// use sonic_rs::to_array_iter;
+///
+/// let iter = to_array_iter(r#"[0, 1, 2, 3, 4, 5, 6]"#);
+/// for (i, ret) in iter.enumerate() {
+///     let lv = ret.unwrap(); // get lazyvalue
+///     assert_eq!(i.to_string(), lv.as_raw_str()); // lv is not parsed
+///     assert_eq!(i, lv.as_u64().unwrap() as usize);
+/// }
+///
+/// let iter = to_array_iter(r#"[1, 2, 3, 4, 5, 6"#);
+/// for elem in iter {
+///     // do something for each elem
+///     // deal with errors when invalid json
+///     if elem.is_err() {
+///         assert!(elem.unwrap_err().to_string().contains("Expected this character to be either a ',' or a ']'"));
+///     }
+/// }
+/// ```
+pub struct ArrayJsonIter<'de>(ArrayInner<'de>);
 
 struct ObjectInner<'de> {
     json: JsonSlice<'de>,
@@ -30,12 +84,12 @@ struct ArrayInner<'de> {
 /// A lazied iterator for JSON object.
 /// # Safety
 /// If the json is invalid, the result is undefined.
-pub struct UnsafeObjectIntoIter<'de>(ObjectInner<'de>);
+pub struct UnsafeObjectJsonIter<'de>(ObjectInner<'de>);
 
 /// A lazied iterator for JSON array.
 /// # Safety
 /// If the json is invalid, the result is undefined.
-pub struct UnsafeArrayIntoIter<'de>(ArrayInner<'de>);
+pub struct UnsafeArrayJsonIter<'de>(ArrayInner<'de>);
 
 impl<'de> ObjectInner<'de> {
     fn new(json: JsonSlice<'de>) -> Self {
@@ -120,37 +174,37 @@ impl<'de> ArrayInner<'de> {
     }
 }
 
-/// Convert a json to a lazy ObjectIntoIter. The iterator is lazied and the parsing will doing when iterating.
+/// Convert a json to a lazy ObjectJsonIter. The iterator is lazied and the parsing will doing when iterating.
 /// The item of the iterator is a Result. If parse error, it will return Err.
-pub fn to_object_iter<'de, I: JsonInput<'de>>(json: I) -> ObjectIntoIter<'de> {
-    ObjectIntoIter(ObjectInner::new(json.to_json_slice()))
+pub fn to_object_iter<'de, I: JsonInput<'de>>(json: I) -> ObjectJsonIter<'de> {
+    ObjectJsonIter(ObjectInner::new(json.to_json_slice()))
 }
 
-/// Convert a json to a lazy ArrayIntoIter. The iterator is lazied and the parsing will doing when iterating.
+/// Convert a json to a lazy ArrayJsonIter. The iterator is lazied and the parsing will doing when iterating.
 /// The item of the iterator is a Result. If parse error, it will return Err.
-pub fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayIntoIter<'de> {
-    ArrayIntoIter(ArrayInner::new(json.to_json_slice()))
+pub fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayJsonIter<'de> {
+    ArrayJsonIter(ArrayInner::new(json.to_json_slice()))
 }
 
-/// Convert a json to a lazy ObjectIntoIter. The iterator is lazied and the parsing will doing when iterating.
+/// Convert a json to a lazy UnsafeObjectJsonIter. The iterator is lazied and the parsing will doing when iterating.
 /// The item of the iterator is a Result. If parse error, it will return Err.
 /// # Safety
 /// If the json is invalid, the result is undefined.
 pub unsafe fn to_object_iter_unchecked<'de, I: JsonInput<'de>>(
     json: I,
-) -> UnsafeObjectIntoIter<'de> {
-    UnsafeObjectIntoIter(ObjectInner::new(json.to_json_slice()))
+) -> UnsafeObjectJsonIter<'de> {
+    UnsafeObjectJsonIter(ObjectInner::new(json.to_json_slice()))
 }
 
-/// Convert a json to a lazy ArrayIntoIter. The iterator is lazied and the parsing will doing when iterating.
+/// Convert a json to a lazy UnsafeArrayJsonIter. The iterator is lazied and the parsing will doing when iterating.
 /// The item of the iterator is a Result. If parse error, it will return Err.
 /// # Safety
 /// If the json is invalid, the result is undefined.
-pub unsafe fn to_array_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> UnsafeArrayIntoIter<'de> {
-    UnsafeArrayIntoIter(ArrayInner::new(json.to_json_slice()))
+pub unsafe fn to_array_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> UnsafeArrayJsonIter<'de> {
+    UnsafeArrayJsonIter(ArrayInner::new(json.to_json_slice()))
 }
 
-impl<'de> Iterator for ObjectIntoIter<'de> {
+impl<'de> Iterator for ObjectJsonIter<'de> {
     type Item = Result<(FastStr, LazyValue<'de>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -158,7 +212,7 @@ impl<'de> Iterator for ObjectIntoIter<'de> {
     }
 }
 
-impl<'de> Iterator for ArrayIntoIter<'de> {
+impl<'de> Iterator for ArrayJsonIter<'de> {
     type Item = Result<LazyValue<'de>>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -166,7 +220,7 @@ impl<'de> Iterator for ArrayIntoIter<'de> {
     }
 }
 
-impl<'de> Iterator for UnsafeObjectIntoIter<'de> {
+impl<'de> Iterator for UnsafeObjectJsonIter<'de> {
     type Item = Result<(FastStr, LazyValue<'de>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -174,7 +228,7 @@ impl<'de> Iterator for UnsafeObjectIntoIter<'de> {
     }
 }
 
-impl<'de> Iterator for UnsafeArrayIntoIter<'de> {
+impl<'de> Iterator for UnsafeArrayJsonIter<'de> {
     type Item = Result<LazyValue<'de>>;
 
     fn next(&mut self) -> Option<Self::Item> {

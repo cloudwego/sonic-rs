@@ -1,7 +1,7 @@
 use super::shared::Shared;
+use super::shared::SharedCtxGuard;
 use crate::serde::tri;
 use crate::util::arc::Arc;
-use crate::value::from::SharedCtxGuard;
 use crate::value::node::Value;
 use crate::value::value_trait::JsonValueTrait;
 use std::fmt::Debug;
@@ -18,6 +18,7 @@ use std::slice::from_raw_parts_mut;
 ///
 /// # Example
 /// ```
+/// use sonic_rs::JsonContainerTrait;
 /// use sonic_rs::{array, Array};
 ///
 /// let mut arr: Array = sonic_rs::from_str("[1, 2, 3]").unwrap();

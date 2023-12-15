@@ -66,7 +66,7 @@ sonic-rs = 0.2
 ## Features
 1. Serde into Rust struct as `serde_json` and `serde`.
 
-2. Parse/Serialize JSON for untyped document, which can be mutable.
+2. Parse/Serialize JSON for untyped `sonic_rs::Value`, which can be mutable.
 
 3. Get specific fields from a JSON with the blazing performance.
 
@@ -89,7 +89,7 @@ Benchmarks:
 
 - Deserialize Struct: Deserialize the JSON into Rust struct. The defined struct and testdata is from [json-benchmark](https://github.com/serde-rs/json-benchmark)
 
-- Deseirlize Untyped: Deseialize the JSON into a document
+- Deseirlize Untyped: Deseialize the JSON into a untyped document
 
 The serialize benchmarks work in the opposite way.
 
@@ -144,49 +144,49 @@ canada/serde_json::from_str
 The benchmark will parse JSON into a document. Sonic-rs seems faster for several reasons:
 - There are also no temporary data structures in sonic-rs, as detailed above.
 - Sonic-rs uses a memory arena for the whole document, resulting in fewer memory allocations, better cache-friendliness, and mutability.
-- The JSON object in sonic-rs's document is actually a vector. Sonic-rs does not build a hashmap.
+- The JSON object in `sonic_rs::Value` is actually a array. Sonic-rs does not build a hashmap.
 
 `cargo bench --bench deserialize_value -- --quiet`
 
 ```
 twitter/sonic_rs_dom::from_slice
-                        time:   [621.16 µs 624.89 µs 628.91 µs]
+                        time:   [550.95 µs 556.10 µs 562.89 µs]
 twitter/sonic_rs_dom::from_slice_unchecked
-                        time:   [588.34 µs 594.28 µs 601.36 µs]
-twitter/simd_json::slice_to_borrowed_value
-                        time:   [1.3001 ms 1.3400 ms 1.3853 ms]
+                        time:   [525.97 µs 530.26 µs 536.06 µs]
 twitter/serde_json::from_slice
-                        time:   [3.9263 ms 3.9822 ms 4.0463 ms]
+                        time:   [3.7599 ms 3.8009 ms 3.8513 ms]
 twitter/serde_json::from_str
-                        time:   [2.8608 ms 2.9187 ms 2.9907 ms]
+                        time:   [2.8618 ms 2.8960 ms 2.9396 ms]
 twitter/simd_json::slice_to_owned_value
-                        time:   [1.7870 ms 1.8044 ms 1.8230 ms]
-
-citm_catalog/sonic_rs_dom::from_slice
-                        time:   [1.8024 ms 1.8234 ms 1.8469 ms]
-citm_catalog/sonic_rs_dom::from_slice_unchecked
-                        time:   [1.7280 ms 1.7731 ms 1.8235 ms]
-citm_catalog/simd_json::slice_to_borrowed_value
-                        time:   [3.5792 ms 3.6082 ms 3.6386 ms]
-citm_catalog/serde_json::from_slice
-                        time:   [8.4606 ms 8.5654 ms 8.6896 ms]
-citm_catalog/serde_json::from_str
-                        time:   [9.3020 ms 9.4903 ms 9.6760 ms]
-citm_catalog/simd_json::slice_to_owned_value
-                        time:   [4.3144 ms 4.4268 ms 4.5604 ms]
+                        time:   [1.7302 ms 1.7557 ms 1.7881 ms]
+twitter/simd_json::slice_to_borrowed_value
+                        time:   [1.1870 ms 1.1951 ms 1.2039 ms]
 
 canada/sonic_rs_dom::from_slice
-                        time:   [5.1103 ms 5.1784 ms 5.2654 ms]
+                        time:   [4.9060 ms 4.9568 ms 5.0213 ms]
 canada/sonic_rs_dom::from_slice_unchecked
-                        time:   [4.8870 ms 4.9165 ms 4.9499 ms]
-canada/simd_json::slice_to_borrowed_value
-                        time:   [12.583 ms 12.866 ms 13.178 ms]
+                        time:   [4.7858 ms 4.8728 ms 4.9803 ms]
 canada/serde_json::from_slice
-                        time:   [17.054 ms 17.218 ms 17.414 ms]
+                        time:   [16.689 ms 16.980 ms 17.335 ms]
 canada/serde_json::from_str
-                        time:   [17.140 ms 17.363 ms 17.614 ms]
+                        time:   [16.398 ms 16.640 ms 16.932 ms]
 canada/simd_json::slice_to_owned_value
-                        time:   [12.351 ms 12.503 ms 12.666 ms]
+                        time:   [12.627 ms 12.846 ms 13.070 ms]
+canada/simd_json::slice_to_borrowed_value
+                        time:   [12.030 ms 12.164 ms 12.323 ms]
+
+citm_catalog/sonic_rs_dom::from_slice
+                        time:   [1.6657 ms 1.6981 ms 1.7341 ms]
+citm_catalog/sonic_rs_dom::from_slice_unchecked
+                        time:   [1.5109 ms 1.5253 ms 1.5424 ms]
+citm_catalog/serde_json::from_slice
+                        time:   [8.1618 ms 8.2566 ms 8.3653 ms]
+citm_catalog/serde_json::from_str
+                        time:   [7.8652 ms 8.0706 ms 8.3074 ms]
+citm_catalog/simd_json::slice_to_owned_value
+                        time:   [3.9834 ms 4.0325 ms 4.0956 ms]
+citm_catalog/simd_json::slice_to_borrowed_value
+                        time:   [3.3196 ms 3.3433 ms 3.3689 ms]
 ```
 
 ### Serialize Untyped
@@ -309,17 +309,21 @@ We provide the `get` and `get_unchecked` apis. `get_unchecked` apis should be us
 
 
 ```rs
-use sonic_rs::{get_from_str, pointer, JsonValue, PointerNode};
+use sonic_rs::JsonValueTrait;
+use sonic_rs::{get, get_unchecked, pointer};
 
 fn main() {
     let path = pointer!["a", "b", "c", 1];
     let json = r#"
         {"u": 123, "a": {"b" : {"c": [null, "found"]}}}
     "#;
-    let target = get(json, &path).unwrap() };
-    // or let target = unsafe { get_unchecked(json, &path).unwrap() };
+    let target = unsafe { get_unchecked(json, &path).unwrap() };
     assert_eq!(target.as_raw_str(), r#""found""#);
     assert_eq!(target.as_str().unwrap(), "found");
+
+    let target = get(json, &path);
+    assert_eq!(target.as_str().unwrap(), "found");
+    assert_eq!(target.unwrap().as_raw_str(), r#""found""#);
 
     let path = pointer!["a", "b", "c", "d"];
     let json = r#"
@@ -329,16 +333,18 @@ fn main() {
     let target = get(json, &path);
     assert!(target.is_err());
 }
+
 ```
 
 ### Parse and Serialize into untyped Value
 
-Parse a JSON into a document, which is mutable. Be aware that the document is managed by a `bump` allocator. It is recommended to convert documents into `Object/ObjectMut` or `Array/ArrayMut` to make them typed and easier to use.
+Parse a JSON into a `sonic_rs::Value`.
 
 ```rs
-use sonic_rs::value::{dom_from_slice, Value};
-use sonic_rs::PointerNode;
-use sonic_rs::{pointer, JsonValue};
+use sonic_rs::{from_str, json};
+use sonic_rs::JsonValueMutTrait;
+use sonic_rs::{pointer, JsonValueTrait, Value};
+
 fn main() {
     let json = r#"{
         "name": "Xiaoming",
@@ -353,9 +359,7 @@ fn main() {
         ]
     }"#;
 
-    let mut dom = dom_from_slice(json.as_bytes()).unwrap();
-    // get the value from dom
-    let root = dom.as_value();
+    let mut root: Value = from_str(json).unwrap();
 
     // get key from value
     let age = root.get("age").as_i64();
@@ -370,21 +374,34 @@ fn main() {
     assert_eq!(phones.as_str().unwrap(), "+123456");
 
     // convert to mutable object
-    let mut obj = dom.as_object_mut().unwrap();
-    let value = Value::new_bool(true);
-    obj.insert("inserted", value);
-    assert!(obj.contains_key("inserted"));
+    let obj = root.as_object_mut().unwrap();
+    obj.insert(&"inserted", true);
+    assert!(obj.contains_key(&"inserted"));
+
+    let mut object = json!({ "A": 65, "B": 66, "C": 67 });
+    *object.get_mut("A").unwrap() = json!({
+        "code": 123,
+        "success": false,
+        "payload": {}
+    });
+
+    let mut val = json!(["A", "B", "C"]);
+    *val.get_mut(2).unwrap() = json!("D");
+
+    // serialize
+    assert_eq!(serde_json::to_string(&val).unwrap(), r#"["A","B","D"]"#);
 }
 ```
 
 ### JSON Iterator
 
-Parse a object or array JSON into a iterator. The `item` of iterator is the `LazyValue`, which is wrapper of a raw JSON slice.
+Parse a object or array JSON into a lazy iterator.
 
 ```rs
 use bytes::Bytes;
-use sonic_rs::{to_array_iter, JsonValue};
-
+use faststr::FastStr;
+use sonic_rs::JsonValueTrait;
+use sonic_rs::{to_array_iter, to_object_iter_unchecked};
 fn main() {
     let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6]"#);
     let iter = to_array_iter(&json);
@@ -395,12 +412,34 @@ fn main() {
     let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6"#);
     let iter = to_array_iter(&json);
     for elem in iter {
+        // do something for each elem
+
         // deal with errors when invalid json
         if elem.is_err() {
             assert_eq!(
                 elem.err().unwrap().to_string(),
                 "Expected this character to be either a ',' or a ']' while parsing at line 1 column 17"
             );
+        }
+    }
+
+    let json = FastStr::from(r#"{"a": null, "b":[1, 2, 3]}"#);
+    let iter = unsafe { to_object_iter_unchecked(&json) };
+    for ret in iter {
+        // deal with errors
+        if ret.is_err() {
+            println!("{}", ret.unwrap_err());
+            return;
+        }
+
+        let (k, v) = ret.unwrap();
+        if k == "a" {
+            assert!(v.is_null());
+        } else if k == "b" {
+            let iter = to_array_iter(v.as_raw_str());
+            for (i, v) in iter.enumerate() {
+                assert_eq!(i + 1, v.as_u64().unwrap() as usize);
+            }
         }
     }
 }
@@ -416,61 +455,9 @@ Detailed examples can be found in [raw_value.rs](examples/raw_value.rs) and [jso
 
 ### Error handle
 
-Sonic's errors is follow as `serde-json` and have a display around the error position.
+Sonic's errors is follow as `serde-json` and have a display around the error position, examples in [handle_error.rs](examples/handle_error.rs).
 
-```rs
-use sonic_rs::{from_slice, from_str, Deserialize};
 
-fn main() {
-    #[allow(dead_code)]
-    #[derive(Debug, Deserialize)]
-    struct Foo {
-        a: Vec<i32>,
-        c: String,
-    }
-
-    // deal with Eof errors
-    let err = from_str::<Foo>("{\"a\": [").unwrap_err();
-    assert!(err.is_eof());
-    eprintln!("{}", err);
-    // EOF while parsing at line 1 column 6
-
-    //     {"a": [
-    //     ......^
-    assert_eq!(
-        format!("{}", err),
-        "EOF while parsing at line 1 column 6\n\n\t{\"a\": [\n\t......^\n"
-    );
-
-    // deal with Data errors
-    let err = from_str::<Foo>("{ \"b\":[]}").unwrap_err();
-    eprintln!("{}", err);
-    assert!(err.is_data());
-    // println as follows:
-    // missing field `a` at line 1 column 8
-    //
-    //     { "b":[]}
-    //     ........^
-    assert_eq!(
-        format!("{}", err),
-        "missing field `a` at line 1 column 8\n\n\t{ \"b\":[]}\n\t........^\n"
-    );
-
-    // deal with Syntax errors
-    let err = from_slice::<Foo>(b"{\"b\":\"\x80\"}").unwrap_err();
-    eprintln!("{}", err);
-    assert!(err.is_syntax());
-    // println as follows:
-    // Invalid UTF-8 characters in json at line 1 column 6
-    //
-    //     {"b":"�"}
-    //     ......^...
-    assert_eq!(
-        format!("{}", err),
-        "Invalid UTF-8 characters in json at line 1 column 6\n\n\t{\"b\":\"�\"}\n\t......^...\n"
-    );
-}
-```
 ## FAQs
 
 ### About UTF-8

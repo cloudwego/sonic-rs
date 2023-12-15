@@ -36,6 +36,7 @@ jobs:
         cargo test
         cargo install cargo-fuzz
         cargo +nightly fuzz run fuzz_value -- -max_total_time=5m
+        ./scripts/test.sh
 
 
   test-linux-aarch64:

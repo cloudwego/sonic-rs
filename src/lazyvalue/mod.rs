@@ -10,7 +10,7 @@ pub use get::{
 };
 pub use iterator::{
     to_array_iter, to_array_iter_unchecked, to_object_iter, to_object_iter_unchecked,
-    ArrayIntoIter, ObjectIntoIter, UnsafeArrayIntoIter, UnsafeObjectIntoIter,
+    ArrayJsonIter, ObjectJsonIter, UnsafeArrayJsonIter, UnsafeObjectJsonIter,
 };
 pub use value::LazyValue;
 
