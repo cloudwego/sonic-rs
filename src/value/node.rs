@@ -1,12 +1,13 @@
 use super::alloctor::SyncBump;
-use super::index::Index;
 use super::object::Pair;
+use super::shared::get_shared_or_new;
 use super::shared::Shared;
 use super::value_trait::JsonContainerTrait;
 use super::value_trait::JsonValueMutTrait;
 use crate::error::Result;
+use crate::index::Index;
 use crate::parser::Parser;
-use crate::pointer::{JsonPointer, PointerNode};
+use crate::pointer::PointerNode;
 use crate::reader::PaddedSliceRead;
 use crate::reader::Reader;
 use crate::serde::tri;
@@ -14,7 +15,6 @@ use crate::util::arc::Arc;
 use crate::util::taggedptr::TaggedPtr;
 use crate::value::alloctor::AllocatorTrait;
 use crate::value::array::Array;
-use crate::value::from::get_shared_or_new;
 use crate::value::object::Object;
 use crate::value::value_trait::JsonValueTrait;
 use crate::visitor::JsonVisitor;
@@ -478,16 +478,16 @@ impl super::value_trait::JsonValueTrait for Value {
     }
 
     #[inline]
-    fn pointer(&self, path: &JsonPointer) -> Option<Self::ValueType<'_>> {
-        let mut node = self;
-        for p in path {
-            if let Some(next) = node.at_pointer(p) {
-                node = next;
-            } else {
-                return None;
-            }
+    fn pointer<P: IntoIterator>(&self, path: P) -> Option<Self::ValueType<'_>>
+    where
+        P::Item: Index,
+    {
+        let path = path.into_iter();
+        let mut value = self;
+        for index in path {
+            value = value.get(index)?;
         }
-        Some(node)
+        Some(value)
     }
 
     #[inline]
@@ -543,16 +543,16 @@ impl JsonValueMutTrait for Value {
     }
 
     #[inline]
-    fn pointer_mut(&mut self, path: &JsonPointer) -> Option<&mut Self::ValueType> {
-        let mut node = self;
-        for p in path {
-            if let Some(next) = node.at_pointer_mut(p) {
-                node = next;
-            } else {
-                return None;
-            }
+    fn pointer_mut<P: IntoIterator>(&mut self, path: P) -> Option<&mut Self::ValueType>
+    where
+        P::Item: Index,
+    {
+        let mut path = path.into_iter();
+        let mut value = self.get_mut(path.next().unwrap())?;
+        for index in path {
+            value = value.get_mut(index)?;
         }
-        Some(node)
+        Some(value)
     }
 
     #[inline]

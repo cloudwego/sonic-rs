@@ -1,12 +1,11 @@
-use super::index::Index;
-use crate::{JsonNumberTrait, JsonPointer, Number};
+use crate::index::Index;
+use crate::{JsonNumberTrait, Number};
 
 /// JsonType is an enum that represents the type of a JSON value.
 ///
 /// # Examples
 /// ```
-///  use sonic_rs::JsonType;
-///  use sonic_rs::Value;
+///  use sonic_rs::{Value, JsonValueTrait, JsonType};
 ///
 ///  let json: Value = sonic_rs::from_str(r#"{"a": 1, "b": true}"#).unwrap();
 ///
@@ -176,7 +175,9 @@ pub trait JsonValueTrait {
     fn get<I: Index>(&self, index: I) -> Option<Self::ValueType<'_>>;
 
     /// Returns the value from pointer path if the `JsonValue` is an array or object. Returns None otherwise.
-    fn pointer(&self, path: &JsonPointer) -> Option<Self::ValueType<'_>>;
+    fn pointer<P: IntoIterator>(&self, path: P) -> Option<Self::ValueType<'_>>
+    where
+        P::Item: Index;
 }
 
 /// A trait for all JSON object or array values. Used by `Value`.
@@ -204,7 +205,9 @@ pub trait JsonValueMutTrait {
     fn as_array_mut(&mut self) -> Option<&mut Self::ArrayType>;
 
     /// Returns the value from pointer path if the `JsonValue` is an `array` or `object`
-    fn pointer_mut(&mut self, path: &JsonPointer) -> Option<&mut Self::ValueType>;
+    fn pointer_mut<P: IntoIterator>(&mut self, path: P) -> Option<&mut Self::ValueType>
+    where
+        P::Item: Index;
 
     /// Returns the value from index if the `JsonValue` is an `array` or `object`
     /// The index may be usize or &str. The `usize` is for array, the `&str` is for object.
@@ -247,7 +250,10 @@ impl<V: JsonValueTrait> JsonValueTrait for Option<V> {
         self.as_ref().and_then(|v| v.get(index))
     }
 
-    fn pointer(&self, path: &JsonPointer) -> Option<Self::ValueType<'_>> {
+    fn pointer<P: IntoIterator>(&self, path: P) -> Option<Self::ValueType<'_>>
+    where
+        P::Item: Index,
+    {
         self.as_ref().and_then(|v| v.pointer(path))
     }
 }
@@ -277,7 +283,10 @@ impl<V: JsonValueMutTrait> JsonValueMutTrait for Option<V> {
         self.as_mut().and_then(|v| v.as_object_mut())
     }
 
-    fn pointer_mut(&mut self, path: &JsonPointer) -> Option<&mut Self::ValueType> {
+    fn pointer_mut<P: IntoIterator>(&mut self, path: P) -> Option<&mut Self::ValueType>
+    where
+        P::Item: Index,
+    {
         self.as_mut().and_then(|v| v.pointer_mut(path))
     }
 
@@ -322,7 +331,10 @@ impl<V: JsonValueTrait, E> JsonValueTrait for Result<V, E> {
         self.as_ref().ok().and_then(|v| v.get(index))
     }
 
-    fn pointer(&self, path: &JsonPointer) -> Option<Self::ValueType<'_>> {
+    fn pointer<P: IntoIterator>(&self, path: P) -> Option<Self::ValueType<'_>>
+    where
+        P::Item: Index,
+    {
         self.as_ref().ok().and_then(|v| v.pointer(path))
     }
 }
@@ -352,7 +364,10 @@ impl<V: JsonValueMutTrait, E> JsonValueMutTrait for Result<V, E> {
         self.as_mut().ok().and_then(|v| v.as_object_mut())
     }
 
-    fn pointer_mut(&mut self, path: &JsonPointer) -> Option<&mut Self::ValueType> {
+    fn pointer_mut<P: IntoIterator>(&mut self, path: P) -> Option<&mut Self::ValueType>
+    where
+        P::Item: Index,
+    {
         self.as_mut().ok().and_then(|v| v.pointer_mut(path))
     }
 
@@ -396,7 +411,10 @@ impl<V: JsonValueTrait> JsonValueTrait for &V {
         (*self).get(index)
     }
 
-    fn pointer(&self, path: &JsonPointer) -> Option<Self::ValueType<'_>> {
+    fn pointer<P: IntoIterator>(&self, path: P) -> Option<Self::ValueType<'_>>
+    where
+        P::Item: Index,
+    {
         (*self).pointer(path)
     }
 }
@@ -431,7 +449,10 @@ impl<V: JsonValueMutTrait> JsonValueMutTrait for &mut V {
         (**self).get_mut(index)
     }
 
-    fn pointer_mut(&mut self, path: &JsonPointer) -> Option<&mut Self::ValueType> {
-        (*self).pointer_mut(path)
+    fn pointer_mut<P: IntoIterator>(&mut self, path: P) -> Option<&mut Self::ValueType>
+    where
+        P::Item: Index,
+    {
+        (**self).pointer_mut(path)
     }
 }
