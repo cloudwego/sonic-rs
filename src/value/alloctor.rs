@@ -52,7 +52,7 @@ impl Default for SyncBump {
 }
 
 impl SyncBump {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self(Mutex::new(Bump::new()))
     }
 }
