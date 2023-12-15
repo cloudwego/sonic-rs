@@ -11,6 +11,7 @@ pub mod reader;
 mod util;
 
 pub mod format;
+pub mod index;
 pub mod lazyvalue;
 pub mod serde;
 pub mod value;
@@ -25,12 +26,12 @@ pub use crate::lazyvalue::{
     get, get_from_bytes, get_from_bytes_unchecked, get_from_faststr, get_from_faststr_unchecked,
     get_from_slice, get_from_slice_unchecked, get_from_str, get_from_str_unchecked, get_many,
     get_many_unchecked, get_unchecked, to_array_iter, to_array_iter_unchecked, to_object_iter,
-    to_object_iter_unchecked, ArrayIntoIter, LazyValue, ObjectIntoIter, UnsafeArrayIntoIter,
-    UnsafeObjectIntoIter,
+    to_object_iter_unchecked, ArrayJsonIter, LazyValue, ObjectJsonIter, UnsafeArrayJsonIter,
+    UnsafeObjectJsonIter,
 };
 
 #[doc(inline)]
-pub use crate::pointer::{JsonPointer, PointerNode, PointerTrait, PointerTree};
+pub use crate::pointer::{JsonPointer, PointerNode, PointerTree};
 
 #[doc(inline)]
 pub use crate::serde::{

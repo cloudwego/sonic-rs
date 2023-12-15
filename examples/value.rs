@@ -1,8 +1,7 @@
-// Parse json into sonic_rs document.
+// Parse json into sonic_rs `Value`.
 
-use serde_json::json;
-use sonic_rs::from_str;
 use sonic_rs::JsonValueMutTrait;
+use sonic_rs::{from_str, json};
 use sonic_rs::{pointer, JsonValueTrait, Value};
 
 fn main() {
@@ -45,6 +44,9 @@ fn main() {
         "payload": {}
     });
 
-    let mut array = json!(["A", "B", "C"]);
-    *array.get_mut(2).unwrap() = json!("D");
+    let mut val = json!(["A", "B", "C"]);
+    *val.get_mut(2).unwrap() = json!("D");
+
+    // serialize
+    assert_eq!(serde_json::to_string(&val).unwrap(), r#"["A","B","D"]"#);
 }

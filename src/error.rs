@@ -263,7 +263,7 @@ pub(crate) enum ErrorCode {
     #[error("JSON `Value` key must be string")]
     ValueKeyMustBeString,
 
-    #[error("Float must be finite")]
+    #[error("Float number must be finite, not be Infinity or NaN")]
     FloatMustBeFinite,
 
     #[error("Expect a numeric key in Value")]

@@ -1,17 +1,17 @@
 use super::array::{Array, DEFAULT_ARRAY_CAP};
 use super::object::Object;
 use crate::serde::number::N;
-use crate::util::arc::Arc;
 use crate::value::node::Value;
 use crate::value::object::DEFAULT_OBJ_CAP;
+use crate::value::shared::get_shared;
+use crate::value::shared::get_shared_or_new;
+use crate::value::shared::set_shared;
 use crate::value::shared::Shared;
 use crate::Number;
 use faststr::FastStr;
 use std::borrow::Cow;
-use std::cell::UnsafeCell;
 use std::convert::Into;
 use std::fmt::Debug;
-use std::mem::ManuallyDrop;
 use std::str::FromStr;
 
 impl From<Number> for Value {
@@ -607,74 +607,6 @@ impl From<Object> for Value {
     }
 }
 
-//////////////////////////////////////////////////////////////////////////////
-
-// We use a thread local to make the allocator can be used in whole `From` trait.
-thread_local! {
-    static SHARED: UnsafeCell<*const Shared> = const { UnsafeCell::new(std::ptr::null()) };
-}
-
-pub(crate) fn get_shared() -> *const Shared {
-    SHARED.with(|shared| unsafe { *shared.get() })
-}
-
-pub(crate) fn get_shared_or_new() -> (&'static Shared, bool) {
-    let shared = SHARED.with(|shared| unsafe { *shared.get() });
-    if shared.is_null() {
-        let arc = ManuallyDrop::new(Arc::new(Shared::new()));
-        (unsafe { &*arc.data_ptr() }, true)
-    } else {
-        (unsafe { &*shared }, false)
-    }
-}
-
-pub(crate) fn set_shared(new_shared: *const Shared) {
-    SHARED.with(|shared| unsafe { *((*shared).get()) = new_shared });
-}
-
-pub(crate) struct SharedCtxGuard {
-    old: *const Shared,
-}
-
-impl SharedCtxGuard {
-    /// assign `new_shared` into SharedCtx
-    pub(crate) fn assign(new_shared: *const Shared) -> Self {
-        let old = get_shared();
-        set_shared(new_shared);
-        Self { old }
-    }
-}
-
-impl Drop for SharedCtxGuard {
-    fn drop(&mut self) {
-        set_shared(self.old);
-    }
-}
-
-pub(crate) struct CheckCtxGuard {
-    is_root: bool,
-}
-
-impl CheckCtxGuard {
-    /// assign `new_shared` into SharedCtx
-    pub(crate) fn new() -> Self {
-        let old = get_shared();
-        if old.is_null() {
-            set_shared(Shared::new_ptr());
-            Self { is_root: true }
-        } else {
-            Self { is_root: false }
-        }
-    }
-}
-
-impl Drop for CheckCtxGuard {
-    fn drop(&mut self) {
-        if self.is_root {
-            set_shared(std::ptr::null());
-        }
-    }
-}
 #[cfg(test)]
 mod test {
 
