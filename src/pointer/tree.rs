@@ -1,4 +1,4 @@
-use super::PointerTrait;
+use crate::index::Index;
 use faststr::FastStr;
 use std::collections::HashMap;
 
@@ -23,7 +23,7 @@ impl PointerTree {
     /// Allow the repeated path.
     pub fn add_path<Path: IntoIterator>(&mut self, path: Path)
     where
-        Path::Item: PointerTrait,
+        Path::Item: Index,
     {
         self.root.add_path(path, self.size);
         self.size += 1;
@@ -49,24 +49,23 @@ pub(crate) struct PointerTreeNode {
     pub(crate) order: Vec<usize>,
     pub(crate) children: PointerTreeInner,
 }
-use PointerTreeInner::{Empty, Index, Key};
 
 impl PointerTreeNode {
     pub fn add_path<Path: IntoIterator>(&mut self, path: Path, order: usize)
     where
-        Path::Item: PointerTrait,
+        Path::Item: Index,
     {
         let mut cur = self;
         let iter = path.into_iter();
         for p in iter {
-            if let Some(key) = p.key() {
-                if matches!(cur.children, Empty) {
-                    cur.children = Key(HashMap::new());
+            if let Some(key) = p.as_key() {
+                if matches!(cur.children, PointerTreeInner::Empty) {
+                    cur.children = PointerTreeInner::Key(HashMap::new());
                 }
                 cur = cur.insert_key(key)
-            } else if let Some(index) = p.index() {
-                if matches!(cur.children, Empty) {
-                    cur.children = Index(HashMap::new());
+            } else if let Some(index) = p.as_index() {
+                if matches!(cur.children, PointerTreeInner::Empty) {
+                    cur.children = PointerTreeInner::Index(HashMap::new());
                 }
                 cur = cur.insert_index(index)
             }
@@ -75,7 +74,7 @@ impl PointerTreeNode {
     }
 
     fn insert_key(&mut self, key: &str) -> &mut Self {
-        if let Key(mkey) = &mut self.children {
+        if let PointerTreeInner::Key(mkey) = &mut self.children {
             mkey.entry(FastStr::new(key)).or_insert(Self::default())
         } else {
             unreachable!()
@@ -83,7 +82,7 @@ impl PointerTreeNode {
     }
 
     fn insert_index(&mut self, idx: usize) -> &mut Self {
-        if let Index(midx) = &mut self.children {
+        if let PointerTreeInner::Index(midx) = &mut self.children {
             midx.entry(idx).or_insert(Self::default())
         } else {
             unreachable!()

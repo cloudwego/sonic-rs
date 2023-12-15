@@ -1,9 +1,11 @@
 use super::reader::{Reader, Reference};
 use crate::error::ErrorCode::{self, *};
 use crate::error::{Error, Result};
-use crate::pointer::{
-    tree::MultiIndex, tree::MultiKey, tree::PointerTreeInner, tree::PointerTreeNode, PointerTrait,
-};
+use crate::index::Index;
+use crate::pointer::tree::MultiIndex;
+use crate::pointer::tree::MultiKey;
+use crate::pointer::tree::PointerTreeInner;
+use crate::pointer::tree::PointerTreeNode;
 use crate::pointer::{JsonPointer, PointerTree};
 use crate::util::arc::Arc;
 use crate::util::arch::{get_nonspace_bits, prefix_xor};
@@ -1926,14 +1928,14 @@ where
 
     pub(crate) fn get_from_with_iter<P: IntoIterator>(&mut self, path: P) -> Result<&'de [u8]>
     where
-        P::Item: PointerTrait,
+        P::Item: Index,
     {
         // temp buf reused when parsing each escaped key
         let mut temp_buf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);
         for jp in path.into_iter() {
-            if let Some(key) = jp.key() {
+            if let Some(key) = jp.as_key() {
                 self.get_from_object(key, &mut temp_buf)
-            } else if let Some(index) = jp.index() {
+            } else if let Some(index) = jp.as_index() {
                 self.get_from_array(index)
             } else {
                 unreachable!();
@@ -1948,14 +1950,14 @@ where
         path: P,
     ) -> Result<&'de [u8]>
     where
-        P::Item: PointerTrait,
+        P::Item: Index,
     {
         // temp buf reused when parsing each escaped key
         let mut temp_buf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);
         for jp in path.into_iter() {
-            if let Some(key) = jp.key() {
+            if let Some(key) = jp.as_key() {
                 self.get_from_object_checked(key, &mut temp_buf)
-            } else if let Some(index) = jp.index() {
+            } else if let Some(index) = jp.as_index() {
                 self.get_from_array_checked(index)
             } else {
                 unreachable!();

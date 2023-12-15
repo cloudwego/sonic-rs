@@ -1,11 +1,12 @@
-use super::{node::Value, value_trait::JsonValueMutTrait};
-use crate::lazyvalue::LazyValue;
 use crate::util::private::Sealed;
 use crate::util::reborrow::DormantMutRef;
-use crate::value::from::SharedCtxGuard;
 use crate::value::object::DEFAULT_OBJ_CAP;
 use crate::value::shared::Shared;
+use crate::value::shared::SharedCtxGuard;
 use crate::value::value_trait::JsonValueTrait;
+use crate::LazyValue;
+use crate::PointerNode;
+use crate::{JsonValueMutTrait, Value};
 use std::convert::Into;
 
 impl<I> std::ops::Index<I> for Value
@@ -120,6 +121,16 @@ pub trait Index: Sealed {
     /// object.
     #[doc(hidden)]
     fn index_or_insert<'v>(&self, v: &'v mut Value) -> &'v mut Value;
+
+    #[doc(hidden)]
+    fn as_key(&self) -> Option<&str> {
+        None
+    }
+
+    #[doc(hidden)]
+    fn as_index(&self) -> Option<usize> {
+        None
+    }
 }
 
 impl Index for usize {
@@ -149,6 +160,10 @@ impl Index for usize {
             .0
             .get_index_mut(*self)
             .unwrap_or_else(|| panic!("index {} out of bounds (len: {})", *self, len))
+    }
+
+    fn as_index(&self) -> Option<usize> {
+        Some(*self)
     }
 }
 
@@ -197,12 +212,60 @@ macro_rules! impl_str_index {
                             &mut inserted.1
                         }, |v| v.0)
                 }
+
+                fn as_key(&self) -> Option<&str> {
+                    Some(self.as_ref())
+                }
             }
         )*
     };
 }
 
 impl_str_index!(str, String, faststr::FastStr);
+
+impl Index for PointerNode {
+    fn value_index_into<'v>(&self, v: &'v Value) -> Option<&'v Value> {
+        match self {
+            PointerNode::Index(i) => i.value_index_into(v),
+            PointerNode::Key(k) => k.value_index_into(v),
+        }
+    }
+
+    fn lazyvalue_index_into<'de>(&self, v: &'de LazyValue<'de>) -> Option<LazyValue<'de>> {
+        match self {
+            PointerNode::Index(i) => i.lazyvalue_index_into(v),
+            PointerNode::Key(k) => k.lazyvalue_index_into(v),
+        }
+    }
+
+    fn index_into_mut<'v>(&self, v: &'v mut Value) -> Option<&'v mut Value> {
+        match self {
+            PointerNode::Index(i) => i.index_into_mut(v),
+            PointerNode::Key(k) => k.index_into_mut(v),
+        }
+    }
+
+    fn index_or_insert<'v>(&self, v: &'v mut Value) -> &'v mut Value {
+        match self {
+            PointerNode::Index(i) => i.index_or_insert(v),
+            PointerNode::Key(k) => k.index_or_insert(v),
+        }
+    }
+
+    fn as_index(&self) -> Option<usize> {
+        match self {
+            PointerNode::Index(i) => Some(*i),
+            PointerNode::Key(_) => None,
+        }
+    }
+
+    fn as_key(&self) -> Option<&str> {
+        match self {
+            PointerNode::Index(_) => None,
+            PointerNode::Key(k) => Some(k.as_ref()),
+        }
+    }
+}
 
 impl<T> Index for &T
 where
@@ -222,5 +285,13 @@ where
 
     fn index_or_insert<'v>(&self, v: &'v mut Value) -> &'v mut Value {
         (**self).index_or_insert(v)
+    }
+
+    fn as_index(&self) -> Option<usize> {
+        (**self).as_index()
+    }
+
+    fn as_key(&self) -> Option<&str> {
+        (**self).as_key()
     }
 }

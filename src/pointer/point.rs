@@ -1,23 +1,5 @@
 use faststr::FastStr;
 
-/// PointerTrait is a trait for the node in json pointer path.
-pub trait PointerTrait {
-    fn key(&self) -> Option<&str>;
-    fn index(&self) -> Option<usize>;
-}
-
-impl From<usize> for PointerNode {
-    fn from(value: usize) -> Self {
-        PointerNode::Index(value)
-    }
-}
-
-impl From<&'static str> for PointerNode {
-    fn from(value: &'static str) -> Self {
-        PointerNode::Key(FastStr::from_static_str(value))
-    }
-}
-
 /// JsonPointer reprsents a json path.
 /// You can use `jsonpointer!["a", "b", 1]` represent a json path.
 /// It means that we will get the json field from `.a.b.1`.
@@ -26,22 +8,6 @@ impl From<&'static str> for PointerNode {
 pub enum PointerNode {
     Key(FastStr),
     Index(usize),
-}
-
-impl PointerTrait for &PointerNode {
-    fn index(&self) -> Option<usize> {
-        match self {
-            PointerNode::Index(idx) => Some(*idx),
-            PointerNode::Key(_) => None,
-        }
-    }
-
-    fn key(&self) -> Option<&str> {
-        match self {
-            PointerNode::Key(key) => Some(key),
-            PointerNode::Index(_) => None,
-        }
-    }
 }
 
 pub type JsonPointer<'a> = Vec<PointerNode>;
@@ -56,36 +22,6 @@ macro_rules! pointer {
             std::boxed::Box::new([$($crate::PointerNode::from($x)),+])
         )
     );
-}
-
-impl<'a> PointerTrait for &'a FastStr {
-    fn index(&self) -> Option<usize> {
-        None
-    }
-
-    fn key(&self) -> Option<&str> {
-        Some(self.as_str())
-    }
-}
-
-impl<'a> PointerTrait for &'a &str {
-    fn index(&self) -> Option<usize> {
-        None
-    }
-
-    fn key(&self) -> Option<&str> {
-        Some(self)
-    }
-}
-
-impl<'a> PointerTrait for &'a usize {
-    fn index(&self) -> Option<usize> {
-        Some(**self)
-    }
-
-    fn key(&self) -> Option<&str> {
-        None
-    }
 }
 
 #[cfg(test)]

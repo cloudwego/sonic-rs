@@ -377,7 +377,7 @@ fn parse_float(
 
     // check inf for float
     if float.is_infinite() {
-        return Err(ErrorCode::NumberOutOfRange);
+        return Err(ErrorCode::FloatMustBeFinite);
     }
     Ok(ParserNumber::Float(float))
 }
