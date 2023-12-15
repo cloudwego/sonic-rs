@@ -1,4 +1,5 @@
 use super::Value;
+use crate::LazyValue;
 use crate::Number;
 
 impl TryFrom<f32> for Value {
@@ -49,5 +50,27 @@ impl TryFrom<f64> for Value {
     #[inline]
     fn try_from(value: f64) -> Result<Self, Self::Error> {
         Number::try_from(value).map(Into::into)
+    }
+}
+
+/// Try parse a `LazyValue` into a `Value`.  `LazyValue` is always a valid JSON, at least it is followed the JSON syntax.
+///
+/// However, in some cases, the parse will failed and return errors, such as the float number in JSON is inifity.
+///
+/// # Examples
+/// ```
+/// use sonic_rs::{Value, Result};
+/// use sonic_rs::JsonValueTrait;
+/// use sonic_rs::LazyValue;
+///
+/// let lazy = sonic_rs::get(r#"{"a": 111e9999999, "b": 2}"#, &["a"]).unwrap();
+/// let x1: Result<Value> = lazy.try_into();
+///
+/// assert!(x1.unwrap_err().to_string().contains("Number is bigger than the maximum value"));
+/// ```
+impl<'de> TryFrom<LazyValue<'de>> for Value {
+    type Error = crate::Error;
+    fn try_from(value: LazyValue<'de>) -> Result<Self, Self::Error> {
+        crate::from_str(value.as_raw_str())
     }
 }

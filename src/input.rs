@@ -11,11 +11,6 @@ pub enum JsonSlice<'de> {
     FastStr(FastStr),
 }
 
-pub struct RawValue2<'de> {
-    json: &'de str,
-    json2: FastStr,
-}
-
 impl<'de> JsonSlice<'de> {
     pub fn slice_ref(&self, subset: &'de [u8]) -> Self {
         match self {

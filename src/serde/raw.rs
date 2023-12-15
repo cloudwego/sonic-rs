@@ -36,6 +36,12 @@ impl RawValue {
     }
 }
 
+impl AsRef<str> for RawValue {
+    fn as_ref(&self) -> &str {
+        &self.json
+    }
+}
+
 impl Clone for Box<RawValue> {
     fn clone(&self) -> Self {
         (**self).to_owned()

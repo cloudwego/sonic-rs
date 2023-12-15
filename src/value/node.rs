@@ -43,8 +43,9 @@ use std::str::from_utf8_unchecked;
 /// let v1 = json!({"a": 123});
 /// let v2: Value = sonic_rs::from_str(r#"{"a": 123}"#).unwrap();
 /// let v3 = {
-///     let map = HashMap::new();
-///     map.insert("a", 123);
+///     use std::collections::HashMap;
+///     let mut map: HashMap<&str, i32> = HashMap::new();
+///     map.insert(&"a", 123);
 ///     sonic_rs::to_value(&map).unwrap()
 /// };
 ///
