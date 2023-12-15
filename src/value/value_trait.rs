@@ -52,7 +52,7 @@ pub trait JsonValueTrait {
     /// use sonic_rs::value::Value;
     /// use sonic_rs::Result;
     ///
-    /// let json = sonic_rs:from_str(r#"{"a": 1, "b": true}"#).unwrap();
+    /// let json: Value = sonic_rs::from_str(r#"{"a": 1, "b": true}"#).unwrap();
     ///
     /// assert_eq!(json.get_type(), JsonType::Object);
     ///
@@ -168,7 +168,7 @@ pub trait JsonValueTrait {
     /// use sonic_rs::value::JsonValueTrait;
     /// use sonic_rs::value::Value;
     ///
-    /// let json = Value::from_str(r#"{"a": 1, "b": true}"#).unwrap();
+    /// let json: Value = sonic_rs::from_str(r#"{"a": 1, "b": true}"#).unwrap();
     ///
     /// assert!(json.get("a").is_number());
     /// assert!(json.get("unknown").is_none());
