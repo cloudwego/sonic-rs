@@ -127,6 +127,7 @@ impl<'de> JsonValueTrait for LazyValue<'de> {
 }
 
 impl<'de> LazyValue<'de> {
+    /// Deserialize the raw json text into Rust type
     pub fn deserialize<T: Deserialize<'de>>(&'de self) -> Result<T> {
         let reader = SliceRead::new(self.raw.as_ref());
         let mut deserializer = Deserializer::new(reader);

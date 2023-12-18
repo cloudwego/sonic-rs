@@ -3,7 +3,7 @@ use crate::util::reborrow::DormantMutRef;
 use crate::value::object::DEFAULT_OBJ_CAP;
 use crate::value::shared::Shared;
 use crate::value::shared::SharedCtxGuard;
-use crate::value::value_trait::JsonValueTrait;
+use crate::JsonValueTrait;
 use crate::LazyValue;
 use crate::PointerNode;
 use crate::{JsonValueMutTrait, Value};
@@ -100,7 +100,7 @@ impl<I: Index> std::ops::IndexMut<I> for Value {
     }
 }
 
-/// An indexing trait for immutable `sonic_rs::Value`.
+/// An indexing trait for JSON.
 ///
 pub trait Index: Sealed {
     /// Return None if the index is not already in the array or object.
@@ -171,6 +171,7 @@ macro_rules! impl_str_index {
     ($($t: ty),*) => {
         $(
             impl Index for &$t {
+                #[inline]
                 fn value_index_into<'v>(&self, v: &'v Value) -> Option<&'v Value> {
                     if !v.is_object() {
                         return None;
@@ -178,10 +179,12 @@ macro_rules! impl_str_index {
                     v.get_key(*self)
                 }
 
+                #[inline]
                 fn lazyvalue_index_into<'de>(&self, v: &'de LazyValue<'de>) -> Option<LazyValue<'de>> {
                     v.get_key(*self)
                 }
 
+                #[inline]
                 fn index_into_mut<'v>(&self, v: &'v mut Value) -> Option<&'v mut Value> {
                     if !v.is_object() {
                         return None;
@@ -189,6 +192,7 @@ macro_rules! impl_str_index {
                     v.get_key_mut(*self).map(|v| v.0)
                 }
 
+                #[inline]
                 fn index_or_insert<'v>(&self, v: &'v mut Value) -> &'v mut Value {
                     let mut shared = v.shared_parts();
                     if v.is_null() {
@@ -213,6 +217,7 @@ macro_rules! impl_str_index {
                         }, |v| v.0)
                 }
 
+                #[inline]
                 fn as_key(&self) -> Option<&str> {
                     Some(self.as_ref())
                 }
@@ -224,6 +229,7 @@ macro_rules! impl_str_index {
 impl_str_index!(str, String, faststr::FastStr);
 
 impl Index for PointerNode {
+    #[inline]
     fn value_index_into<'v>(&self, v: &'v Value) -> Option<&'v Value> {
         match self {
             PointerNode::Index(i) => i.value_index_into(v),
@@ -231,6 +237,7 @@ impl Index for PointerNode {
         }
     }
 
+    #[inline]
     fn lazyvalue_index_into<'de>(&self, v: &'de LazyValue<'de>) -> Option<LazyValue<'de>> {
         match self {
             PointerNode::Index(i) => i.lazyvalue_index_into(v),
@@ -238,6 +245,7 @@ impl Index for PointerNode {
         }
     }
 
+    #[inline]
     fn index_into_mut<'v>(&self, v: &'v mut Value) -> Option<&'v mut Value> {
         match self {
             PointerNode::Index(i) => i.index_into_mut(v),
@@ -245,6 +253,7 @@ impl Index for PointerNode {
         }
     }
 
+    #[inline]
     fn index_or_insert<'v>(&self, v: &'v mut Value) -> &'v mut Value {
         match self {
             PointerNode::Index(i) => i.index_or_insert(v),
@@ -252,6 +261,7 @@ impl Index for PointerNode {
         }
     }
 
+    #[inline]
     fn as_index(&self) -> Option<usize> {
         match self {
             PointerNode::Index(i) => Some(*i),
@@ -259,6 +269,7 @@ impl Index for PointerNode {
         }
     }
 
+    #[inline]
     fn as_key(&self) -> Option<&str> {
         match self {
             PointerNode::Index(_) => None,
@@ -271,26 +282,32 @@ impl<T> Index for &T
 where
     T: ?Sized + Index,
 {
+    #[inline]
     fn value_index_into<'v>(&self, v: &'v Value) -> Option<&'v Value> {
         (**self).value_index_into(v)
     }
 
+    #[inline]
     fn lazyvalue_index_into<'de>(&self, v: &'de LazyValue<'de>) -> Option<LazyValue<'de>> {
         (**self).lazyvalue_index_into(v)
     }
 
+    #[inline]
     fn index_into_mut<'v>(&self, v: &'v mut Value) -> Option<&'v mut Value> {
         (**self).index_into_mut(v)
     }
 
+    #[inline]
     fn index_or_insert<'v>(&self, v: &'v mut Value) -> &'v mut Value {
         (**self).index_or_insert(v)
     }
 
+    #[inline]
     fn as_index(&self) -> Option<usize> {
         (**self).as_index()
     }
 
+    #[inline]
     fn as_key(&self) -> Option<&str> {
         (**self).as_key()
     }

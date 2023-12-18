@@ -64,29 +64,29 @@ macro_rules! json {
     // Must be invoked as: json_internal!($($json)+)
     //////////////////////////////////////////////////////////////////////////
     (true) => {
-        $crate::value::node::Value::new_bool(true, std::ptr::null())
+        $crate::Value::new_bool(true, std::ptr::null())
     };
 
     (false) => {
-        $crate::value::node::Value::new_bool(false, std::ptr::null())
+        $crate::Value::new_bool(false, std::ptr::null())
     };
 
     (null) => {
-        $crate::value::node::Value::new_null(std::ptr::null())
+        $crate::Value::new_null(std::ptr::null())
     };
 
     ([]) => {
-        $crate::value::array::Array::new().into_value()
+        $crate::Array::new().into_value()
     };
 
     ({}) => {
-        $crate::value::object::Object::new().into_value()
+        $crate::Object::new().into_value()
     };
 
     // Hide distracting implementation details from the generated rustdoc.
     ($($json:tt)+) => {
         {
-            use $crate::value::value_trait::JsonValueTrait;
+            use $crate::JsonValueTrait;
             let shared = unsafe { &*$crate::value::shared::Shared::new_ptr() };
             let mut value = json_internal!(shared, $($json)+);
             if value.is_number() {
@@ -251,7 +251,7 @@ macro_rules! json_internal {
     // Insert the current entry followed by trailing comma.
     (@object $shared:expr, $object:ident [$($key:tt)+] ($value:expr) , $($rest:tt)*) => {
         let key: &str = ($($key)+).as_ref();
-        let pair: $crate::value::object::Pair = ($crate::value::node::Value::copy_str(key, $shared), $value);
+        let pair = ($crate::Value::copy_str(key, $shared), $value);
         let _ = $object.append_pair(pair);
         json_internal!(@object $shared, $object () ($($rest)*) ($($rest)*));
     };
@@ -264,7 +264,7 @@ macro_rules! json_internal {
     // Insert the last entry without trailing comma.
     (@object $shared:expr, $object:ident [$($key:tt)+] ($value:expr)) => {
         let key: &str = ($($key)+).as_ref();
-        let pair: $crate::value::object::Pair = ($crate::value::node::Value::copy_str(key, $shared), $value);
+        let pair = ($crate::Value::copy_str(key, $shared), $value);
         let _ = $object.append_pair(pair);
     };
 
@@ -351,19 +351,19 @@ macro_rules! json_internal {
     //////////////////////////////////////////////////////////////////////////
 
     ($shared:expr, true) => {
-        $crate::value::node::Value::new_bool(true, $shared)
+        $crate::Value::new_bool(true, $shared)
     };
 
     ($shared:expr, false) => {
-        $crate::value::node::Value::new_bool(false, $shared)
+        $crate::Value::new_bool(false, $shared)
     };
 
     ($shared:expr, null) => {
-        $crate::value::node::Value::new_null($shared)
+        $crate::Value::new_null($shared)
     };
 
     ($shared:expr, []) => {
-        $crate::value::node::Value::new_array($shared, 0)
+        $crate::Value::new_array($shared, 0)
     };
 
     ($shared:expr, [ $($tt:tt)+ ]) => {
@@ -371,12 +371,12 @@ macro_rules! json_internal {
     };
 
     ($shared:expr, {}) => {
-        $crate::value::node::Value::new_object($shared, 0)
+        $crate::Value::new_object($shared, 0)
     };
 
     ($shared:expr, { $($tt:tt)+ }) => {
         {
-            let mut obj_value = $crate::value::node::Value::new_object($shared, 0);
+            let mut obj_value = $crate::Value::new_object($shared, 0);
             json_internal!(@object $shared, obj_value () ($($tt)+) ($($tt)+));
             obj_value
         }
@@ -385,7 +385,7 @@ macro_rules! json_internal {
     // Any Serialize type: numbers, strings, struct literals, variables etc.
     // Must be below every other rule.
     ($shared:expr, $other:expr) => {
-        $crate::value::ser::to_value_in($shared.into(), &$other).unwrap()
+        $crate::value::to_value_in($shared.into(), &$other).unwrap()
     };
 }
 
@@ -397,7 +397,7 @@ macro_rules! json_internal {
 macro_rules! json_internal_array {
     ($shared:expr, $($content:tt)*) => {
         {
-            let mut arr_value = $crate::value::node::Value::new_array($shared, 0);
+            let mut arr_value = $crate::Value::new_array($shared, 0);
             $(
                 arr_value.append_value($content);
             )*

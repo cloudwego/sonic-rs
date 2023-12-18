@@ -528,7 +528,7 @@ impl Array {
     /// # Leaking
     ///
     /// If the returned iterator goes out of scope without being dropped (due to
-    /// [`mem::forget`], for example), the array may have lost and leaked
+    /// [`std::mem::forget`], for example), the array may have lost and leaked
     /// elements arbitrarily, including elements outside the range.
     ///
     /// # Examples
