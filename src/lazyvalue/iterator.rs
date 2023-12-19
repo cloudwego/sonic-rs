@@ -266,12 +266,22 @@ mod test {
         let mut test_ok = |key: &str, val: &str, typ: JsonType| {
             let ret = iter.next().unwrap().unwrap();
             assert_eq!(ret.0.as_str(), key);
-            assert_eq!(ret.1.as_raw_slice(), val.as_bytes(), "key is {} ", key);
+            assert_eq!(
+                ret.1.as_raw_str().as_bytes(),
+                val.as_bytes(),
+                "key is {} ",
+                key
+            );
             assert_eq!(ret.1.get_type(), typ);
 
             let ret = iter_unchecked.next().unwrap().unwrap();
             assert_eq!(ret.0.as_str(), key);
-            assert_eq!(ret.1.as_raw_slice(), val.as_bytes(), "key is {} ", key);
+            assert_eq!(
+                ret.1.as_raw_str().as_bytes(),
+                val.as_bytes(),
+                "key is {} ",
+                key
+            );
             assert_eq!(ret.1.get_type(), typ);
         };
         test_ok("string", r#""Hello, world!""#, JsonType::String);
@@ -334,7 +344,7 @@ mod test {
             assert_eq!(ret.get_type(), typ);
 
             let ret = iter_unchecked.next().unwrap().unwrap();
-            assert_eq!(ret.as_raw_slice(), val.as_bytes());
+            assert_eq!(ret.as_raw_str().as_bytes(), val.as_bytes());
             assert_eq!(ret.get_type(), typ);
         };
 

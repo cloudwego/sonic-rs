@@ -11,6 +11,7 @@ pub mod object;
 mod partial_eq;
 mod ser;
 mod value_trait;
+pub(crate) mod visitor;
 
 #[doc(inline)]
 pub use self::array::Array;

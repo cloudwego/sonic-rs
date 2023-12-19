@@ -2,6 +2,7 @@
 #![feature(no_sanitize)]
 #![cfg_attr(not(doctest), doc = include_str!("../README.md"))]
 #![allow(dead_code)]
+#![doc(test(attr(warn(unused))))]
 
 mod error;
 mod input;
@@ -15,7 +16,6 @@ pub mod index;
 pub mod lazyvalue;
 pub mod serde;
 pub mod value;
-pub mod visitor;
 pub mod writer;
 
 #[doc(inline)]

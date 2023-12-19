@@ -10,8 +10,8 @@ use crate::util::utf8::from_utf8;
 use bytes::Bytes;
 use faststr::FastStr;
 
-/// Gets a field from path. And return it as a `LazyValue`. If
-/// not found, return a err.
+/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
+/// If path is empty, return the whole JSON as a `LazyValue`.
 ///
 /// # Safety
 /// The JSON must be valid and well-formed, otherwise it may return unexpected result.
@@ -37,8 +37,8 @@ where
     get_unchecked(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If
-/// not found, return a err.
+/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
+/// If path is empty, return the whole JSON as a `LazyValue`.
 ///
 /// # Safety
 /// The JSON must be valid and well-formed, otherwise it may return unexpected result.
@@ -52,8 +52,8 @@ where
     get_unchecked(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If
-/// not found, return a err.
+/// Gets a field from path. And return it as a `LazyValue`.  If not found, return a err.
+/// If path is empty, return the whole JSON as a `LazyValue`.
 ///
 /// # Safety
 /// The JSON must be valid and well-formed, otherwise it may return unexpected result.
@@ -67,8 +67,8 @@ where
     get_unchecked(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If
-/// not found, return a err.
+/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
+/// If path is empty, return the whole JSON as a `LazyValue`.
 ///
 /// # Safety
 /// The JSON must be valid and well-formed, otherwise it may return unexpected result.
@@ -94,8 +94,8 @@ where
     get_unchecked(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If
-/// not found, return a err.
+/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
+/// If path is empty, return the whole JSON as a `LazyValue`.
 ///
 /// The input `json` is allowed to be `&FastStr`, `&[u8]`, `&str`, `&String` or `&bytes::Bytes`.
 ///
@@ -172,8 +172,8 @@ where
         .collect())
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If
-/// not found or JSON is invalid, it will return a err.
+/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
+/// If path is empty, return the whole JSON as a `LazyValue`.
 ///
 /// # Examples
 /// ```
@@ -193,8 +193,8 @@ where
     get(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If
-/// not found or JSON is invalid, it will return a err.
+/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
+/// If path is empty, return the whole JSON as a `LazyValue`.
 ///
 /// # Examples
 /// ```
@@ -214,8 +214,24 @@ where
     get(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If
-/// not found or JSON is invalid, it will return a err.
+/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
+/// If path is empty, return the whole JSON as a `LazyValue`.
+///
+/// # Examples
+/// ```
+/// # use sonic_rs::get_from_bytes;
+/// use bytes::Bytes;
+///
+/// let bs = Bytes::from(r#"{"a": 1}"#);
+/// let lv = get_from_bytes(&bs, &["a"]).unwrap();
+///
+/// assert_eq!(lv.as_raw_str(), "1");
+///
+/// /// not found the field "a"
+/// let lv = get_from_bytes(&bs, &["b"]);
+/// assert!(lv.is_err());
+/// ```
+///
 pub fn get_from_bytes<Path: IntoIterator>(json: &Bytes, path: Path) -> Result<LazyValue<'_>>
 where
     Path::Item: Index,
@@ -223,8 +239,23 @@ where
     get(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If
-/// not found or JSON is invalid, it will return a err.
+/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
+/// If path is empty, return the whole JSON as a `LazyValue`.
+///
+/// # Examples
+/// ```
+/// # use sonic_rs::get_from_faststr;
+/// use faststr::FastStr;
+///
+/// let fs = FastStr::new(r#"{"a": 1}"#);
+/// let lv = get_from_faststr(&fs, &["a"]).unwrap();
+/// assert_eq!(lv.as_raw_str(), "1");
+///
+/// /// not found the field "a"
+/// let lv = get_from_slice(&fs, &["b"]);
+/// assert!(lv.is_err());
+/// ```
+///
 pub fn get_from_faststr<Path: IntoIterator>(json: &FastStr, path: Path) -> Result<LazyValue<'_>>
 where
     Path::Item: Index,
@@ -232,8 +263,8 @@ where
     get(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If
-/// not found, return a err.
+/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
+/// If path is empty, return the whole JSON as a `LazyValue`.
 ///
 /// The input `json` is allowed to be `&FastStr`, `&[u8]`, `&str`, `&String` or `&bytes::Bytes`.
 ///
@@ -483,17 +514,17 @@ mod test {
         test_many_ok(get_many(&json, &tree).unwrap());
 
         fn test_many_ok(many: Vec<LazyValue<'_>>) {
-            assert_eq!(many[0].as_raw_slice(), b"\"hello, world!\"");
+            assert_eq!(many[0].as_raw_str(), "\"hello, world!\"");
             assert_eq!(
-                many[1].as_raw_slice(),
-                b"{\n                        \"a_b_c\":\"hello, world!\"\n                    }"
+                many[1].as_raw_str(),
+                "{\n                        \"a_b_c\":\"hello, world!\"\n                    }"
             );
-            assert_eq!(many[2].as_raw_slice(), b"1");
-            assert_eq!(many[3].as_raw_slice(), b"{\n                    \"a_b\":{\n                        \"a_b_c\":\"hello, world!\"\n                    },\n                    \"a_a\": [0, 1, 2]\n                }");
-            assert_eq!(many[4].as_raw_slice(), many[3].as_raw_slice());
-            assert_eq!(many[5].as_raw_slice(), b"true");
+            assert_eq!(many[2].as_raw_str(), "1");
+            assert_eq!(many[3].as_raw_str(), "{\n                    \"a_b\":{\n                        \"a_b_c\":\"hello, world!\"\n                    },\n                    \"a_a\": [0, 1, 2]\n                }");
+            assert_eq!(many[4].as_raw_str(), many[3].as_raw_str());
+            assert_eq!(many[5].as_raw_str(), "true");
             // we have strip the leading or trailing spaces
-            assert_eq!(many[6].as_raw_slice(), b"{\n                \"b\": [0, 1, true],\n                \"a\": {\n                    \"a_b\":{\n                        \"a_b_c\":\"hello, world!\"\n                    },\n                    \"a_a\": [0, 1, 2]\n                }\n            }");
+            assert_eq!(many[6].as_raw_str(), "{\n                \"b\": [0, 1, true],\n                \"a\": {\n                    \"a_b\":{\n                        \"a_b_c\":\"hello, world!\"\n                    },\n                    \"a_a\": [0, 1, 2]\n                }\n            }");
         }
     }
 }

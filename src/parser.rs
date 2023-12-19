@@ -13,7 +13,7 @@ use crate::util::num::{parse_number, ParserNumber};
 use crate::util::string::*;
 use crate::util::unicode::{codepoint_to_utf8, hex_to_u32_nocheck};
 use crate::value::shared::Shared;
-use crate::visitor::JsonVisitor;
+use crate::value::visitor::JsonVisitor;
 use crate::JsonType;
 use arrayref::array_ref;
 use faststr::FastStr;
@@ -133,8 +133,7 @@ fn skip_container_loop(
     None
 }
 
-/// A structure that used to get from json
-pub struct Parser<R> {
+pub(crate) struct Parser<R> {
     pub(crate) read: R,
     error_index: usize,                     // mark the error position
     nospace_bits: u64,                      // SIMD marked nospace bitmap
