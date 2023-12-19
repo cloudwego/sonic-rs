@@ -2,9 +2,35 @@ use crate::index::Index;
 use faststr::FastStr;
 use std::collections::HashMap;
 
-/// PointerTree is designed for `get_many`.
+/// PointerTree is designed for [`crate::get_many`] and [`crate::get_many_unchecked`].
 /// It is recommended to use `get_many` when you need to get multiple values from json.
 /// Instead of using `get` multiple times.
+///
+/// # Examples
+///
+/// ```
+/// # use sonic_rs::pointer;
+/// # use sonic_rs::PointerTree;
+///
+/// let json = r#"
+/// {"u": 123, "a": {"b" : {"c": [null, "found"]}}}"#;
+///
+/// // build a pointer tree, representing multile json path
+/// let mut tree = PointerTree::new();
+///
+/// tree.add_path(&["u"]);
+/// tree.add_path(&pointer!["a", "b", "c", 1]);
+///
+/// let nodes = unsafe { sonic_rs::get_many_unchecked(json, &tree) };
+///
+/// // the node order is as the order of `add_path`
+/// for val in nodes.unwrap() {
+/// println!("{}", val.as_raw_str());
+/// // 123
+/// // "found"
+/// }
+/// ```
+
 #[derive(Debug, Default)]
 pub struct PointerTree {
     // the count of path

@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::str::from_utf8_unchecked;
 
-use bytes::Bytes;
 use faststr::FastStr;
 use serde::Deserialize;
 
@@ -19,7 +18,7 @@ use crate::serde::Number;
 use crate::JsonType;
 use crate::{from_str, JsonValueTrait};
 
-/// LazyValue is a value that wrappers the raw JSON text. It is similar as `RawValue` but with
+/// LazyValue is a value that wrappers a raw JSON text. It is similar as `RawValue` but with
 /// more APIs. It is used for lazy parsing, which means the JSON text is not parsed until it is
 /// used.
 ///
@@ -87,7 +86,7 @@ impl<'de> JsonValueTrait for LazyValue<'de> {
     }
 
     fn as_str(&self) -> Option<&str> {
-        let mut parser = Parser::new(SliceRead::new(self.as_raw_slice()));
+        let mut parser = Parser::new(SliceRead::new(self.as_raw_str().as_bytes()));
         parser.read.eat(1);
         match parser.parse_string_raw(unsafe { &mut *self.own.get() }) {
             Ok(Reference::Borrowed(u)) => unsafe { Some(from_utf8_unchecked(u)) },
@@ -127,19 +126,45 @@ impl<'de> JsonValueTrait for LazyValue<'de> {
 }
 
 impl<'de> LazyValue<'de> {
-    /// Deserialize the raw json text into Rust type
+    /// Deserialize the raw json text into any type that implements `serde::Deserialize`
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sonic_rs::{get, LazyValue, Value};
+    /// use serde::Deserialize;
+    ///
+    /// let input = r#"{
+    ///   "a": "hello world",
+    ///   "b": true,
+    ///   "c": [0, 1, 2],
+    /// }"#;
+    /// let lv: LazyValue = get(input, &["c"]).unwrap();
+    ///
+    /// // deserialize into Vec
+    /// let v: Vec<u64> = lv.deserialize().unwrap();
+    /// assert_eq!(v, [0, 1, 2]);
+    ///
+    /// // deserialize into `sonic_rs::Value`
+    /// let v: Value = lv.deserialize().unwrap();
+    /// assert_eq!(v, [0, 1, 2]);
+    /// ```
     pub fn deserialize<T: Deserialize<'de>>(&'de self) -> Result<T> {
         let reader = SliceRead::new(self.raw.as_ref());
         let mut deserializer = Deserializer::new(reader);
         T::deserialize(&mut deserializer)
     }
 
-    /// export the raw json text as slice
-    pub fn as_raw_slice(&self) -> &[u8] {
-        self.raw.as_ref()
-    }
-
-    /// export the raw json text as str
+    /// Export the raw JSON text as `str`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sonic_rs::{get, LazyValue};
+    ///
+    /// let lv: LazyValue = sonic_rs::get(r#"{"a": "hello world"}"#, &["a"]).unwrap();
+    /// assert_eq!(lv.as_raw_str(), "\"hello world\"");
+    /// ```
     pub fn as_raw_str(&self) -> &str {
         // # Safety
         // it is validate when using to_object_iter/get ...
@@ -147,7 +172,16 @@ impl<'de> LazyValue<'de> {
         unsafe { from_utf8_unchecked(self.raw.as_ref()) }
     }
 
-    /// export the raw json text as Cow str, the lifetime of Cow is the same as the json text
+    /// Export the raw JSON text as `Cow<'de, str>`.  The lifetime `'de` is the origin JSON.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sonic_rs::{get, LazyValue};
+    ///
+    /// let lv: LazyValue = sonic_rs::get(r#"{"a": "hello world"}"#, &["a"]).unwrap();
+    /// assert_eq!(lv.as_raw_cow(), "\"hello world\"");
+    /// ```
     pub fn as_raw_cow(&self) -> Cow<'de, str> {
         match &self.raw {
             JsonSlice::Raw(r) => Cow::Borrowed(unsafe { from_utf8_unchecked(r) }),
@@ -155,18 +189,26 @@ impl<'de> LazyValue<'de> {
         }
     }
 
-    /// export the raw json text as bytes
-    /// Note: if the input json is not bytes or faststr, there will be a copy.
-    pub fn as_raw_bytes(&self) -> Bytes {
-        match &self.raw {
-            JsonSlice::Raw(r) => Bytes::copy_from_slice(r),
-            // if build from Bytes,
-            JsonSlice::FastStr(f) => f.clone().into_bytes(),
-        }
-    }
-
-    /// export the raw json text as faststr
-    /// Note: if the input json is not bytes or faststr, there will be a copy.
+    /// Export the raw json text as faststr.
+    ///
+    /// # Note
+    /// If the input json is not bytes or faststr, there will be a string copy.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sonic_rs::{get, LazyValue};
+    /// use faststr::FastStr;
+    ///
+    /// let lv: LazyValue = sonic_rs::get(r#"{"a": "hello world"}"#, &["a"]).unwrap();
+    /// // will copy the raw_str into a new faststr
+    /// assert_eq!(lv.as_raw_faststr(), "\"hello world\"");
+    ///
+    /// let fs = FastStr::new(#"{"a": "hello world"}");
+    /// let lv: LazyValue = sonic_rs::get(&fs, &["a"]).unwrap();
+    /// assert_eq!(lv.as_raw_faststr(), "\"hello world\""); // zero-copy
+    ///
+    /// ```
     pub fn as_raw_faststr(&self) -> FastStr {
         match &self.raw {
             JsonSlice::Raw(r) => unsafe { FastStr::from_u8_slice_unchecked(r) },
@@ -175,7 +217,7 @@ impl<'de> LazyValue<'de> {
     }
 
     /// get with index from lazyvalue
-    pub fn get_index(&'de self, index: usize) -> Option<Self> {
+    pub(crate) fn get_index(&'de self, index: usize) -> Option<Self> {
         let path = [index];
         match &self.raw {
             // #Safety
@@ -186,40 +228,13 @@ impl<'de> LazyValue<'de> {
     }
 
     /// get with key from lazyvalue
-    pub fn get_key(&'de self, key: &str) -> Option<Self> {
+    pub(crate) fn get_key(&'de self, key: &str) -> Option<Self> {
         let path = [key];
         match &self.raw {
             // #Safety
             // LazyValue is built with JSON validation, so we can use get_unchecked here.
             JsonSlice::Raw(r) => unsafe { get_unchecked(*r, path.iter()).ok() },
             JsonSlice::FastStr(f) => unsafe { get_unchecked(f, path.iter()).ok() },
-        }
-    }
-
-    pub fn into_cow_str(self) -> Result<Cow<'de, str>> {
-        let mut parser = Parser::new(SliceRead::new(self.raw.as_ref()));
-        parser.read.eat(1);
-        match parser.parse_string_raw(unsafe { &mut *self.own.get() })? {
-            Reference::Borrowed(u) => match self.raw {
-                JsonSlice::Raw(raw) => unsafe {
-                    // u must be from raw
-                    let len = u.len();
-                    let ptr = u.as_ptr();
-                    let offset = ptr.offset_from(raw.as_ptr()) as usize;
-                    debug_assert!(offset + len <= raw.len());
-                    Ok(Cow::Borrowed(from_utf8_unchecked(
-                        raw.get_unchecked(offset..offset + len),
-                    )))
-                },
-                JsonSlice::FastStr(_) => {
-                    Ok(Cow::Owned(String::from(unsafe { from_utf8_unchecked(u) })))
-                }
-            },
-            Reference::Copied(_) => unsafe {
-                Ok(Cow::Owned(String::from_utf8_unchecked(
-                    self.own.into_inner(),
-                )))
-            },
         }
     }
 
@@ -267,7 +282,8 @@ mod test {
             value
                 .pointer(&pointer!["object", "a"])
                 .unwrap()
-                .as_raw_bytes()
+                .as_raw_str()
+                .as_bytes()
                 .as_ref(),
             b"\"aaa\""
         );
@@ -307,19 +323,13 @@ mod test {
         assert!(value.pointer(&pointer!["array", 3]).is_none());
         assert!(value.pointer(&pointer!["array", 4]).is_none());
         assert_eq!(value.pointer(&pointer!["arrempty", 1]).as_str(), None);
-        assert_eq!(
-            value.get("string").unwrap().into_cow_str().unwrap(),
-            "hello"
-        );
+        assert_eq!(value.get("string").as_str().unwrap(), "hello");
 
         let value = unsafe { get_unchecked(TEST_JSON, pointer![].iter()).unwrap() };
-        assert_eq!(
-            value.get("string_escape").unwrap().into_cow_str().unwrap(),
-            "\"hello\""
-        );
+        assert_eq!(value.get("string_escape").as_str().unwrap(), "\"hello\"");
 
         let value = unsafe { get_unchecked(TEST_JSON, pointer![].iter()).unwrap() };
-        assert!(value.get("int").unwrap().into_cow_str().is_err());
+        assert!(value.get("int").as_str().is_none());
     }
 
     #[test]

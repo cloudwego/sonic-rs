@@ -109,7 +109,7 @@ fuzz_target!(|data: &[u8]| {
 });
 
 fn compare_lazyvalue(jv: &JValue, sv: &sonic_rs::LazyValue) {
-    let out = sv.as_raw_slice();
+    let out = sv.as_raw_str().as_bytes();
     let sv2: sonic_rs::Value = sonic_rs::from_slice(out).unwrap();
     compare_value(jv, &sv2);
 }

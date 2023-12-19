@@ -3,7 +3,9 @@ use crate::util::private::Sealed;
 use bytes::Bytes;
 use faststr::FastStr;
 
-/// JsonSlice is a wrapper for different json input
+/// JsonSlice is a wrapper for different json input.
+///
+#[doc(hidden)]
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum JsonSlice<'de> {
