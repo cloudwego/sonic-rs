@@ -1352,6 +1352,7 @@ impl Value {
         parser: &mut Parser<R>,
     ) -> Result<()> {
         let remain_len = parser.read.remain();
+        // FIXME: maybe JSON is too large, we need check length here.
         let nodes = NODE_BUF.with(|buf| {
             let mut nodes = buf.borrow_mut();
             nodes.clear();
