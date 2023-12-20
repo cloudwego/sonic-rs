@@ -3,6 +3,7 @@
 use crate::error::Error;
 use core::fmt::{self, Debug, Display};
 use core::mem;
+use faststr::FastStr;
 use serde::de::value::BorrowedStrDeserializer;
 use serde::de::{
     self, Deserialize, DeserializeSeed, Deserializer, IntoDeserializer, MapAccess, Unexpected,
@@ -105,6 +106,8 @@ impl From<Box<RawValue>> for Box<str> {
         RawValue::into_owned(raw_value)
     }
 }
+
+type RW<'a> = std::borrow::Cow<'a, FastStr>;
 
 /// Convert a `T` into a boxed `RawValue`.
 pub fn to_raw_value<T>(value: &T) -> Result<Box<RawValue>, Error>

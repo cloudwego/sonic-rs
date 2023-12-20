@@ -9,7 +9,14 @@ use std::sync::atomic::Ordering::Acquire;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::atomic::Ordering::Release;
 
-use crate::field_offset;
+macro_rules! field_offset {
+    ($type:ty, $field:tt) => {{
+        let dummy = std::mem::MaybeUninit::<$type>::uninit();
+        let dummy_ptr = dummy.as_ptr();
+        let member_ptr = unsafe { std::ptr::addr_of!((*dummy_ptr).$field) };
+        member_ptr as usize - dummy_ptr as usize
+    }};
+}
 
 pub struct Arc<T> {
     ptr: NonNull<ArcInner<T>>,

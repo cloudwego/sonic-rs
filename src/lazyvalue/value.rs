@@ -18,8 +18,7 @@ use crate::serde::Number;
 use crate::JsonType;
 use crate::{from_str, JsonValueTrait};
 
-/// LazyValue is a value that wrappers a raw JSON text. It is similar as `RawValue` but with
-/// more APIs. It is used for lazy parsing, which means the JSON text is not parsed until it is
+/// LazyValue is a value that wrappers a raw JSON text. It is used for lazy parsing, which means the JSON text is not parsed until it is
 /// used.
 ///
 /// # Examples
