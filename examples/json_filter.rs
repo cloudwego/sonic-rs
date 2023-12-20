@@ -2,11 +2,11 @@ use faststr::FastStr;
 use serde::ser::SerializeMap;
 use serde::Serializer;
 use sonic_rs::to_object_iter;
-use sonic_rs::writer::WriterExt;
+use sonic_rs::writer::WriteExt;
 use std::collections::HashSet;
 
 #[allow(clippy::mutable_key_type)]
-fn filter_json<W: WriterExt>(json: &str, keys: HashSet<FastStr>, w: W) -> sonic_rs::Result<()> {
+fn filter_json<W: WriteExt>(json: &str, keys: HashSet<FastStr>, w: W) -> sonic_rs::Result<()> {
     // create a new serialize from writer
     let mut outer = sonic_rs::Serializer::new(w);
 

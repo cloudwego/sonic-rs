@@ -1,7 +1,7 @@
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
 
 use crate::util::string::format_string;
-use crate::writer::WriterExt;
+use crate::writer::WriteExt;
 use std::io::{self, Write};
 
 // We only use our own error type; no need for From conversions provided by the
@@ -191,11 +191,11 @@ pub trait Formatter {
         need_quote: bool,
     ) -> io::Result<()>
     where
-        W: ?Sized + WriterExt,
+        W: ?Sized + WriteExt,
     {
-        let buf = unsafe { writer.reserve_with(value.len() * 6 + 32 + 3)? };
+        let buf = writer.reserve_with(value.len() * 6 + 32 + 3)?;
         let cnt = format_string(value, buf, need_quote);
-        unsafe { writer.add_len(cnt) };
+        unsafe { writer.flush_len(cnt) };
         Ok(())
     }
 

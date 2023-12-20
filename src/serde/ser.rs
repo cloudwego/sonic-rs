@@ -5,7 +5,7 @@
 use super::de::tri;
 use crate::error::{Error, ErrorCode, Result};
 use crate::format::{CompactFormatter, Formatter, PrettyFormatter};
-use crate::writer::WriterExt;
+use crate::writer::WriteExt;
 use core::fmt::{self, Display};
 use core::num::FpCategory;
 use serde::ser::{self, Impossible, Serialize};
@@ -21,7 +21,7 @@ pub struct Serializer<W, F = CompactFormatter> {
 
 impl<W> Serializer<W>
 where
-    W: WriterExt,
+    W: WriteExt,
 {
     /// Creates a new JSON serializer.
     #[inline]
@@ -32,7 +32,7 @@ where
 
 impl<'a, W> Serializer<W, PrettyFormatter<'a>>
 where
-    W: WriterExt,
+    W: WriteExt,
 {
     /// Creates a new JSON pretty print serializer.
     #[inline]
@@ -43,7 +43,7 @@ where
 
 impl<W, F> Serializer<W, F>
 where
-    W: WriterExt,
+    W: WriteExt,
     F: Formatter,
 {
     /// Creates a new JSON visitor whose output will be written to the writer
@@ -62,7 +62,7 @@ where
 
 impl<'a, W, F> ser::Serializer for &'a mut Serializer<W, F>
 where
-    W: WriterExt,
+    W: WriteExt,
     F: Formatter,
 {
     type Ok = ();
@@ -426,7 +426,7 @@ where
 
         impl<'ser, W, F> Write for Adapter<'ser, W, F>
         where
-            W: WriterExt,
+            W: WriteExt,
             F: Formatter,
         {
             fn write_str(&mut self, s: &str) -> fmt::Result {
@@ -491,7 +491,7 @@ pub enum Compound<'a, W: 'a, F: 'a> {
 
 impl<'a, W, F> ser::SerializeSeq for Compound<'a, W, F>
 where
-    W: WriterExt,
+    W: WriteExt,
     F: Formatter,
 {
     type Ok = ();
@@ -534,7 +534,7 @@ where
 
 impl<'a, W, F> ser::SerializeTuple for Compound<'a, W, F>
 where
-    W: WriterExt,
+    W: WriteExt,
     F: Formatter,
 {
     type Ok = ();
@@ -556,7 +556,7 @@ where
 
 impl<'a, W, F> ser::SerializeTupleStruct for Compound<'a, W, F>
 where
-    W: WriterExt,
+    W: WriteExt,
     F: Formatter,
 {
     type Ok = ();
@@ -578,7 +578,7 @@ where
 
 impl<'a, W, F> ser::SerializeTupleVariant for Compound<'a, W, F>
 where
-    W: WriterExt,
+    W: WriteExt,
     F: Formatter,
 {
     type Ok = ();
@@ -614,7 +614,7 @@ where
 
 impl<'a, W, F> ser::SerializeMap for Compound<'a, W, F>
 where
-    W: WriterExt,
+    W: WriteExt,
     F: Formatter,
 {
     type Ok = ();
@@ -680,7 +680,7 @@ where
 
 impl<'a, W, F> ser::SerializeStruct for Compound<'a, W, F>
 where
-    W: WriterExt,
+    W: WriteExt,
     F: Formatter,
 {
     type Ok = ();
@@ -716,7 +716,7 @@ where
 
 impl<'a, W, F> ser::SerializeStructVariant for Compound<'a, W, F>
 where
-    W: WriterExt,
+    W: WriteExt,
     F: Formatter,
 {
     type Ok = ();
@@ -768,7 +768,7 @@ fn key_must_be_a_string() -> Error {
 
 impl<'a, W, F> ser::Serializer for MapKeySerializer<'a, W, F>
 where
-    W: WriterExt,
+    W: WriteExt,
     F: Formatter,
 {
     type Ok = ();
@@ -1079,9 +1079,9 @@ where
     }
 }
 
-struct RawValueStrEmitter<'a, W: 'a + WriterExt, F: 'a + Formatter>(&'a mut Serializer<W, F>);
+struct RawValueStrEmitter<'a, W: 'a + WriteExt, F: 'a + Formatter>(&'a mut Serializer<W, F>);
 
-impl<'a, W: WriterExt, F: Formatter> ser::Serializer for RawValueStrEmitter<'a, W, F> {
+impl<'a, W: WriteExt, F: Formatter> ser::Serializer for RawValueStrEmitter<'a, W, F> {
     type Ok = ();
     type Error = Error;
 
@@ -1272,7 +1272,7 @@ impl<'a, W: WriterExt, F: Formatter> ser::Serializer for RawValueStrEmitter<'a, 
 #[inline]
 pub fn to_writer<W, T>(writer: W, value: &T) -> Result<()>
 where
-    W: WriterExt,
+    W: WriteExt,
     T: ?Sized + Serialize,
 {
     let mut ser = Serializer::new(writer);
@@ -1291,7 +1291,7 @@ where
 #[inline]
 pub fn to_writer_pretty<W, T>(writer: W, value: &T) -> Result<()>
 where
-    W: WriterExt,
+    W: WriteExt,
     T: ?Sized + Serialize,
 {
     let mut ser = Serializer::pretty(writer);
