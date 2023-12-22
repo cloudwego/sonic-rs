@@ -26,7 +26,8 @@ impl<'de: 'a, 'a> Deserialize<'de> for LazyValue<'a> {
             where
                 E: de::Error,
             {
-                Ok(LazyValue::new(FastStr::new(v).into()))
+                // parse the escaped string
+                LazyValue::new(FastStr::new(v).into(), true).map_err(de::Error::custom)
             }
 
             // borrowed from origin json
@@ -34,7 +35,7 @@ impl<'de: 'a, 'a> Deserialize<'de> for LazyValue<'a> {
             where
                 E: de::Error,
             {
-                Ok(LazyValue::new(v.into()))
+                LazyValue::new(FastStr::new(v).into(), false).map_err(de::Error::custom)
             }
         }
 
@@ -64,7 +65,8 @@ impl<'de> Deserialize<'de> for OwnedLazyValue {
             where
                 E: de::Error,
             {
-                Ok(OwnedLazyValue::new(FastStr::new(v).into()))
+                // parse the escaped string
+                OwnedLazyValue::new(FastStr::new(v).into(), true).map_err(de::Error::custom)
             }
 
             // borrowed from origin json
@@ -72,7 +74,7 @@ impl<'de> Deserialize<'de> for OwnedLazyValue {
             where
                 E: de::Error,
             {
-                Ok(OwnedLazyValue::new(v.into()))
+                OwnedLazyValue::new(FastStr::new(v).into(), false).map_err(de::Error::custom)
             }
         }
 

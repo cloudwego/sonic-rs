@@ -1,15 +1,10 @@
-use std::{borrow::Cow, cell::UnsafeCell, hash::Hash, str::from_utf8_unchecked};
+use std::{borrow::Cow, hash::Hash, str::from_utf8_unchecked, sync::Arc};
 
 use faststr::FastStr;
 
 use crate::{
-    from_str, get_unchecked,
-    index::Index,
-    input::JsonSlice,
-    parser::Parser,
-    reader::{Reader, Reference, SliceRead},
-    serde::Number,
-    JsonType, JsonValueTrait,
+    from_str, get_unchecked, index::Index, input::JsonSlice, serde::Number, JsonType,
+    JsonValueTrait, Result,
 };
 
 /// LazyValue wrappers a unparsed raw JSON text. It is borrowed from the origin JSON text.
@@ -68,8 +63,16 @@ use crate::{
 pub struct LazyValue<'a> {
     // the raw slice from origin json
     pub(crate) raw: JsonSlice<'a>,
-    // used for deserialize escaped strings
-    own: UnsafeCell<Vec<u8>>,
+    pub(crate) unescape: Option<Arc<String>>,
+}
+
+impl Default for LazyValue<'_> {
+    fn default() -> Self {
+        Self {
+            raw: JsonSlice::Raw(&b"null"[..]),
+            unescape: None,
+        }
+    }
 }
 
 impl PartialEq for LazyValue<'_> {
@@ -82,7 +85,7 @@ impl<'a> Clone for LazyValue<'a> {
     fn clone(&self) -> Self {
         Self {
             raw: self.raw.clone(),
-            own: UnsafeCell::new(Vec::new()),
+            unescape: self.unescape.clone(),
         }
     }
 }
@@ -127,12 +130,17 @@ impl<'a> JsonValueTrait for LazyValue<'a> {
     }
 
     fn as_str(&self) -> Option<&str> {
-        let mut parser = Parser::new(SliceRead::new(self.as_raw_str().as_bytes()));
-        parser.read.eat(1);
-        match parser.parse_string_raw(unsafe { &mut *self.own.get() }) {
-            Ok(Reference::Borrowed(u)) => unsafe { Some(from_utf8_unchecked(u)) },
-            Ok(Reference::Copied(u)) => unsafe { Some(from_utf8_unchecked(u)) },
-            _ => None,
+        if !self.is_str() {
+            None
+        } else if let Some(escaped) = self.unescape.as_ref() {
+            Some(escaped.as_str())
+        } else {
+            // remove the quotes
+            let origin = {
+                let raw = self.as_raw_str().as_bytes();
+                &raw[1..raw.len() - 1]
+            };
+            Some(unsafe { from_utf8_unchecked(origin) })
         }
     }
 
@@ -255,11 +263,17 @@ impl<'a> LazyValue<'a> {
         }
     }
 
-    pub(crate) fn new(raw: JsonSlice<'a>) -> Self {
-        Self {
+    pub(crate) fn new(raw: JsonSlice<'a>, has_escaped: bool) -> Result<Self> {
+        let escaped = if has_escaped {
+            let unescaped: String = unsafe { crate::from_slice_unchecked(raw.as_ref()) }?;
+            Some(Arc::new(unescaped))
+        } else {
+            None
+        };
+        Ok(Self {
             raw,
-            own: UnsafeCell::new(Vec::new()),
-        }
+            unescape: escaped,
+        })
     }
 }
 
@@ -343,6 +357,9 @@ mod test {
 
         let value = unsafe { get_unchecked(TEST_JSON, pointer![].iter()).unwrap() };
         assert!(value.get("int").as_str().is_none());
+        assert_eq!(value.get("int").as_i64(), Some(-1));
+        assert_eq!(value.get("uint").as_i64(), Some(0));
+        assert_eq!(value.get("float").as_f64(), Some(1.1));
     }
 
     #[test]

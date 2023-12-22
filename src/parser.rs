@@ -31,7 +31,7 @@ use crate::{
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
     value::{shared::Shared, visitor::JsonVisitor},
-    JsonType,
+    JsonType, LazyValue,
 };
 
 pub(crate) const DEFAULT_KEY_BUF_CAPACITY: usize = 128;
@@ -150,7 +150,9 @@ pub(crate) struct Parser<R> {
     pub(crate) shared: Option<Arc<Shared>>, // the shared allocator for `Value`
 }
 
-enum ParseStatus {
+/// Records the parse status
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ParseStatus {
     None,
     HasEsacped,
 }
@@ -402,7 +404,7 @@ where
         &mut self,
         first: &mut bool,
         check: bool,
-    ) -> Result<Option<&'de [u8]>> {
+    ) -> Result<Option<(&'de [u8], bool)>> {
         if *first && self.skip_space() != Some(b'[') {
             return perr!(self, ExpectedArrayStart);
         }
@@ -419,12 +421,12 @@ where
             }
             _ => return perr!(self, ExpectedArrayCommaOrEnd),
         };
-        let raw = if check {
+        let (raw, status) = if check {
             self.skip_one()
         } else {
             self.skip_one_unchecked()
         }?;
-        Ok(Some(raw))
+        Ok(Some((raw, status == ParseStatus::HasEsacped)))
     }
 
     #[inline]
@@ -433,7 +435,7 @@ where
         strbuf: &mut Vec<u8>,
         first: &mut bool,
         check: bool,
-    ) -> Result<Option<(FastStr, &'de [u8])>> {
+    ) -> Result<Option<(FastStr, &'de [u8], bool)>> {
         if *first && self.skip_space() != Some(b'{') {
             return perr!(self, ExpectedObjectStart);
         }
@@ -453,12 +455,12 @@ where
             Reference::Copied(s) => FastStr::new(s),
         };
         self.parse_object_clo()?;
-        let raw = if check {
+        let (raw, status) = if check {
             self.skip_one()
         } else {
             self.skip_one_unchecked()
         }?;
-        Ok(Some((key, raw)))
+        Ok(Some((key, raw, status == ParseStatus::HasEsacped)))
     }
 
     fn parse_value<V>(&mut self, visitor: &mut V, strbuf: &mut Vec<u8>) -> Result<()>
@@ -1234,10 +1236,8 @@ where
     }
 
     #[inline(always)]
-    fn skip_string_unchecked(&mut self) -> Result<()> {
-        let _ = self.skip_string_impl()?;
-        // ignore the status of hasesacped
-        Ok(())
+    fn skip_string_unchecked(&mut self) -> Result<ParseStatus> {
+        self.skip_string_impl()
     }
 
     fn skip_escaped_chars(&mut self) -> Result<()> {
@@ -1264,9 +1264,10 @@ where
 
     // skip_string skips a JSON string with validation.
     #[inline(always)]
-    fn skip_string(&mut self) -> Result<()> {
+    fn skip_string(&mut self) -> Result<ParseStatus> {
         const LANS: usize = u8x32::lanes();
 
+        let mut status = ParseStatus::None;
         while let Some(chunk) = self.read.peek_n(LANS) {
             let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
             let v_bs = v.eq(u8x32::splat(b'\\'));
@@ -1280,8 +1281,11 @@ where
                 self.read.eat(cnt + 1);
 
                 match chunk[cnt] {
-                    b'\\' => self.skip_escaped_chars()?,
-                    b'\"' => return Ok(()),
+                    b'\\' => {
+                        self.skip_escaped_chars()?;
+                        status = ParseStatus::HasEsacped;
+                    }
+                    b'\"' => return Ok(status),
                     0..=0x1f => return perr!(self, ControlCharacterWhileParsingString),
                     _ => unreachable!(),
                 }
@@ -1293,8 +1297,11 @@ where
         // found quote for remaining bytes
         while let Some(ch) = self.read.next() {
             match ch {
-                b'\\' => self.skip_escaped_chars()?,
-                b'"' => return Ok(()),
+                b'\\' => {
+                    self.skip_escaped_chars()?;
+                    status = ParseStatus::HasEsacped;
+                }
+                b'"' => return Ok(status),
                 0..=0x1f => return perr!(self, ControlCharacterWhileParsingString),
                 _ => {}
             }
@@ -1713,12 +1720,16 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn skip_one(&mut self) -> Result<&'de [u8]> {
+    pub(crate) fn skip_one(&mut self) -> Result<(&'de [u8], ParseStatus)> {
         let ch = self.skip_space();
         let start = self.read.index() - 1;
+        let mut status = ParseStatus::None;
         match ch {
             Some(c @ b'-' | c @ b'0'..=b'9') => self.skip_number(c),
-            Some(b'"') => self.skip_string(),
+            Some(b'"') => {
+                status = self.skip_string()?;
+                Ok(())
+            }
             Some(b'{') => self.skip_object(),
             Some(b'[') => self.skip_array(),
             Some(b't') => self.parse_literal("rue"),
@@ -1728,16 +1739,20 @@ where
             None => perr!(self, EofWhileParsing),
         }?;
         let slice = self.read.slice_unchecked(start, self.read.index());
-        Ok(slice)
+        Ok((slice, status))
     }
 
     #[inline(always)]
-    pub(crate) fn skip_one_unchecked(&mut self) -> Result<&'de [u8]> {
+    pub(crate) fn skip_one_unchecked(&mut self) -> Result<(&'de [u8], ParseStatus)> {
         let ch = self.skip_space();
         let start = self.read.index() - 1;
+        let mut status = ParseStatus::None;
         match ch {
             Some(b'-' | b'0'..=b'9') => self.skip_number_unsafe(),
-            Some(b'"') => self.skip_string_unchecked(),
+            Some(b'"') => {
+                status = self.skip_string_unchecked()?;
+                Ok(())
+            }
             Some(b'{') => self.skip_container(b'{', b'}'),
             Some(b'[') => self.skip_container(b'[', b']'),
             Some(b't') => self.parse_literal("rue"),
@@ -1747,7 +1762,7 @@ where
             None => perr!(self, EofWhileParsing),
         }?;
         let slice = self.read.slice_unchecked(start, self.read.index());
-        Ok(slice)
+        Ok((slice, status))
     }
 
     #[inline(always)]
@@ -1804,7 +1819,9 @@ where
             match self.skip_space() {
                 Some(b'{') => self.skip_container(b'{', b'}')?,
                 Some(b'[') => self.skip_container(b'[', b']')?,
-                Some(b'"') => self.skip_string_unchecked()?,
+                Some(b'"') => {
+                    let _ = self.skip_string_unchecked()?;
+                }
                 None => return perr!(self, EofWhileParsing),
                 _ => {}
             };
@@ -1910,7 +1927,9 @@ where
             match self.skip_space() {
                 Some(b'{') => self.skip_container(b'{', b'}')?,
                 Some(b'[') => self.skip_container(b'[', b']')?,
-                Some(b'"') => self.skip_string_unchecked()?,
+                Some(b'"') => {
+                    let _ = self.skip_string_unchecked()?;
+                }
                 Some(b']') => return perr!(self, GetInEmptyArray),
                 None => return perr!(self, EofWhileParsing),
                 _ => {}
@@ -1931,11 +1950,14 @@ where
         Ok(())
     }
 
-    pub(crate) fn get_from(&mut self, path: &JsonPointer) -> Result<&'de [u8]> {
+    pub(crate) fn get_from(&mut self, path: &JsonPointer) -> Result<(&'de [u8], ParseStatus)> {
         self.get_from_with_iter(path.iter())
     }
 
-    pub(crate) fn get_from_with_iter<P: IntoIterator>(&mut self, path: P) -> Result<&'de [u8]>
+    pub(crate) fn get_from_with_iter<P: IntoIterator>(
+        &mut self,
+        path: P,
+    ) -> Result<(&'de [u8], ParseStatus)>
     where
         P::Item: Index,
     {
@@ -1950,14 +1972,13 @@ where
                 unreachable!();
             }?;
         }
-        let slice = self.skip_one()?;
-        Ok(slice)
+        self.skip_one()
     }
 
     pub(crate) fn get_from_with_iter_checked<P: IntoIterator>(
         &mut self,
         path: P,
-    ) -> Result<&'de [u8]>
+    ) -> Result<(&'de [u8], ParseStatus)>
     where
         P::Item: Index,
     {
@@ -1972,14 +1993,13 @@ where
                 unreachable!();
             }?;
         }
-        let slice = self.skip_one()?;
-        Ok(slice)
+        self.skip_one()
     }
 
     fn get_many_rec(
         &mut self,
         node: &PointerTreeNode,
-        out: &mut Vec<&'de [u8]>,
+        out: &mut Vec<LazyValue<'de>>,
         strbuf: &mut Vec<u8>,
         remain: &mut usize,
         is_safe: bool,
@@ -1999,9 +2019,10 @@ where
         let start = self.read.index();
         let slice: &'de [u8];
 
+        let mut status = ParseStatus::None;
         match &node.children {
             PointerTreeInner::Empty => {
-                self.skip_one()?;
+                status = self.skip_one()?.1;
             }
             PointerTreeInner::Index(midxs) => {
                 if is_safe {
@@ -2021,8 +2042,9 @@ where
 
         if !node.order.is_empty() {
             slice = self.read.slice_unchecked(start, self.read.index());
+            let lv = LazyValue::new(slice.into(), status == ParseStatus::HasEsacped)?;
             for p in &node.order {
-                out[*p] = slice;
+                out[*p] = lv.clone();
             }
             *remain -= node.order.len();
         }
@@ -2034,7 +2056,7 @@ where
         &mut self,
         mkeys: &MultiKey,
         strbuf: &mut Vec<u8>,
-        out: &mut Vec<&'de [u8]>,
+        out: &mut Vec<LazyValue<'de>>,
         remain: &mut usize,
     ) -> Result<()> {
         debug_assert!(strbuf.is_empty());
@@ -2067,7 +2089,9 @@ where
                 match self.skip_space() {
                     Some(b'{') => self.skip_container(b'{', b'}')?,
                     Some(b'[') => self.skip_container(b'[', b']')?,
-                    Some(b'"') => self.skip_string_unchecked()?,
+                    Some(b'"') => {
+                        let _ = self.skip_string_unchecked()?;
+                    }
                     None => return perr!(self, EofWhileParsing),
                     _ => {}
                 };
@@ -2095,7 +2119,7 @@ where
         &mut self,
         mkeys: &MultiKey,
         strbuf: &mut Vec<u8>,
-        out: &mut Vec<&'de [u8]>,
+        out: &mut Vec<LazyValue<'de>>,
         remain: &mut usize,
     ) -> Result<()> {
         debug_assert!(strbuf.is_empty());
@@ -2161,7 +2185,7 @@ where
         &mut self,
         midx: &MultiIndex,
         strbuf: &mut Vec<u8>,
-        out: &mut Vec<&'de [u8]>,
+        out: &mut Vec<LazyValue<'de>>,
         remain: &mut usize,
     ) -> Result<()> {
         match self.skip_space() {
@@ -2190,7 +2214,9 @@ where
                 match self.skip_space() {
                     Some(b'{') => self.skip_container(b'{', b'}')?,
                     Some(b'[') => self.skip_container(b'[', b']')?,
-                    Some(b'"') => self.skip_string_unchecked()?,
+                    Some(b'"') => {
+                        let _ = self.skip_string_unchecked()?;
+                    }
                     None => return perr!(self, EofWhileParsing),
                     _ => {}
                 };
@@ -2220,7 +2246,7 @@ where
         &mut self,
         midx: &MultiIndex,
         strbuf: &mut Vec<u8>,
-        out: &mut Vec<&'de [u8]>,
+        out: &mut Vec<LazyValue<'de>>,
         remain: &mut usize,
     ) -> Result<()> {
         match self.skip_space() {
@@ -2268,13 +2294,15 @@ where
         }
     }
 
-    pub(crate) fn get_many(&mut self, tree: &PointerTree, is_safe: bool) -> Result<Vec<&'de [u8]>> {
+    pub(crate) fn get_many(
+        &mut self,
+        tree: &PointerTree,
+        is_safe: bool,
+    ) -> Result<Vec<LazyValue<'de>>> {
         let mut strbuf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);
         let mut remain = tree.size();
-        let mut out: Vec<&'de [u8]> = Vec::with_capacity(tree.size());
-        for _i in 0..tree.size() {
-            out.push(&[])
-        }
+        let mut out: Vec<LazyValue<'de>> = Vec::with_capacity(tree.size());
+        out.resize(tree.size(), LazyValue::default());
         let cur = &tree.root;
         self.get_many_rec(cur, &mut out, &mut strbuf, &mut remain, is_safe)?;
         Ok(out)

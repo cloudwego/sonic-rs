@@ -1,24 +1,19 @@
-use std::{cell::UnsafeCell, hash::Hash, str::from_utf8_unchecked};
+use std::{hash::Hash, str::from_utf8_unchecked, sync::Arc};
 
 use faststr::FastStr;
 
 use crate::{
-    from_str, get_unchecked,
-    index::Index,
-    input::JsonSlice,
-    parser::Parser,
-    reader::{Reader, Reference, SliceRead},
-    serde::Number,
-    JsonType, JsonValueTrait, LazyValue,
+    from_str, get_unchecked, index::Index, input::JsonSlice, serde::Number, JsonType,
+    JsonValueTrait, LazyValue, Result,
 };
 
-/// LazyValue is a value that wrappers a raw JSON text. It is used for lazy parsing, which means the
-/// JSON text is not parsed until it is used.
+/// OwnedLazyValue wrappers a unparsed raw JSON text. It is owned. It can be converted from
+/// [`LazyValue`](crate::lazyvalue::LazyValue). It can be used for serde.
 ///
 /// # Examples
 ///
 /// ```
-/// use sonic_rs::{get, JsonValueTrait, LazyValue, Value};
+/// use sonic_rs::{get, JsonValueTrait, OwnedLazyValue};
 ///
 /// // get a lazyvalue from a json, the "a"'s value will not be parsed
 /// let input = r#"{
@@ -29,24 +24,21 @@ use crate::{
 ///     "sonic": "rs"
 ///   }
 /// }"#;
-/// let lv_a: LazyValue = get(input, &["a"]).unwrap();
-/// let lv_c: LazyValue = get(input, &["c"]).unwrap();
+///
+/// let own_a = OwnedLazyValue::from(get(input, &["a"]).unwrap());
+/// let own_c = OwnedLazyValue::from(get(input, &["c"]).unwrap());
 ///
 /// // use as_raw_xx to get the unparsed JSON text
-/// assert_eq!(lv_a.as_raw_str(), "\"hello world\"");
-/// assert_eq!(lv_c.as_raw_str(), "[0, 1, 2]");
+/// assert_eq!(own_a.as_raw_str(), "\"hello world\"");
+/// assert_eq!(own_c.as_raw_str(), "[0, 1, 2]");
 ///
 /// // use as_xx to get the parsed value
-/// assert_eq!(lv_a.as_str().unwrap(), "hello world");
-/// assert_eq!(lv_c.as_str(), None);
-/// assert!(lv_c.is_array());
+/// assert_eq!(own_a.as_str().unwrap(), "hello world");
+/// assert_eq!(own_c.as_str(), None);
+/// assert!(own_c.is_array());
 /// ```
 ///
 /// # Serde Examples
-///
-/// `OwnedLazyValue` can be deserialized with borrowed or owned.
-/// If borrowed, lifetime `'a` is the origin JSON text.
-/// If owned, lifetime `'a` is not associate with origin JSON text.
 ///
 /// ```
 /// # use sonic_rs::{LazyValue, OwnedLazyValue};
@@ -69,8 +61,7 @@ use crate::{
 pub struct OwnedLazyValue {
     // the raw slice from origin json
     pub(crate) raw: FastStr,
-    // used for deserialize escaped strings
-    own: UnsafeCell<Vec<u8>>,
+    unescape: Option<Arc<String>>,
 }
 
 impl PartialEq for OwnedLazyValue {
@@ -83,7 +74,7 @@ impl Clone for OwnedLazyValue {
     fn clone(&self) -> Self {
         Self {
             raw: self.raw.clone(),
-            own: UnsafeCell::new(Vec::new()),
+            unescape: self.unescape.clone(),
         }
     }
 }
@@ -128,12 +119,17 @@ impl JsonValueTrait for OwnedLazyValue {
     }
 
     fn as_str(&self) -> Option<&str> {
-        let mut parser = Parser::new(SliceRead::new(self.as_raw_str().as_bytes()));
-        parser.read.eat(1);
-        match parser.parse_string_raw(unsafe { &mut *self.own.get() }) {
-            Ok(Reference::Borrowed(u)) => unsafe { Some(from_utf8_unchecked(u)) },
-            Ok(Reference::Copied(u)) => unsafe { Some(from_utf8_unchecked(u)) },
-            _ => None,
+        if !self.is_str() {
+            None
+        } else if let Some(escaped) = self.unescape.as_ref() {
+            Some(escaped.as_str())
+        } else {
+            // remove the quotes
+            let origin = {
+                let raw = self.as_raw_str().as_bytes();
+                &raw[1..raw.len() - 1]
+            };
+            Some(unsafe { from_utf8_unchecked(origin) })
         }
     }
 
@@ -223,15 +219,21 @@ impl OwnedLazyValue {
         lv.map(|v| v.into())
     }
 
-    pub(crate) fn new(raw: JsonSlice) -> Self {
+    pub(crate) fn new(raw: JsonSlice, has_escaped: bool) -> Result<Self> {
         let raw = match raw {
             JsonSlice::Raw(r) => FastStr::new(unsafe { from_utf8_unchecked(r) }),
             JsonSlice::FastStr(f) => f.clone(),
         };
-        Self {
+        let escaped = if has_escaped {
+            let unescaped: String = crate::from_str(raw.as_str())?;
+            Some(Arc::new(unescaped))
+        } else {
+            None
+        };
+        Ok(Self {
             raw,
-            own: UnsafeCell::new(Vec::new()),
-        }
+            unescape: escaped,
+        })
     }
 }
 
@@ -243,7 +245,7 @@ impl<'de> From<LazyValue<'de>> for OwnedLazyValue {
         };
         Self {
             raw,
-            own: UnsafeCell::new(Vec::new()),
+            unescape: lv.unescape,
         }
     }
 }

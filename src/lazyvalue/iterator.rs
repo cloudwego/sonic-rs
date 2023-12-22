@@ -113,9 +113,9 @@ impl<'de> ObjectInner<'de> {
         let parser = unsafe { self.parser.as_mut().unwrap_unchecked() };
         match parser.parse_entry_lazy(&mut self.strbuf, &mut self.first, check) {
             Ok(ret) => {
-                if let Some((key, val)) = ret {
+                if let Some((key, val, has_escaped)) = ret {
                     let val = self.json.slice_ref(val);
-                    Some(Ok((key, LazyValue::new(val))))
+                    Some(LazyValue::new(val, has_escaped).map(|v| (key, v)))
                 } else {
                     self.ending = true;
                     None
@@ -155,9 +155,9 @@ impl<'de> ArrayInner<'de> {
         let parser = unsafe { self.parser.as_mut().unwrap_unchecked() };
         match parser.parse_array_elem_lazy(&mut self.first, check) {
             Ok(ret) => {
-                if let Some(ret) = ret {
+                if let Some((ret, has_escaped)) = ret {
                     let val = self.json.slice_ref(ret);
-                    Some(Ok(LazyValue::new(val)))
+                    Some(LazyValue::new(val, has_escaped))
                 } else {
                     self.ending = true;
                     None

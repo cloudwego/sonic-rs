@@ -52,7 +52,6 @@ use crate::{
 /// is wrong with the data, for example required struct fields are missing from
 /// the JSON map or some number is too big to fit in the expected primitive
 /// type.
-///
 pub fn from_value<'de, T>(value: &'de Value) -> Result<T, Error>
 where
     T: Deserialize<'de>,
