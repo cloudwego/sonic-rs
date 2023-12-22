@@ -21,7 +21,7 @@ sonic-rs 的主要优化是使用 SIMD。然而，sonic-rs 没有使用来自`si
 
 有关优化的更多细节，请参见 [performance_zh.md](docs/performance_zh.md)。
 
-***对于 Golang 用户迁移 Rust 使用 `sonic_rs`, 请参考 [for_Golang_user.md](docs/for_Golang_user_zh.md)***
+***对于 Golang 用户迁移 Rust 使用 `sonic_rs`, 请参考 [for_Golang_user_zh.md](docs/for_Golang_user_zh.md)***
 
 - [sonic-rs](#sonic-rs)
     - [要求/注意事项](#要求注意事项)
@@ -59,7 +59,7 @@ sonic-rs 的主要优化是使用 SIMD。然而，sonic-rs 没有使用来自`si
 在 Cargo 依赖中添加 sonic-rs:
 ```
 [dependencies]
-sonic-rs = 0.2
+sonic-rs = 0.3
 ```
 
 ## 功能
