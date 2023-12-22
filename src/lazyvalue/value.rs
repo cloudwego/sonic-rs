@@ -1,11 +1,10 @@
 use std::borrow::Cow;
 use std::cell::UnsafeCell;
+use std::hash::Hash;
 use std::str::from_utf8_unchecked;
 
 use faststr::FastStr;
-use serde::Deserialize;
 
-use crate::error::Result;
 use crate::get_unchecked;
 use crate::index::Index;
 use crate::input::JsonSlice;
@@ -13,13 +12,13 @@ use crate::parser::Parser;
 use crate::reader::Reader;
 use crate::reader::Reference;
 use crate::reader::SliceRead;
-use crate::serde::Deserializer;
 use crate::serde::Number;
 use crate::JsonType;
 use crate::{from_str, JsonValueTrait};
 
-/// LazyValue is a value that wrappers a raw JSON text. It is used for lazy parsing, which means the JSON text is not parsed until it is
-/// used.
+/// LazyValue wrappers a unparsed raw JSON text. It is borrowed from the origin JSON text.
+///
+/// LazyValue can be [`get`](crate::get),  [`get_unchecked`](crate::get_unchecked) or [`deserialize`](crate::from_str) from a JSON text.
 ///
 /// # Examples
 ///
@@ -47,25 +46,73 @@ use crate::{from_str, JsonValueTrait};
 /// assert_eq!(lv_c.as_str(), None);
 /// assert!(lv_c.is_array());
 ///
-/// // if we want parse LazyValue into `Value`, just use try_from
-/// let mut value = Value::try_from(lv_c).unwrap();
-/// value[0] = 1.into();
-/// assert_eq!(value, [1, 1, 2]);
+/// ```
 ///
-/// // also, we can parse LazyValue into Rust types
-/// let lv_d: LazyValue = get(input, &["d", "sonic"]).unwrap();
-/// let mut v: String = sonic_rs::from_str(lv_d.as_raw_str()).unwrap();
-/// assert_eq!(v, "rs");
+/// # Serde Examples
+///
+/// `LazyValue<'a>` can only be deserialized with borrowed.
+/// If need to be owned, use [`OwnedLazyValue`](crate::OwnedLazyValue).
+///
+/// ```
+/// # use sonic_rs::LazyValue;
+/// use serde::Serialize;
+/// use serde::Deserialize;
+///
+/// #[derive(Debug, Deserialize, Serialize, PartialEq)]
+/// struct TestLazyValue<'a> {
+///     #[serde(borrow)]
+///     borrowed_lv: LazyValue<'a>,
+/// }
+///
+/// let input = r#"{ "borrowed_lv": "hello"}"#;
+///
+/// let data: TestLazyValue = sonic_rs::from_str(input).unwrap();
+/// assert_eq!(data.borrowed_lv.as_raw_str(), "\"hello\"");
 /// ```
 #[derive(Debug)]
-pub struct LazyValue<'de> {
+pub struct LazyValue<'a> {
     // the raw slice from origin json
-    raw: JsonSlice<'de>,
+    pub(crate) raw: JsonSlice<'a>,
     // used for deserialize escaped strings
     own: UnsafeCell<Vec<u8>>,
 }
 
-impl<'de> JsonValueTrait for LazyValue<'de> {
+impl PartialEq for LazyValue<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.raw.as_ref() == other.raw.as_ref()
+    }
+}
+
+impl<'a> Clone for LazyValue<'a> {
+    fn clone(&self) -> Self {
+        Self {
+            raw: self.raw.clone(),
+            own: UnsafeCell::new(Vec::new()),
+        }
+    }
+}
+
+impl PartialOrd for LazyValue<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<'a> Ord for LazyValue<'a> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.raw.as_ref().cmp(other.raw.as_ref())
+    }
+}
+
+impl<'a> Eq for LazyValue<'a> {}
+
+impl<'a> Hash for LazyValue<'a> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.raw.as_ref().hash(state)
+    }
+}
+
+impl<'a> JsonValueTrait for LazyValue<'a> {
     type ValueType<'v> = LazyValue<'v> where Self: 'v;
 
     fn as_bool(&self) -> Option<bool> {
@@ -106,11 +153,17 @@ impl<'de> JsonValueTrait for LazyValue<'de> {
         }
     }
 
-    fn get<I: Index>(&self, index: I) -> Option<Self::ValueType<'_>> {
-        index.lazyvalue_index_into(self)
+    fn get<I: Index>(&self, index: I) -> Option<LazyValue<'_>> {
+        if let Some(key) = index.as_key() {
+            self.get_key(key)
+        } else if let Some(index) = index.as_index() {
+            self.get_index(index)
+        } else {
+            unreachable!("index must be key or index")
+        }
     }
 
-    fn pointer<P: IntoIterator>(&self, path: P) -> Option<Self::ValueType<'_>>
+    fn pointer<P: IntoIterator>(&self, path: P) -> Option<LazyValue<'_>>
     where
         P::Item: Index,
     {
@@ -124,36 +177,7 @@ impl<'de> JsonValueTrait for LazyValue<'de> {
     }
 }
 
-impl<'de> LazyValue<'de> {
-    /// Deserialize the raw json text into any type that implements `serde::Deserialize`
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use sonic_rs::{get, LazyValue, Value};
-    /// use serde::Deserialize;
-    ///
-    /// let input = r#"{
-    ///   "a": "hello world",
-    ///   "b": true,
-    ///   "c": [0, 1, 2],
-    /// }"#;
-    /// let lv: LazyValue = get(input, &["c"]).unwrap();
-    ///
-    /// // deserialize into Vec
-    /// let v: Vec<u64> = lv.deserialize().unwrap();
-    /// assert_eq!(v, [0, 1, 2]);
-    ///
-    /// // deserialize into `sonic_rs::Value`
-    /// let v: Value = lv.deserialize().unwrap();
-    /// assert_eq!(v, [0, 1, 2]);
-    /// ```
-    pub fn deserialize<T: Deserialize<'de>>(&'de self) -> Result<T> {
-        let reader = SliceRead::new(self.raw.as_ref());
-        let mut deserializer = Deserializer::new(reader);
-        T::deserialize(&mut deserializer)
-    }
-
+impl<'a> LazyValue<'a> {
     /// Export the raw JSON text as `str`.
     ///
     /// # Examples
@@ -181,7 +205,7 @@ impl<'de> LazyValue<'de> {
     /// let lv: LazyValue = sonic_rs::get(r#"{"a": "hello world"}"#, &["a"]).unwrap();
     /// assert_eq!(lv.as_raw_cow(), "\"hello world\"");
     /// ```
-    pub fn as_raw_cow(&self) -> Cow<'de, str> {
+    pub fn as_raw_cow(&self) -> Cow<'a, str> {
         match &self.raw {
             JsonSlice::Raw(r) => Cow::Borrowed(unsafe { from_utf8_unchecked(r) }),
             JsonSlice::FastStr(f) => Cow::Owned(f.to_string()),
@@ -196,14 +220,14 @@ impl<'de> LazyValue<'de> {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{get, LazyValue};
+    /// use sonic_rs::LazyValue;
     /// use faststr::FastStr;
     ///
     /// let lv: LazyValue = sonic_rs::get(r#"{"a": "hello world"}"#, &["a"]).unwrap();
     /// // will copy the raw_str into a new faststr
     /// assert_eq!(lv.as_raw_faststr(), "\"hello world\"");
     ///
-    /// let fs = FastStr::new(#"{"a": "hello world"}");
+    /// let fs = FastStr::new(r#"{"a": "hello world"}"#);
     /// let lv: LazyValue = sonic_rs::get(&fs, &["a"]).unwrap();
     /// assert_eq!(lv.as_raw_faststr(), "\"hello world\""); // zero-copy
     ///
@@ -216,7 +240,7 @@ impl<'de> LazyValue<'de> {
     }
 
     /// get with index from lazyvalue
-    pub(crate) fn get_index(&'de self, index: usize) -> Option<Self> {
+    pub(crate) fn get_index(&'a self, index: usize) -> Option<Self> {
         let path = [index];
         match &self.raw {
             // #Safety
@@ -227,7 +251,7 @@ impl<'de> LazyValue<'de> {
     }
 
     /// get with key from lazyvalue
-    pub(crate) fn get_key(&'de self, key: &str) -> Option<Self> {
+    pub(crate) fn get_key(&'a self, key: &str) -> Option<Self> {
         let path = [key];
         match &self.raw {
             // #Safety
@@ -237,7 +261,7 @@ impl<'de> LazyValue<'de> {
         }
     }
 
-    pub(crate) fn new(raw: JsonSlice<'de>) -> Self {
+    pub(crate) fn new(raw: JsonSlice<'a>) -> Self {
         Self {
             raw,
             own: UnsafeCell::new(Vec::new()),
@@ -282,8 +306,7 @@ mod test {
                 .pointer(&pointer!["object", "a"])
                 .unwrap()
                 .as_raw_str()
-                .as_bytes()
-                .as_ref(),
+                .as_bytes(),
             b"\"aaa\""
         );
         assert!(value.pointer(&pointer!["objempty", "a"]).is_none());

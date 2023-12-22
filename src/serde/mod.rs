@@ -1,11 +1,11 @@
 mod de;
 pub(crate) mod number;
-pub(crate) mod raw;
+pub(crate) mod rawnumber;
 mod ser;
 
 pub use self::de::{from_slice, from_slice_unchecked, from_str, Deserializer};
-pub use self::number::{JsonNumberTrait, Number, RawNumber};
-pub use self::raw::{to_raw_value, RawValue};
+pub use self::number::{JsonNumberTrait, Number};
+pub use self::rawnumber::RawNumber;
 pub use self::ser::{
     to_string, to_string_pretty, to_vec, to_vec_pretty, to_writer, to_writer_pretty, Serializer,
 };
@@ -217,73 +217,6 @@ mod test {
         let mut vec = Vec::new();
         read_file("citm_catalog.json", &mut vec);
         let _value: CitmCatalog = from_slice(&vec).unwrap();
-    }
-
-    #[derive(Debug, Deserialize, Serialize, PartialEq)]
-    struct TestRawValue<'a> {
-        #[serde(borrow)]
-        rawvalue: &'a RawValue,
-        rawvalue2: Box<RawValue>,
-    }
-
-    #[test]
-    fn test_raw_value_ok() {
-        fn test_json_ok(json: &str) {
-            let data = TestRawValue {
-                rawvalue: from_str(json).expect(json),
-                rawvalue2: from_str(json).expect(json),
-            };
-
-            // test long json for SIMD
-            let json2 = json.to_string() + &" ".repeat(1000);
-            let data2 = TestRawValue {
-                rawvalue: from_str(json).expect(&json2),
-                rawvalue2: from_str(json).expect(&json2),
-            };
-            assert_eq!(data, data2);
-            let json = json.trim();
-            let expect: String = format!("{{\"rawvalue\":{},\"rawvalue2\":{}}}", json, json);
-            let serialized = to_string(&data).expect(json);
-            assert_eq!(expect, serialized);
-            assert_eq!(from_str::<TestRawValue>(&serialized).expect(json), data);
-        }
-        test_json_ok(r#""""#);
-        test_json_ok(r#""raw value""#);
-        test_json_ok(r#""哈哈哈☺""#);
-        test_json_ok(r#"true"#);
-        test_json_ok(r#"false"#);
-        test_json_ok(r#"0"#);
-        test_json_ok(r#"-1"#);
-        test_json_ok(r#"-1e+1111111111111"#);
-        test_json_ok(r#"-1e-1111111111111"#);
-        test_json_ok(r#"{}"#);
-        test_json_ok(r#"[]"#);
-        test_json_ok(r#"{"":[], "": ["", "", []]}"#);
-        test_json_ok(r#"{"":[], "": ["", "", []]}"#);
-    }
-
-    #[test]
-    fn test_raw_value_failed() {
-        fn test_json_failed(json: &str) {
-            let ret: Result<Box<RawValue>> = from_str(json);
-            assert!(ret.is_err(), "invalid json is {}", json);
-        }
-        test_json_failed(r#"""#);
-        test_json_failed(r#""raw " value""#);
-        test_json_failed(r#"哈哈哈""#);
-        test_json_failed(r#""\x""#);
-        test_json_failed("\"\x00\"");
-        test_json_failed(r#"tru"#);
-        test_json_failed(r#"fals"#);
-        test_json_failed(r#"0."#);
-        test_json_failed(r#"-"#);
-        test_json_failed(r#"-1e"#);
-        test_json_failed(r#"-1e-"#);
-        test_json_failed(r#"-1e-1.111"#);
-        test_json_failed(r#"-1e-1,"#);
-        test_json_failed(r#"{"#);
-        test_json_failed(r#" ]"#);
-        test_json_failed(r#"{"":[], ["", "", []]}"#);
     }
 
     #[derive(Debug, Deserialize, Serialize, PartialEq)]

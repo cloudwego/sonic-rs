@@ -72,6 +72,7 @@ struct ObjectInner<'de> {
     strbuf: Vec<u8>,
     first: bool,
     ending: bool,
+    check: bool,
 }
 
 struct ArrayInner<'de> {
@@ -79,26 +80,18 @@ struct ArrayInner<'de> {
     parser: Option<Parser<SliceRead<'static>>>,
     first: bool,
     ending: bool,
+    check: bool,
 }
 
-/// A lazied iterator for JSON object.
-/// # Safety
-/// If the json is invalid, the result is undefined.
-pub struct UnsafeObjectJsonIter<'de>(ObjectInner<'de>);
-
-/// A lazied iterator for JSON array.
-/// # Safety
-/// If the json is invalid, the result is undefined.
-pub struct UnsafeArrayJsonIter<'de>(ArrayInner<'de>);
-
 impl<'de> ObjectInner<'de> {
-    fn new(json: JsonSlice<'de>) -> Self {
+    fn new(json: JsonSlice<'de>, check: bool) -> Self {
         Self {
             json,
             parser: None,
             strbuf: Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY),
             first: true,
             ending: false,
+            check,
         }
     }
 
@@ -134,12 +127,13 @@ impl<'de> ObjectInner<'de> {
 }
 
 impl<'de> ArrayInner<'de> {
-    fn new(json: JsonSlice<'de>) -> Self {
+    fn new(json: JsonSlice<'de>, check: bool) -> Self {
         Self {
             json,
             parser: None,
             first: true,
             ending: false,
+            check,
         }
     }
 
@@ -177,38 +171,36 @@ impl<'de> ArrayInner<'de> {
 /// Convert a json to a lazy ObjectJsonIter. The iterator is lazied and the parsing will doing when iterating.
 /// The item of the iterator is a Result. If parse error, it will return Err.
 pub fn to_object_iter<'de, I: JsonInput<'de>>(json: I) -> ObjectJsonIter<'de> {
-    ObjectJsonIter(ObjectInner::new(json.to_json_slice()))
+    ObjectJsonIter(ObjectInner::new(json.to_json_slice(), true))
 }
 
 /// Convert a json to a lazy ArrayJsonIter. The iterator is lazied and the parsing will doing when iterating.
 /// The item of the iterator is a Result. If parse error, it will return Err.
 pub fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayJsonIter<'de> {
-    ArrayJsonIter(ArrayInner::new(json.to_json_slice()))
+    ArrayJsonIter(ArrayInner::new(json.to_json_slice(), true))
 }
 
 /// Convert a json to a lazy UnsafeObjectJsonIter. The iterator is lazied and the parsing will doing when iterating.
 /// The item of the iterator is a Result. If parse error, it will return Err.
 /// # Safety
 /// If the json is invalid, the result is undefined.
-pub unsafe fn to_object_iter_unchecked<'de, I: JsonInput<'de>>(
-    json: I,
-) -> UnsafeObjectJsonIter<'de> {
-    UnsafeObjectJsonIter(ObjectInner::new(json.to_json_slice()))
+pub unsafe fn to_object_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> ObjectJsonIter<'de> {
+    ObjectJsonIter(ObjectInner::new(json.to_json_slice(), false))
 }
 
 /// Convert a json to a lazy UnsafeArrayJsonIter. The iterator is lazied and the parsing will doing when iterating.
 /// The item of the iterator is a Result. If parse error, it will return Err.
 /// # Safety
 /// If the json is invalid, the result is undefined.
-pub unsafe fn to_array_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> UnsafeArrayJsonIter<'de> {
-    UnsafeArrayJsonIter(ArrayInner::new(json.to_json_slice()))
+pub unsafe fn to_array_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> ArrayJsonIter<'de> {
+    ArrayJsonIter(ArrayInner::new(json.to_json_slice(), false))
 }
 
 impl<'de> Iterator for ObjectJsonIter<'de> {
     type Item = Result<(FastStr, LazyValue<'de>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next_entry_impl(true)
+        self.0.next_entry_impl(self.0.check)
     }
 }
 
@@ -216,23 +208,7 @@ impl<'de> Iterator for ArrayJsonIter<'de> {
     type Item = Result<LazyValue<'de>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next_elem_impl(true)
-    }
-}
-
-impl<'de> Iterator for UnsafeObjectJsonIter<'de> {
-    type Item = Result<(FastStr, LazyValue<'de>)>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next_entry_impl(false)
-    }
-}
-
-impl<'de> Iterator for UnsafeArrayJsonIter<'de> {
-    type Item = Result<LazyValue<'de>>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next_elem_impl(false)
+        self.0.next_elem_impl(self.0.check)
     }
 }
 
@@ -389,7 +365,7 @@ mod test {
         let iter = to_array_iter(&json);
         let out: Vec<u8> = iter
             .flatten()
-            .map(|e| e.deserialize::<u8>().unwrap_or_default())
+            .map(|e| crate::from_str::<u8>(e.as_raw_str()).unwrap_or_default())
             .collect();
         assert_eq!(out.as_slice(), &[1, 2, 3, 4, 5, 6]);
 

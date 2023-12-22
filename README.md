@@ -38,7 +38,7 @@ More details about optimization can be found in [performance.md](docs/performanc
     - [Get a field from JSON](#get-a-field-from-json)
     - [Parse and Serialize into untyped Value](#parse-and-serialize-into-untyped-value)
     - [JSON Iterator](#json-iterator)
-    - [JSON RawValue & Number & RawNumber](#json-rawvalue--number--rawnumber)
+    - [JSON LazyValue & Number & RawNumber](#json-lazyvalue--number--rawnumber)
     - [Error handle](#error-handle)
 - [FAQs](#faqs)
     - [About UTF-8](#about-utf-8)
@@ -72,7 +72,7 @@ sonic-rs = 0.2
 
 4. Use JSON as a lazy array or object iterator with the blazing performance.
 
-5. Supprt `RawValue`, `Number` and `RawNumber`(just like Golang's `JsonNumber`) in default.
+5. Supprt `LazyValue`, `Number` and `RawNumber`(just like Golang's `JsonNumber`) in default.
 
 6. The floating parsing percision is as Rust std in default.
 
@@ -445,9 +445,9 @@ fn main() {
 }
 ```
 
-### JSON RawValue & Number & RawNumber
+### JSON LazyValue & Number & RawNumber
 
-If we need parse a JSON value as a raw string, we can use `RawValue`.
+If we need parse a JSON value as a raw string, we can use `LazyValue`.
 If we need parse a JSON number into a untyped type, we can use `Number`.
 If we need parse a JSON number ***without loss of percision***, we can use `RawNumber`. It likes `JsonNumber` in Golang, and can also be parsed from a JSON string.
 

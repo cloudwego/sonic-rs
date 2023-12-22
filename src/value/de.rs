@@ -5,12 +5,12 @@ use crate::serde::number::N;
 use crate::serde::tri;
 use crate::value::node::Value;
 use crate::value::Object;
-use serde::de::Visitor;
-use serde::de::{
+use ::serde::de::Visitor;
+use ::serde::de::{
     self, Deserialize, DeserializeSeed, EnumAccess, Expected, IntoDeserializer, MapAccess,
     SeqAccess, Unexpected, VariantAccess,
 };
-use serde::forward_to_deserialize_any;
+use ::serde::forward_to_deserialize_any;
 use std::mem::MaybeUninit;
 use std::result::Result as StdResult;
 use std::slice;
@@ -568,20 +568,12 @@ impl<'de> serde::Deserializer<'de> for &'de Value {
     #[inline]
     fn deserialize_newtype_struct<V>(
         self,
-        name: &'static str,
+        _name: &'static str,
         visitor: V,
     ) -> Result<V::Value, Error>
     where
         V: Visitor<'de>,
     {
-        // deserialize value into RawValue
-        if name == crate::serde::raw::TOKEN {
-            return visitor.visit_map(crate::serde::raw::OwnedRawDeserializer {
-                raw_value: Some(self.to_string()),
-            });
-        }
-
-        let _ = name;
         visitor.visit_newtype_struct(self)
     }
 

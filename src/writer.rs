@@ -105,7 +105,7 @@ mod test {
         let buffer = BytesMut::new();
         let writer = &mut buffer.writer();
 
-        let buf = unsafe { writer.reserve_with(20) }.unwrap_or_default();
+        let buf = writer.reserve_with(20).unwrap_or_default();
         assert_eq!(buf.len(), 20);
         assert_eq!(writer.get_ref().capacity(), 20);
 

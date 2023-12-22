@@ -79,7 +79,7 @@ fuzz_target!(|data: &[u8]| {
                     let jv = jv.get(i).unwrap();
                     compare_lazyvalue(jv, &lv);
 
-                    let gv = sonic_rs::get(data, &[i]).unwrap();
+                    let gv = sonic_rs::get(data, [i]).unwrap();
                     compare_lazyvalue(jv, &gv);
                 }
 
@@ -90,7 +90,7 @@ fuzz_target!(|data: &[u8]| {
                         let jv = jv.get(i).unwrap();
                         compare_lazyvalue(jv, &lv);
 
-                        let gv = sonic_rs::get_unchecked(data, &[i]).unwrap();
+                        let gv = sonic_rs::get_unchecked(data, [i]).unwrap();
                         compare_lazyvalue(jv, &gv);
                     }
                 }

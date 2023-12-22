@@ -25,7 +25,6 @@ pub use self::object::Object;
 pub use self::ser::{to_value, to_value_in};
 #[doc(inline)]
 pub use self::value_trait::{JsonContainerTrait, JsonType, JsonValueMutTrait, JsonValueTrait};
-pub use crate::RawValue;
 
 const MAX_STR_SIZE: usize = u32::MAX as usize;
 const PTR_BITS: usize = 48;
