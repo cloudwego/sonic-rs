@@ -21,7 +21,7 @@ The main optimization in sonic-rs is the use of SIMD. However, we do not use the
 
 More details about optimization can be found in [performance.md](docs/performance.md).
 
-***For Golang user to use `sonic_rs`, please see [for_Golang_user_zh.md](docs/for_Golang_user.md)***
+***For Golang user to use `sonic_rs`, please see [for_Golang_user.md](docs/for_Golang_user.md)***
 
 - [sonic-rs](#sonic-rs)
     - [Requirements/Notes](#requirementsnotes)
@@ -60,7 +60,7 @@ Add sonic-rs in `Cargo.toml`
 
 ```
 [dependencies]
-sonic-rs = 0.2
+sonic-rs = 0.3
 ```
 
 ## Features
@@ -472,6 +472,9 @@ By default, sonic-rs does not enable UTF-8 validation. This is a trade-off to ac
 By default, sonic-rs uses floating point precision consistent with the Rust standard library, and there is no need to add an extra `float_roundtrip` feature like `serde-json` to ensure floating point precision.
 
 If you want to achieve lossless precision when parsing floating-point numbers, such as Golang `JsonNumber` and `serde-json arbitrary_precision`, you can use `RawNumber`.
+
+### About compatibility with `serde_json`
+
 
 ## Acknowledgement
 
