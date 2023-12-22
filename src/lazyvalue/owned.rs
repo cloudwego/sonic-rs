@@ -61,7 +61,7 @@ use crate::{
 pub struct OwnedLazyValue {
     // the raw slice from origin json
     pub(crate) raw: FastStr,
-    unescape: Option<Arc<String>>,
+    unescape: Option<Arc<str>>,
 }
 
 impl PartialEq for OwnedLazyValue {
@@ -122,7 +122,7 @@ impl JsonValueTrait for OwnedLazyValue {
         if !self.is_str() {
             None
         } else if let Some(escaped) = self.unescape.as_ref() {
-            Some(escaped.as_str())
+            Some(escaped.as_ref())
         } else {
             // remove the quotes
             let origin = {
@@ -224,16 +224,13 @@ impl OwnedLazyValue {
             JsonSlice::Raw(r) => FastStr::new(unsafe { from_utf8_unchecked(r) }),
             JsonSlice::FastStr(f) => f.clone(),
         };
-        let escaped = if has_escaped {
-            let unescaped: String = crate::from_str(raw.as_str())?;
-            Some(Arc::new(unescaped))
+        let unescape = if has_escaped {
+            let unescape: Arc<str> = unsafe { crate::from_slice_unchecked(raw.as_ref()) }?;
+            Some(unescape)
         } else {
             None
         };
-        Ok(Self {
-            raw,
-            unescape: escaped,
-        })
+        Ok(Self { raw, unescape })
     }
 }
 
