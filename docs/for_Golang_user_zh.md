@@ -40,7 +40,7 @@ gjson/jsonparser get API 本身未做严格的JSON 校验，因此可以使用 `
 
 - 解析到 Golang RawMessage:
 
-请直接使用 `sonic_rs::RawValue`
+请直接使用 `sonic_rs::LazyValue`
 
 
 

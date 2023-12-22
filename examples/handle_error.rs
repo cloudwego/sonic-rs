@@ -21,10 +21,10 @@ fn main() {
         "EOF while parsing at line 1 column 6\n\n\t{\"a\": [\n\t......^\n"
     );
 
-    // deal with Data errors
+    // deal with unmatched type errors
     let err = from_str::<Foo>("{ \"b\":[]}").unwrap_err();
     eprintln!("{}", err);
-    assert!(err.is_data());
+    assert!(err.is_unmatched_type());
     // println as follows:
     // missing field `a` at line 1 column 8
     //

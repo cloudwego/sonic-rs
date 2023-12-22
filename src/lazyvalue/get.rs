@@ -10,10 +10,11 @@ use crate::util::utf8::from_utf8;
 use bytes::Bytes;
 use faststr::FastStr;
 
-/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
+/// Gets a field from path. And return it as a `LazyValue`. If not found, return `None`.
 /// If path is empty, return the whole JSON as a `LazyValue`.
 ///
 /// # Safety
+///
 /// The JSON must be valid and well-formed, otherwise it may return unexpected result.
 ///
 /// # Examples
@@ -24,7 +25,11 @@ use faststr::FastStr;
 ///
 /// /// not found the field "a"
 /// let lv = unsafe { get_from_str_unchecked(r#"{"a": 1}"#, &["b"]) };
-/// assert!(lv.is_err());
+/// assert!(lv.unwrap_err().is_not_found());
+///
+/// /// the type of JSON is unmatched, expect it is a object
+/// let lv = unsafe { get_from_str_unchecked(r#"[1, 2, 3]"#, &["b"]) };
+/// assert!(lv.unwrap_err().is_unmatched_type());
 /// ```
 ///
 pub unsafe fn get_from_str_unchecked<Path: IntoIterator>(
@@ -37,11 +42,13 @@ where
     get_unchecked(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
+/// Gets a field from path. And return it as a `LazyValue`. If not found, return `None`.
 /// If path is empty, return the whole JSON as a `LazyValue`.
 ///
 /// # Safety
+///
 /// The JSON must be valid and well-formed, otherwise it may return unexpected result.
+///
 pub unsafe fn get_from_bytes_unchecked<Path: IntoIterator>(
     json: &Bytes,
     path: Path,
@@ -52,11 +59,32 @@ where
     get_unchecked(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`.  If not found, return a err.
+/// Gets a field from path. And return it as a `LazyValue`.  If not found, return `None`.
 /// If path is empty, return the whole JSON as a `LazyValue`.
 ///
 /// # Safety
+///
 /// The JSON must be valid and well-formed, otherwise it may return unexpected result.
+///
+/// # Examples
+///
+/// ```
+/// # use sonic_rs::get_from_faststr_unchecked;
+///
+/// let fs = faststr::FastStr::new(r#"{"a": 1}"#);
+/// let lv = unsafe { get_from_faststr_unchecked(&fs, &["a"]).unwrap() };
+/// assert_eq!(lv.as_raw_str(), "1");
+///
+/// /// not found the field "a"
+/// let lv = unsafe { get_from_faststr_unchecked(&fs, &["b"]) };
+/// assert!(lv.unwrap_err().is_not_found());
+///
+/// /// the type of JSON is unmatched, expect it is a object
+/// let fs = faststr::FastStr::from(r#"[1, 2, 3]"#);
+/// let lv = unsafe { get_from_faststr_unchecked(&fs, &["b"]) };
+/// assert!(lv.unwrap_err().is_unmatched_type());
+/// ```
+///
 pub unsafe fn get_from_faststr_unchecked<Path: IntoIterator>(
     json: &FastStr,
     path: Path,
@@ -72,17 +100,6 @@ where
 ///
 /// # Safety
 /// The JSON must be valid and well-formed, otherwise it may return unexpected result.
-///
-/// # Examples
-/// ```
-/// use sonic_rs::get_from_slice_unchecked;
-/// let lv = unsafe { get_from_slice_unchecked(br#"{"a": 1}"#, &["a"]).unwrap() };
-/// assert_eq!(lv.as_raw_str(), "1");
-///
-/// /// not found the field "a"
-/// let lv = unsafe { get_from_slice_unchecked(br#"{"a": 1}"#, &["b"]) };
-/// assert!(lv.is_err());
-/// ```
 ///
 pub unsafe fn get_from_slice_unchecked<Path: IntoIterator>(
     json: &[u8],
@@ -113,7 +130,7 @@ where
 /// /// not found the field "a"
 /// let fs = FastStr::new(r#"{"a": 1}"#);
 /// let lv = unsafe { get_unchecked(&fs, &["b"]) };
-/// assert!(lv.is_err());
+/// assert!(lv.unwrap_err().is_not_found());
 /// ```
 ///
 pub unsafe fn get_unchecked<'de, Input, Path: IntoIterator>(
@@ -252,7 +269,7 @@ where
 /// assert_eq!(lv.as_raw_str(), "1");
 ///
 /// /// not found the field "a"
-/// let lv = get_from_slice(&fs, &["b"]);
+/// let lv = get_from_faststr(&fs, &["b"]);
 /// assert!(lv.is_err());
 /// ```
 ///

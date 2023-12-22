@@ -22,7 +22,7 @@ use crate::JsonType;
 use crate::Number;
 use bumpalo::Bump;
 use core::mem::size_of;
-use serde::ser::{Error, Serialize, SerializeMap, SerializeSeq};
+use serde::ser::{Serialize, SerializeMap, SerializeSeq};
 use std::alloc::Layout;
 use std::fmt::Debug;
 use std::fmt::Display;

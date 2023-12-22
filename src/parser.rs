@@ -15,6 +15,7 @@ use crate::util::unicode::{codepoint_to_utf8, hex_to_u32_nocheck};
 use crate::value::shared::Shared;
 use crate::value::visitor::JsonVisitor;
 use crate::JsonType;
+use ::serde::de::{Expected, Unexpected};
 use arrayref::array_ref;
 use faststr::FastStr;
 use packed_simd::{m8x32, u8x32, u8x64};
@@ -1771,7 +1772,7 @@ where
         debug_assert!(temp_buf.is_empty());
         match self.skip_space() {
             Some(b'{') => {}
-            Some(_) => return perr!(self, ExpectedObjectStart),
+            Some(peek) => return Err(self.peek_invalid_type(peek, &"a JSON object")),
             None => return perr!(self, EofWhileParsing),
         }
 
@@ -1816,7 +1817,7 @@ where
         debug_assert!(temp_buf.is_empty());
         match self.skip_space() {
             Some(b'{') => {}
-            Some(_) => return perr!(self, ExpectedObjectStart),
+            Some(peek) => return Err(self.peek_invalid_type(peek, &"a JSON object")),
             None => return perr!(self, EofWhileParsing),
         }
 
@@ -1854,7 +1855,7 @@ where
         let mut count = index;
         match self.skip_space() {
             Some(b'[') => {}
-            Some(_) => return perr!(self, ExpectedArrayStart),
+            Some(peek) => return Err(self.peek_invalid_type(peek, &"a JSON array")),
             None => return perr!(self, EofWhileParsing),
         }
 
@@ -1892,7 +1893,7 @@ where
         let mut count = index;
         match self.skip_space() {
             Some(b'[') => {}
-            Some(_) => return perr!(self, ExpectedArrayStart),
+            Some(peek) => return Err(self.peek_invalid_type(peek, &"a JSON array")),
             None => return perr!(self, EofWhileParsing),
         }
         while count > 0 {
@@ -2030,7 +2031,7 @@ where
         debug_assert!(strbuf.is_empty());
         match self.skip_space() {
             Some(b'{') => {}
-            Some(_) => return perr!(self, ExpectedObjectStart),
+            Some(peek) => return Err(self.peek_invalid_type(peek, &"a JSON object")),
             None => return perr!(self, EofWhileParsing),
         }
 
@@ -2091,7 +2092,7 @@ where
         debug_assert!(strbuf.is_empty());
         match self.skip_space() {
             Some(b'{') => {}
-            Some(_) => return perr!(self, ExpectedObjectStart),
+            Some(peek) => return Err(self.peek_invalid_type(peek, &"a JSON object")),
             None => return perr!(self, EofWhileParsing),
         }
 
@@ -2156,7 +2157,7 @@ where
     ) -> Result<()> {
         match self.skip_space() {
             Some(b'[') => {}
-            Some(_) => return perr!(self, ExpectedArrayStart),
+            Some(peek) => return Err(self.peek_invalid_type(peek, &"a JSON array")),
             None => return perr!(self, EofWhileParsing),
         }
         let mut index = 0;
@@ -2215,7 +2216,7 @@ where
     ) -> Result<()> {
         match self.skip_space() {
             Some(b'[') => {}
-            Some(_) => return perr!(self, ExpectedArrayStart),
+            Some(peek) => return Err(self.peek_invalid_type(peek, &"a JSON array")),
             None => return perr!(self, EofWhileParsing),
         }
         let mut index = 0;
@@ -2276,5 +2277,62 @@ where
             self.shared = Some(Arc::new(Shared::new()));
         }
         unsafe { self.shared.as_ref().unwrap_unchecked().clone() }
+    }
+
+    #[cold]
+    pub(crate) fn peek_invalid_type(&mut self, peek: u8, exp: &dyn Expected) -> Error {
+        use ::serde::de;
+        let err = match peek {
+            b'n' => {
+                if let Err(err) = self.parse_literal("ull") {
+                    return err;
+                }
+                de::Error::invalid_type(Unexpected::Unit, exp)
+            }
+            b't' => {
+                if let Err(err) = self.parse_literal("rue") {
+                    return err;
+                }
+                de::Error::invalid_type(Unexpected::Bool(true), exp)
+            }
+            b'f' => {
+                if let Err(err) = self.parse_literal("alse") {
+                    return err;
+                }
+                de::Error::invalid_type(Unexpected::Bool(false), exp)
+            }
+            b'-' => match self.parse_number(true) {
+                Ok(n) => n.invalid_type(exp),
+                Err(err) => return err,
+            },
+            b'0'..=b'9' => match self.parse_number(false) {
+                Ok(n) => n.invalid_type(exp),
+                Err(err) => return err,
+            },
+            b'"' => {
+                let mut scratch = Vec::new();
+                match self.parse_str_impl(&mut scratch) {
+                    Ok(s) => de::Error::invalid_type(Unexpected::Str(&s), exp),
+                    Err(err) => return err,
+                }
+            }
+            // for correctness, we will parse the whole object or array.
+            b'[' => {
+                self.read.backward(1);
+                match self.skip_one() {
+                    Ok(_) => de::Error::invalid_type(Unexpected::Seq, exp),
+                    Err(err) => return err,
+                }
+            }
+            b'{' => {
+                self.read.backward(1);
+                match self.skip_one() {
+                    Ok(_) => de::Error::invalid_type(Unexpected::Map, exp),
+                    Err(err) => return err,
+                }
+            }
+            _ => self.error(ErrorCode::InvalidJsonValue),
+        };
+        self.fix_position(err)
     }
 }
