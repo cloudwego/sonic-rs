@@ -36,4 +36,4 @@ Corresponding API references:
 
 - Parsing into Golang RawMessage:
 
-  Please use `sonic_rs::RawValue` directly.
+  Please use `sonic_rs::LazyValue` directly.

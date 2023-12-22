@@ -65,12 +65,11 @@ impl Error {
     /// - `Category::Eof` - unexpected end of the input data
     pub fn classify(&self) -> Category {
         match self.err.code {
-            ErrorCode::Message(_)
-            | ErrorCode::GetInEmptyObject
+            ErrorCode::Message(_) | ErrorCode::UnexpectedVisitType => Category::TypeUnmatched,
+            ErrorCode::GetInEmptyObject
             | ErrorCode::GetInEmptyArray
             | ErrorCode::GetIndexOutOfArray
-            | ErrorCode::GetUnknownKeyInObject
-            | ErrorCode::UnexpectedVisitType => Category::Data,
+            | ErrorCode::GetUnknownKeyInObject => Category::NotFound,
             ErrorCode::Io(_) => Category::Io,
             ErrorCode::EofWhileParsing => Category::Eof,
             ErrorCode::ExpectedColon
@@ -110,13 +109,20 @@ impl Error {
         self.classify() == Category::Syntax
     }
 
-    /// Returns true if this error was caused by input data that was
-    /// semantically incorrect.
+    /// Returns true when the input data is unmatched for expected type.
     ///
-    /// For example, JSON containing a number is semantically incorrect when the
-    /// type being deserialized into holds a String.
-    pub fn is_data(&self) -> bool {
-        self.classify() == Category::Data
+    /// For example, JSON containing a number  when the type being deserialized into holds a String.
+    pub fn is_unmatched_type(&self) -> bool {
+        self.classify() == Category::TypeUnmatched
+    }
+
+    /// Return true when the target field was not found from JSON.
+    ///
+    /// For example:
+    /// When using `get*` APIs, it gets a unknown keys from JSON text, or get
+    /// a index out of the array.
+    pub fn is_not_found(&self) -> bool {
+        self.classify() == Category::NotFound
     }
 
     /// Returns true if this error was caused by prematurely reaching the end of
@@ -157,14 +163,17 @@ pub enum Category {
     /// The error was caused by input that was not syntactically valid JSON.
     Syntax,
 
-    /// The error was caused by input data that was semantically incorrect.
+    /// The error was caused when the input data is unmatched for expected type.
+    ///
+    /// For example, JSON containing a number  when the type being deserialized into holds a String.
+    TypeUnmatched,
+
+    /// The error was caused when the target field was not found from JSON.
     ///
     /// For example:
-    /// 1. JSON containing a number is semantically incorrect when the
-    /// type being deserialized into holds a String.
-    /// 2. When using `get*` APIs, it gets a unknown keys from JSON text, or get
-    /// a index from empty array.
-    Data,
+    /// When using `get*` APIs, it gets a unknown keys from JSON text, or get
+    /// a index out of the array.
+    NotFound,
 
     /// The error was caused by prematurely reaching the end of the input data.
     ///

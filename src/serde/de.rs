@@ -73,7 +73,7 @@ impl ParserNumber {
         }
     }
 
-    fn invalid_type(self, exp: &dyn Expected) -> Error {
+    pub(crate) fn invalid_type(self, exp: &dyn Expected) -> Error {
         match self {
             ParserNumber::Float(x) => de::Error::invalid_type(Unexpected::Float(x), exp),
             ParserNumber::Unsigned(x) => de::Error::invalid_type(Unexpected::Unsigned(x), exp),
@@ -126,46 +126,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
 
     #[cold]
     fn peek_invalid_type(&mut self, peek: u8, exp: &dyn Expected) -> Error {
-        let err = match peek {
-            b'n' => {
-                if let Err(err) = self.parser.parse_literal("ull") {
-                    return err;
-                }
-                de::Error::invalid_type(Unexpected::Unit, exp)
-            }
-            b't' => {
-                if let Err(err) = self.parser.parse_literal("rue") {
-                    return err;
-                }
-                de::Error::invalid_type(Unexpected::Bool(true), exp)
-            }
-            b'f' => {
-                if let Err(err) = self.parser.parse_literal("alse") {
-                    return err;
-                }
-                de::Error::invalid_type(Unexpected::Bool(false), exp)
-            }
-            b'-' => match self.parser.parse_number(true) {
-                Ok(n) => n.invalid_type(exp),
-                Err(err) => return err,
-            },
-            b'0'..=b'9' => match self.parser.parse_number(false) {
-                Ok(n) => n.invalid_type(exp),
-                Err(err) => return err,
-            },
-            b'"' => {
-                self.scratch.clear();
-                match self.parser.parse_str_impl(&mut self.scratch) {
-                    Ok(s) => de::Error::invalid_type(Unexpected::Str(&s), exp),
-                    Err(err) => return err,
-                }
-            }
-            b'[' => de::Error::invalid_type(Unexpected::Seq, exp),
-            b'{' => de::Error::invalid_type(Unexpected::Map, exp),
-            _ => self.parser.error(ErrorCode::InvalidJsonValue),
-        };
-
-        self.parser.fix_position(err)
+        self.parser.peek_invalid_type(peek, exp)
     }
 
     fn end_seq(&mut self) -> Result<()> {
