@@ -4,7 +4,6 @@ use crate::value::object::DEFAULT_OBJ_CAP;
 use crate::value::shared::Shared;
 use crate::value::shared::SharedCtxGuard;
 use crate::JsonValueTrait;
-use crate::LazyValue;
 use crate::PointerNode;
 use crate::{JsonValueMutTrait, Value};
 use std::convert::Into;
@@ -107,10 +106,6 @@ pub trait Index: Sealed {
     #[doc(hidden)]
     fn value_index_into<'v>(&self, v: &'v Value) -> Option<&'v Value>;
 
-    /// Return None if the index is not already in the array or object lazy_value.
-    #[doc(hidden)]
-    fn lazyvalue_index_into<'de>(&self, v: &'de LazyValue<'de>) -> Option<LazyValue<'de>>;
-
     /// Return None if the key is not already in the array or object.
     #[doc(hidden)]
     fn index_into_mut<'v>(&self, v: &'v mut Value) -> Option<&'v mut Value>;
@@ -138,10 +133,6 @@ impl Index for usize {
         if !v.is_array() {
             return None;
         }
-        v.get_index(*self)
-    }
-
-    fn lazyvalue_index_into<'de>(&self, v: &'de LazyValue<'de>) -> Option<LazyValue<'de>> {
         v.get_index(*self)
     }
 
@@ -176,11 +167,6 @@ macro_rules! impl_str_index {
                     if !v.is_object() {
                         return None;
                     }
-                    v.get_key(*self)
-                }
-
-                #[inline]
-                fn lazyvalue_index_into<'de>(&self, v: &'de LazyValue<'de>) -> Option<LazyValue<'de>> {
                     v.get_key(*self)
                 }
 
@@ -238,14 +224,6 @@ impl Index for PointerNode {
     }
 
     #[inline]
-    fn lazyvalue_index_into<'de>(&self, v: &'de LazyValue<'de>) -> Option<LazyValue<'de>> {
-        match self {
-            PointerNode::Index(i) => i.lazyvalue_index_into(v),
-            PointerNode::Key(k) => k.lazyvalue_index_into(v),
-        }
-    }
-
-    #[inline]
     fn index_into_mut<'v>(&self, v: &'v mut Value) -> Option<&'v mut Value> {
         match self {
             PointerNode::Index(i) => i.index_into_mut(v),
@@ -285,11 +263,6 @@ where
     #[inline]
     fn value_index_into<'v>(&self, v: &'v Value) -> Option<&'v Value> {
         (**self).value_index_into(v)
-    }
-
-    #[inline]
-    fn lazyvalue_index_into<'de>(&self, v: &'de LazyValue<'de>) -> Option<LazyValue<'de>> {
-        (**self).lazyvalue_index_into(v)
     }
 
     #[inline]

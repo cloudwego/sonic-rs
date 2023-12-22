@@ -6,9 +6,9 @@ use super::de::tri;
 use crate::error::{Error, ErrorCode, Result};
 use crate::format::{CompactFormatter, Formatter, PrettyFormatter};
 use crate::writer::WriteExt;
+use ::serde::ser::{self, Impossible, Serialize};
 use core::fmt::{self, Display};
 use core::num::FpCategory;
-use serde::ser::{self, Impossible, Serialize};
 use std::io;
 use std::string::{String, ToString};
 use std::vec::Vec;
@@ -376,7 +376,7 @@ where
     #[inline]
     fn serialize_struct(self, name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
         match name {
-            crate::serde::number::TOKEN | crate::serde::raw::TOKEN | crate::lazyvalue::TOKEN => {
+            crate::serde::rawnumber::TOKEN | crate::lazyvalue::TOKEN => {
                 Ok(Compound::RawValue { ser: self })
             }
             _ => self.serialize_map(Some(len)),
@@ -695,7 +695,7 @@ where
             Compound::Map { .. } => ser::SerializeMap::serialize_entry(self, key, value),
 
             Compound::RawValue { ser, .. } => {
-                if key == crate::serde::raw::TOKEN || key == crate::lazyvalue::TOKEN {
+                if key == crate::serde::rawnumber::TOKEN || key == crate::lazyvalue::TOKEN {
                     value.serialize(RawValueStrEmitter(ser))
                 } else {
                     Err(invalid_raw_value())

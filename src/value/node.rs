@@ -1305,7 +1305,7 @@ impl Value {
 
         // allocate the padding buffer for the input json
         let real_size = len + Self::PADDING_SIZE;
-        let layout = Layout::array::<u8>(real_size).map_err(Error::custom)?;
+        let layout = Layout::array::<u8>(real_size).expect("invalid layout size ");
         let dst = alloc.alloc_layout(layout);
         let json_buf = unsafe {
             let dst = dst.as_ptr();

@@ -38,7 +38,7 @@ sonic-rs 的主要优化是使用 SIMD。然而，sonic-rs 没有使用来自`si
     - [从JSON中获取字段](#从-json-中获取字段)
     - [解析/序列化document](#解析序列化-document)
     - [JSON Iterator](#json-iterator)
-    - [JSON RawValue & Number & RawNumber](#json-rawvalue--number--rawnumber)
+    - [JSON LazyValue & Number & RawNumber](#json-lazyvalue--number--rawnumber)
     - [错误处理](#错误处理)
 - [常见问题](#常见问题)
     - [关于UTF-8](#关于-utf-8)
@@ -68,7 +68,7 @@ sonic-rs = 0.2
 2. JSON 与 document 之间的序列化，document是可变数据结构
 3. 从 JSON 中获取特定字段
 4. 将 JSON 解析为惰性迭代器
-5. 在默认情况下支持 `RawValue`，`Number` 和 `RawNumber`（就像 Golang 的 `JsonNumber`）。
+5. 在默认情况下支持 `LazyValue`，`Number` 和 `RawNumber`（就像 Golang 的 `JsonNumber`）。
 6. 浮点数精度默认和 Rust 标准库对齐
 
 
@@ -443,9 +443,9 @@ fn main() {
 }
 ```
 
-### JSON RawValue & Number & RawNumber
+### JSON LazyValue & Number & RawNumber
 
-如果我们需要得到原始的 JSON 文本，可以使用 RawValue。 如果我们需要将 JSON 数字解析为 untyped number，可以使用 Number。 如果我们需要解析 JSON 数字时***不丢失精度**，可以使用 RawNumber，它类似于 Golang 中的 JsonNumber。
+如果我们需要得到原始的 JSON 文本，可以使用 LazyValue. 如果我们需要将 JSON 数字解析为 untyped number，可以使用 Number。 如果我们需要解析 JSON 数字时***不丢失精度**，可以使用 RawNumber，它类似于 Golang 中的 JsonNumber。
 
 详细示例可以在[raw_value.rs](examples/raw_value.rs) 和 [json_number.rs](examples/json_number.rs) 中找到。
 

@@ -321,12 +321,8 @@ impl serde::Serializer for Serializer {
     #[inline]
     fn serialize_struct(self, name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
         match name {
-            crate::serde::number::TOKEN => Ok(SerializeMap {
+            crate::serde::rawnumber::TOKEN => Ok(SerializeMap {
                 map: MapInner::RawNumber { out_value: None },
-                shared: self.shared(),
-            }),
-            crate::serde::raw::TOKEN => Ok(SerializeMap {
-                map: MapInner::RawValue { out_value: None },
                 shared: self.shared(),
             }),
             _ => self.serialize_map(Some(len)),

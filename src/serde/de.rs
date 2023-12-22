@@ -8,12 +8,10 @@ use crate::error::{
 };
 use crate::parser::{as_str, Parser};
 use crate::reader::{Reader, Reference, SliceRead};
-use crate::serde::number::BorrowedJsonNumberDeserializer;
-use crate::serde::raw::BorrowedRawDeserializer;
 use crate::util::num::ParserNumber;
 use crate::value::node::Value;
-use serde::de::{self, Expected, Unexpected};
-use serde::forward_to_deserialize_any;
+use ::serde::de::{self, Expected, Unexpected};
+use ::serde::forward_to_deserialize_any;
 use std::mem::ManuallyDrop;
 use std::ptr::slice_from_raw_parts;
 
@@ -217,17 +215,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         }
     }
 
-    fn deserialize_raw_value<V>(&mut self, visitor: V) -> Result<V::Value>
-    where
-        V: de::Visitor<'de>,
-    {
-        let raw = as_str(self.parser.skip_one()?);
-        visitor.visit_map(BorrowedRawDeserializer {
-            raw_value: Some(raw),
-        })
-    }
-
-    fn deserialize_lazy_value<V>(&mut self, visitor: V) -> Result<V::Value>
+    fn deserialize_lazyvalue<V>(&mut self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
@@ -269,20 +257,17 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     }
 
     // we deserialize json number from string or number types
-    fn deserialize_json_number<V>(&mut self, visitor: V) -> Result<V::Value>
+    fn deserialize_rawnumber<V>(&mut self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        match self.parser.skip_space_peek() {
+        let raw = match self.parser.skip_space_peek() {
             Some(c @ b'-' | c @ b'0'..=b'9') => {
                 let start = self.parser.read.index();
                 self.parser.read.eat(1);
                 self.parser.skip_number(c)?;
                 let end = self.parser.read.index();
-                let raw = as_str(self.parser.read.slice_unchecked(start, end));
-                return visitor.visit_map(BorrowedJsonNumberDeserializer {
-                    raw_value: Some(raw),
-                });
+                as_str(self.parser.read.slice_unchecked(start, end))
             }
             Some(b'"') => {
                 self.parser.read.eat(1);
@@ -299,13 +284,12 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
                 if self.parser.read.next() != Some(b'"') {
                     return Err(self.parser.error(ErrorCode::InvalidNumber));
                 }
-
-                return visitor.visit_map(BorrowedJsonNumberDeserializer {
-                    raw_value: Some(raw),
-                });
+                raw
             }
-            _ => Err(self.parser.error(ErrorCode::InvalidNumber)),
-        }
+            _ => return Err(self.parser.error(ErrorCode::InvalidNumber)),
+        };
+
+        visitor.visit_borrowed_str(raw)
     }
 }
 
@@ -587,12 +571,10 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         V: de::Visitor<'de>,
     {
         {
-            if name == crate::serde::raw::TOKEN {
-                return self.deserialize_raw_value(visitor);
-            } else if name == crate::serde::number::TOKEN {
-                return self.deserialize_json_number(visitor);
+            if name == crate::serde::rawnumber::TOKEN {
+                return self.deserialize_rawnumber(visitor);
             } else if name == crate::lazyvalue::TOKEN {
-                return self.deserialize_lazy_value(visitor);
+                return self.deserialize_lazyvalue(visitor);
             } else if name == crate::value::de::TOKEN {
                 return self.deserialize_value(visitor);
             }
@@ -1032,7 +1014,23 @@ impl<'de, 'a, R> MapKey<'a, R>
 where
     R: Reader<'de>,
 {
-    deserialize_numeric_key!(deserialize_number, deserialize_number);
+    fn deserialize_number<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        match self.de.parser.read.peek() {
+            Some(b'0'..=b'9' | b'-') => {}
+            _ => return Err(self.de.parser.error(ErrorCode::ExpectedNumericKey)),
+        }
+
+        let value = tri!(self.de.deserialize_number(visitor));
+
+        if self.de.parser.read.next() != Some(b'"') {
+            return Err(self.de.parser.error(ErrorCode::ExpectedQuote));
+        }
+
+        Ok(value)
+    }
 }
 
 impl<'de, 'a, R> de::Deserializer<'de> for MapKey<'a, R>
@@ -1103,15 +1101,10 @@ where
     }
 
     #[inline]
-    fn deserialize_newtype_struct<V>(self, name: &'static str, visitor: V) -> Result<V::Value>
+    fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
     {
-        if name == crate::serde::raw::TOKEN {
-            return self.de.deserialize_raw_value(visitor);
-        }
-
-        let _ = name;
         visitor.visit_newtype_struct(self)
     }
 

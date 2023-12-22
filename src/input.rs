@@ -7,7 +7,7 @@ use faststr::FastStr;
 ///
 #[doc(hidden)]
 #[non_exhaustive]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum JsonSlice<'de> {
     Raw(&'de [u8]),
     FastStr(FastStr),
@@ -49,6 +49,12 @@ impl<'de> From<&'de str> for JsonSlice<'de> {
 impl<'de> From<&'de String> for JsonSlice<'de> {
     fn from(value: &'de String) -> Self {
         JsonSlice::Raw(value.as_bytes())
+    }
+}
+
+impl<'de> From<String> for JsonSlice<'de> {
+    fn from(value: String) -> Self {
+        JsonSlice::FastStr(FastStr::new(value))
     }
 }
 
