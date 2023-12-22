@@ -2,13 +2,17 @@
 
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
 
-use core::fmt::{self, Debug, Display};
-use core::result;
-use serde::{de, ser};
-use std::error;
-use std::str::FromStr;
-use std::string::{String, ToString};
+use core::{
+    fmt::{self, Debug, Display},
+    result,
+};
+use std::{
+    error,
+    str::FromStr,
+    string::{String, ToString},
+};
 
+use serde::{de, ser};
 use thiserror::Error as ErrorTrait;
 
 use crate::reader::Position;
@@ -48,7 +52,6 @@ impl Error {
 
     /// The kind reported by the underlying standard library I/O error, if this
     /// error was caused by a failure to read or write bytes on an I/O stream.
-    ///
     pub fn io_error_kind(&self) -> Option<std::io::ErrorKind> {
         if let ErrorCode::Io(io_error) = &self.err.code {
             Some(io_error.kind())
@@ -141,7 +144,6 @@ impl From<Error> for std::io::Error {
     ///
     /// JSON syntax and data errors are turned into `InvalidData` I/O errors.
     /// EOF errors are turned into `UnexpectedEof` I/O errors.
-    ///
     fn from(j: Error) -> Self {
         match j.err.code {
             ErrorCode::Io(err) => err,
@@ -165,7 +167,8 @@ pub enum Category {
 
     /// The error was caused when the input data is unmatched for expected type.
     ///
-    /// For example, JSON containing a number  when the type being deserialized into holds a String.
+    /// For example, JSON containing a number  when the type being deserialized into holds a
+    /// String.
     TypeUnmatched,
 
     /// The error was caused when the target field was not found from JSON.
@@ -511,25 +514,29 @@ mod test {
         println!("{}", err);
         assert_eq!(
             format!("{}", err),
-            "Expected this character to be either a ',' or a ']' while parsing at line 1 column 11\n\n\t\": [1, 2x, 3, 4,\n\t........^.......\n"
+            "Expected this character to be either a ',' or a ']' while parsing at line 1 column \
+             11\n\n\t\": [1, 2x, 3, 4,\n\t........^.......\n"
         );
 
         let err = from_str::<Foo>("{\"a\": null}").unwrap_err();
         assert_eq!(
             format!("{}", err),
-            "invalid type: null, expected a sequence at line 1 column 9\n\n\t\"a\": null}\n\t........^.\n"
+            "invalid type: null, expected a sequence at line 1 column 9\n\n\t\"a\": \
+             null}\n\t........^.\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [1,2,3  }").unwrap_err();
         assert_eq!(
             format!("{}", err),
-            "Expected this character to be either a ',' or a ']' while parsing at line 1 column 14\n\n\t[1,2,3  }\n\t........^\n"
+            "Expected this character to be either a ',' or a ']' while parsing at line 1 column \
+             14\n\n\t[1,2,3  }\n\t........^\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [\"123\"]}").unwrap_err();
         assert_eq!(
             format!("{}", err),
-            "invalid type: string \"123\", expected i32 at line 1 column 11\n\n\t\": [\"123\"]}\n\t........^..\n"
+            "invalid type: string \"123\", expected i32 at line 1 column 11\n\n\t\": \
+             [\"123\"]}\n\t........^..\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [").unwrap_err();
@@ -541,7 +548,8 @@ mod test {
         let err = from_str::<Foo>("{\"a\": [000]}").unwrap_err();
         assert_eq!(
             format!("{}", err),
-            "Expected this character to be either a ',' or a ']' while parsing at line 1 column 8\n\n\t{\"a\": [000]}\n\t........^...\n"
+            "Expected this character to be either a ',' or a ']' while parsing at line 1 column \
+             8\n\n\t{\"a\": [000]}\n\t........^...\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [-]}").unwrap_err();

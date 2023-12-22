@@ -1,10 +1,9 @@
-use crate::parser::as_str;
-use crate::util::private::Sealed;
 use bytes::Bytes;
 use faststr::FastStr;
 
+use crate::{parser::as_str, util::private::Sealed};
+
 /// JsonSlice is a wrapper for different json input.
-///
 #[doc(hidden)]
 #[non_exhaustive]
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]

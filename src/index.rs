@@ -1,12 +1,13 @@
-use crate::util::private::Sealed;
-use crate::util::reborrow::DormantMutRef;
-use crate::value::object::DEFAULT_OBJ_CAP;
-use crate::value::shared::Shared;
-use crate::value::shared::SharedCtxGuard;
-use crate::JsonValueTrait;
-use crate::PointerNode;
-use crate::{JsonValueMutTrait, Value};
 use std::convert::Into;
+
+use crate::{
+    util::{private::Sealed, reborrow::DormantMutRef},
+    value::{
+        object::DEFAULT_OBJ_CAP,
+        shared::{Shared, SharedCtxGuard},
+    },
+    JsonValueMutTrait, JsonValueTrait, PointerNode, Value,
+};
 
 impl<I> std::ops::Index<I> for Value
 where
@@ -91,7 +92,6 @@ impl<I: Index> std::ops::IndexMut<I> for Value {
     ///   "a": { "b": {"c": {"d": true}}},
     ///    "z": {"zz": "insert in null"}
     /// }));
-    ///
     /// ```
     #[inline]
     fn index_mut(&mut self, index: I) -> &mut Value {
@@ -100,7 +100,6 @@ impl<I: Index> std::ops::IndexMut<I> for Value {
 }
 
 /// An indexing trait for JSON.
-///
 pub trait Index: Sealed {
     /// Return None if the index is not already in the array or object.
     #[doc(hidden)]

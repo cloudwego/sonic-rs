@@ -1,7 +1,6 @@
 use std::mem::transmute;
 
 /// TaggpedPtr is a pointer of T with a tag.
-///
 #[derive(Debug)]
 pub(crate) struct TaggedPtr<T> {
     // ptr is allow null ptr

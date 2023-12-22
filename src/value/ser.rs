@@ -1,11 +1,15 @@
-use super::shared::Shared;
-use crate::error::{Error, ErrorCode, Result};
-use crate::util::arc::Arc;
-use crate::value::node::Value;
-use crate::JsonValueTrait;
 use core::fmt::Display;
-use serde::ser::{Impossible, Serialize};
 use std::ptr::NonNull;
+
+use serde::ser::{Impossible, Serialize};
+
+use super::shared::Shared;
+use crate::{
+    error::{Error, ErrorCode, Result},
+    util::arc::Arc,
+    value::node::Value,
+    JsonValueTrait,
+};
 
 /// Convert a `T` into `sonic_rs::Value` which can represent any valid JSON data.
 ///
@@ -43,14 +47,14 @@ use std::ptr::NonNull;
 ///
 /// ```
 /// use std::collections::BTreeMap;
+///
 /// use sonic_rs::to_value;
 ///
-///  // The keys in this map are vectors, not strings.
-///  let mut map = BTreeMap::new();
-///  map.insert(vec![32, 64], "x86");
-///  let err = to_value(&map).unwrap_err().to_string();
-///  assert!(err.contains("key must be string"));
-///
+/// // The keys in this map are vectors, not strings.
+/// let mut map = BTreeMap::new();
+/// map.insert(vec![32, 64], "x86");
+/// let err = to_value(&map).unwrap_err().to_string();
+/// assert!(err.contains("key must be string"));
 /// ```
 pub fn to_value<T>(value: &T) -> Result<Value>
 where
@@ -95,8 +99,9 @@ impl Serializer {
     }
 }
 
-use crate::serde::tri;
 use std::string::ToString;
+
+use crate::serde::tri;
 
 impl serde::Serializer for Serializer {
     type Ok = Value;
@@ -777,9 +782,7 @@ mod test {
 
     #[test]
     fn test_to_value() {
-        use crate::json;
-        use crate::to_value;
-        use crate::Value;
+        use crate::{json, to_value, Value};
         #[derive(Debug, serde::Serialize)]
         struct User {
             string: String,

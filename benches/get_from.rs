@@ -1,7 +1,8 @@
 #[macro_use]
 extern crate criterion;
-use criterion::{criterion_group, BatchSize, Criterion};
 use std::io::Read;
+
+use criterion::{criterion_group, BatchSize, Criterion};
 
 fn bench_get(c: &mut Criterion) {
     let core_ids = core_affinity::get_core_ids().unwrap();

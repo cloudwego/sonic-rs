@@ -1,20 +1,19 @@
-use crate::get_unchecked;
-use crate::index::Index;
-use crate::input::JsonSlice;
-use crate::parser::Parser;
-use crate::reader::Reader;
-use crate::reader::Reference;
-use crate::reader::SliceRead;
-use crate::serde::Number;
-use crate::JsonType;
-use crate::LazyValue;
-use crate::{from_str, JsonValueTrait};
-use faststr::FastStr;
-use std::cell::UnsafeCell;
-use std::hash::Hash;
-use std::str::from_utf8_unchecked;
+use std::{cell::UnsafeCell, hash::Hash, str::from_utf8_unchecked};
 
-/// LazyValue is a value that wrappers a raw JSON text. It is used for lazy parsing, which means the JSON text is not parsed until it is used.
+use faststr::FastStr;
+
+use crate::{
+    from_str, get_unchecked,
+    index::Index,
+    input::JsonSlice,
+    parser::Parser,
+    reader::{Reader, Reference, SliceRead},
+    serde::Number,
+    JsonType, JsonValueTrait, LazyValue,
+};
+
+/// LazyValue is a value that wrappers a raw JSON text. It is used for lazy parsing, which means the
+/// JSON text is not parsed until it is used.
 ///
 /// # Examples
 ///
@@ -41,7 +40,6 @@ use std::str::from_utf8_unchecked;
 /// assert_eq!(lv_a.as_str().unwrap(), "hello world");
 /// assert_eq!(lv_c.as_str(), None);
 /// assert!(lv_c.is_array());
-///
 /// ```
 ///
 /// # Serde Examples
@@ -52,8 +50,7 @@ use std::str::from_utf8_unchecked;
 ///
 /// ```
 /// # use sonic_rs::{LazyValue, OwnedLazyValue};
-/// use serde::Serialize;
-/// use serde::Deserialize;
+/// use serde::{Deserialize, Serialize};
 ///
 /// #[derive(Debug, Deserialize, Serialize, PartialEq)]
 /// struct TestLazyValue<'a> {
@@ -197,8 +194,8 @@ impl OwnedLazyValue {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::LazyValue;
     /// use faststr::FastStr;
+    /// use sonic_rs::LazyValue;
     ///
     /// let lv: LazyValue = sonic_rs::get(r#"{"a": "hello world"}"#, &["a"]).unwrap();
     /// // will copy the raw_str into a new faststr
@@ -207,7 +204,6 @@ impl OwnedLazyValue {
     /// let fs = FastStr::new(r#"{"a": "hello world"}"#);
     /// let lv: LazyValue = sonic_rs::get(&fs, &["a"]).unwrap();
     /// assert_eq!(lv.as_raw_faststr(), "\"hello world\""); // zero-copy
-    ///
     /// ```
     pub fn as_raw_faststr(&self) -> FastStr {
         self.raw.clone()

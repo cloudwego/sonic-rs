@@ -1,36 +1,34 @@
-use super::alloctor::SyncBump;
-use super::object::Pair;
-use super::shared::get_shared_or_new;
-use super::shared::Shared;
-use super::value_trait::JsonContainerTrait;
-use super::value_trait::JsonValueMutTrait;
-use super::visitor::JsonVisitor;
-use crate::error::Result;
-use crate::index::Index;
-use crate::parser::Parser;
-use crate::pointer::PointerNode;
-use crate::reader::PaddedSliceRead;
-use crate::reader::Reader;
-use crate::serde::tri;
-use crate::util::arc::Arc;
-use crate::util::taggedptr::TaggedPtr;
-use crate::value::alloctor::AllocatorTrait;
-use crate::value::array::Array;
-use crate::value::object::Object;
-use crate::value::value_trait::JsonValueTrait;
-use crate::JsonType;
-use crate::Number;
-use bumpalo::Bump;
 use core::mem::size_of;
+use std::{
+    alloc::Layout,
+    fmt::{Debug, Display, Formatter},
+    mem::{transmute, ManuallyDrop, MaybeUninit},
+    ptr::NonNull,
+    slice::{from_raw_parts, from_raw_parts_mut},
+    str::from_utf8_unchecked,
+};
+
+use bumpalo::Bump;
 use serde::ser::{Serialize, SerializeMap, SerializeSeq};
-use std::alloc::Layout;
-use std::fmt::Debug;
-use std::fmt::Display;
-use std::fmt::Formatter;
-use std::mem::{transmute, ManuallyDrop, MaybeUninit};
-use std::ptr::NonNull;
-use std::slice::{from_raw_parts, from_raw_parts_mut};
-use std::str::from_utf8_unchecked;
+
+use super::{
+    alloctor::SyncBump,
+    object::Pair,
+    shared::{get_shared_or_new, Shared},
+    value_trait::{JsonContainerTrait, JsonValueMutTrait},
+    visitor::JsonVisitor,
+};
+use crate::{
+    error::Result,
+    index::Index,
+    parser::Parser,
+    pointer::PointerNode,
+    reader::{PaddedSliceRead, Reader},
+    serde::tri,
+    util::{arc::Arc, taggedptr::TaggedPtr},
+    value::{alloctor::AllocatorTrait, array::Array, object::Object, value_trait::JsonValueTrait},
+    JsonType, Number,
+};
 
 /// Represents any valid JSON value.
 /// `Value` can be parsed from a JSON and from any type that implements `serde::Serialize`.
@@ -54,7 +52,6 @@ use std::str::from_utf8_unchecked;
 ///
 /// assert_eq!(v1["a"], 123);
 /// ```
-///
 pub struct Value {
     pub(crate) meta: Meta,
     pub(crate) data: Data,
@@ -73,7 +70,6 @@ impl Clone for Value {
     ///
     /// let a = json!({"a": [1, 2, 3]});
     /// assert_eq!(a, a.clone());
-    ///
     /// ```
     fn clone(&self) -> Self {
         match self.get_type() {
@@ -150,7 +146,6 @@ impl Default for Value {
 
 impl Value {
     /// Convert into `Object`. If the value is not an object, return `None`.
-    ///
     #[inline]
     pub fn into_object(self) -> Option<Object> {
         if self.is_object() {
@@ -161,7 +156,6 @@ impl Value {
     }
 
     /// Convert into `Array`. If the value is not an array, return `None`.
-    ///
     #[inline]
     pub fn into_array(self) -> Option<Array> {
         if self.is_array() {
@@ -264,8 +258,8 @@ impl Display for Value {
 }
 
 // Value Status:
-// IsRoot: have a refcnt for the shared allocator and it is often string, non-empty array, non-empty object
-// IsnotRoot: the children nodes, it is owned by the root node
+// IsRoot: have a refcnt for the shared allocator and it is often string, non-empty array, non-empty
+// object IsnotRoot: the children nodes, it is owned by the root node
 // IsCombined: the children maybe a root, it have other allocators
 // IsFlatten: the node or its children donot have any allocators
 
@@ -275,8 +269,8 @@ impl Display for Value {
 // IsRoot + IsnotCombined: -> drop directly, refcnt - 1
 // IsnotRoot + IsnotCombined: -> ignore it
 
-// To make sure correctness, when we drop a node that is not a root node, we must mark Shared as combined.
-// such as an assignment operation: `array[1] = new_value`.
+// To make sure correctness, when we drop a node that is not a root node, we must mark Shared as
+// combined. such as an assignment operation: `array[1] = new_value`.
 // In the internal codes, we manually drop the value, and only mark Shared as combined in necessary.
 impl Drop for Value {
     fn drop(&mut self) {
@@ -294,8 +288,9 @@ impl Drop for Value {
         if self.is_root() {
             drop(self.arc_shared());
         } else {
-            // If value is not root, it maybe dropped in place, and insert a new allocator in the document,
-            // we mark Combined flag in the shared, to notify the root node to traverse the tree when dropping root.
+            // If value is not root, it maybe dropped in place, and insert a new allocator in the
+            // document, we mark Combined flag in the shared, to notify the root node to
+            // traverse the tree when dropping root.
             self.shared().set_combined()
         }
     }
@@ -386,7 +381,8 @@ impl Debug for Data {
     }
 }
 
-// Metanode is used to store the length and capacity of the array and object. and should be aligned as Values.
+// Metanode is used to store the length and capacity of the array and object. and should be aligned
+// as Values.
 #[derive(Debug)]
 pub(crate) struct MetaNode {
     len: u64,
@@ -581,7 +577,6 @@ impl JsonValueMutTrait for Value {
 ///    _ => unreachable!(),
 /// }
 /// ```
-///
 pub enum ValueRef<'a> {
     Null,
     Bool(bool),
@@ -596,7 +591,6 @@ impl Value {
     pub(crate) const MEAT_NODE_COUNT: usize = 1;
 
     /// Create a new `null` Value. It is also the default value of `Value`.
-    ///
     #[inline]
     pub const fn new() -> Self {
         Value {
@@ -626,7 +620,6 @@ impl Value {
     ///    _ => unreachable!(),
     /// }
     /// ```
-    ///
     #[inline]
     pub fn as_ref(&self) -> ValueRef<'_> {
         match self.typ() {
@@ -644,7 +637,6 @@ impl Value {
     }
 
     /// Create a new string Value from a `&'static str` with zero-copy.
-    ///
     #[inline]
     pub fn from_static_str(val: &'static str) -> Self {
         let mut v = Value {
@@ -1310,7 +1302,8 @@ impl Value {
         let json_buf = unsafe {
             let dst = dst.as_ptr();
             std::ptr::copy_nonoverlapping(json.as_ptr(), dst, len);
-            // fix miri warnings, actual this code can be removed because we set a guard for the json
+            // fix miri warnings, actual this code can be removed because we set a guard for the
+            // json
             std::ptr::write_bytes(dst.add(len), 0, Self::PADDING_SIZE);
             *(dst.add(len)) = b'x';
             *(dst.add(len + 1)) = b'"';
@@ -1736,13 +1729,13 @@ impl Serialize for Value {
 
 #[cfg(test)]
 mod test {
+    use std::path::Path;
+
     use super::*;
-    use crate::from_slice;
     use crate::{
         error::{make_error, Result},
-        pointer,
+        from_slice, pointer,
     };
-    use std::path::Path;
 
     fn test_value(data: &str) -> Result<()> {
         let serde_value: serde_json::Result<serde_json::Value> = serde_json::from_str(data);
@@ -1962,8 +1955,7 @@ mod test {
 
     #[test]
     fn test_invalid_utf8() {
-        use crate::from_slice;
-        use crate::from_slice_unchecked;
+        use crate::{from_slice, from_slice_unchecked};
 
         let data = [b'"', 0x80, 0x90, b'"'];
         let ret: Result<Value> = from_slice(&data);
@@ -1992,9 +1984,9 @@ mod test {
 
     #[test]
     fn test_value_serde() {
+        use serde::{Deserialize, Serialize};
+
         use crate::{array, object};
-        use serde::Deserialize;
-        use serde::Serialize;
         #[derive(Deserialize, Debug, Serialize, PartialEq)]
         struct Foo {
             value: Value,

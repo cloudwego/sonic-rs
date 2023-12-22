@@ -1,11 +1,4 @@
-use sonic_rs::{Deserialize, Serialize};
-
-use sonic_rs::Number;
-use sonic_rs::RawNumber;
-
-use sonic_rs::from_str;
-use sonic_rs::to_string;
-use sonic_rs::JsonNumberTrait;
+use sonic_rs::{from_str, to_string, Deserialize, JsonNumberTrait, Number, RawNumber, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 struct TestJsonNumber {

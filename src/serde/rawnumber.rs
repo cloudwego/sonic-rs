@@ -1,15 +1,10 @@
-use super::number::Number;
-use crate::util::private::Sealed;
-use crate::Error;
-use crate::JsonNumberTrait;
-use ::serde::de;
-use ::serde::de::Visitor;
-use ::serde::ser::SerializeStruct;
-use ::serde::Deserialize;
-use ::serde::Deserializer;
-use ::serde::Serialize;
-use ::serde::Serializer;
+use ::serde::{
+    de, de::Visitor, ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer,
+};
 use ::std::fmt;
+
+use super::number::Number;
+use crate::{util::private::Sealed, Error, JsonNumberTrait};
 
 /// Represents a JSON number with arbitrary precision, like as Golang json.Number
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -97,7 +92,6 @@ impl JsonNumberTrait for RawNumber {
     ///
     /// Currently this function returns true if and only if both `is_i64` and
     /// `is_u64` return false but this is not a guarantee in the future.
-    ///
     #[inline]
     fn is_f64(&self) -> bool {
         self.as_f64().is_some()

@@ -2,9 +2,11 @@
 
 // The code is cloned from [rust-lang](https://github.com/rust-lang/rust) and modified necessary parts.
 
-use std::fmt::{Debug, LowerExp};
-use std::num::FpCategory;
-use std::ops::{Add, Div, Mul, Neg};
+use std::{
+    fmt::{Debug, LowerExp},
+    num::FpCategory,
+    ops::{Add, Div, Mul, Neg},
+};
 
 /// A helper trait to avoid duplicating basically all the conversion code for `f32` and `f64`.
 ///

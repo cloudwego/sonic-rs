@@ -1,13 +1,14 @@
-use super::node::replace_value;
-use super::shared::Shared;
-use super::shared::SharedCtxGuard;
-use super::value_trait::JsonValueTrait;
-use crate::serde::tri;
-use crate::util::reborrow::DormantMutRef;
-use crate::value::node::Value;
 use std::marker::PhantomData;
 
-/// Represents the JSON object. The inner implement is a key-value array. Its order is as same as origin JSON.
+use super::{
+    node::replace_value,
+    shared::{Shared, SharedCtxGuard},
+    value_trait::JsonValueTrait,
+};
+use crate::{serde::tri, util::reborrow::DormantMutRef, value::node::Value};
+
+/// Represents the JSON object. The inner implement is a key-value array. Its order is as same as
+/// origin JSON.
 ///
 /// # Examples
 /// ```
@@ -22,7 +23,8 @@ use std::marker::PhantomData;
 /// ```
 ///
 /// # Warning
-/// The key in `Object` is not sorted and the `get` operation is O(n). And `Object` is allowed to have duplicated keys.
+/// The key in `Object` is not sorted and the `get` operation is O(n). And `Object` is allowed to
+/// have duplicated keys.
 ///
 /// # Examples
 /// ```
@@ -33,8 +35,8 @@ use std::marker::PhantomData;
 /// assert_eq!(obj["a"], 1);
 /// assert_eq!(obj.len(), 3); // allow duplicated keys
 /// ```
-/// If you care about that, recommend to use `HashMap` or `BTreeMap` instead. The parse performance is slower than `Object`.
-///
+/// If you care about that, recommend to use `HashMap` or `BTreeMap` instead. The parse performance
+/// is slower than `Object`.
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct Object(pub(crate) Value);
@@ -52,14 +54,12 @@ pub(crate) const DEFAULT_OBJ_CAP: usize = 4;
 
 impl Object {
     /// Returns the inner `Value`.
-    ///
     #[inline]
     pub fn into_value(self) -> Value {
         self.0
     }
 
     /// Create a new empty object.
-    ///
     #[inline]
     pub const fn new() -> Object {
         let value = Value {
@@ -72,7 +72,6 @@ impl Object {
     }
 
     /// Create a new empty object with capacity.
-    ///
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
         let mut v = Self::new();
@@ -87,12 +86,11 @@ impl Object {
     /// ```
     /// use sonic_rs::{json, object};
     ///
-    /// let mut obj = object!{"a": 1, "b": true, "c": null};
+    /// let mut obj = object! {"a": 1, "b": true, "c": null};
     /// obj.clear();
     /// assert!(obj.is_empty());
     /// assert!(obj.capacity() >= 3);
     /// ```
-    ///
     #[inline]
     pub fn clear(&mut self) {
         self.0.clear();
@@ -113,13 +111,12 @@ impl Object {
     /// ```
     /// use sonic_rs::{json, object};
     ///
-    /// let mut obj = object!{"a": 1, "b": true, "c": null};
+    /// let mut obj = object! {"a": 1, "b": true, "c": null};
     /// obj.insert(&"d", "e");
     /// assert_eq!(obj.get(&"d").unwrap(), "e");
     /// assert_eq!(obj.get(&"f"), None);
     /// assert_eq!(obj.get(&"a").unwrap(), 1);
     /// ```
-    ///
     #[inline]
     pub fn get<Q: AsRef<str>>(&self, key: &Q) -> Option<&Value> {
         self.0.get_key(key.as_ref())
@@ -132,15 +129,14 @@ impl Object {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{object};
+    /// use sonic_rs::object;
     ///
-    /// let mut obj = object!{"a": 1, "b": true, "c": null};
+    /// let mut obj = object! {"a": 1, "b": true, "c": null};
     /// obj.insert(&"d", "e");
     /// assert_eq!(obj.contains_key(&"d"), true);
     /// assert_eq!(obj.contains_key(&"a"), true);
     /// assert_eq!(obj.contains_key(&"e"), false);
     /// ```
-    ///
     #[inline]
     pub fn contains_key<Q: AsRef<str>>(&self, key: &Q) -> bool {
         self.get(key).is_some()
@@ -153,16 +149,15 @@ impl Object {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{object};
+    /// use sonic_rs::object;
     ///
-    /// let mut obj = object!{"a": 1, "b": true, "c": null};
+    /// let mut obj = object! {"a": 1, "b": true, "c": null};
     /// obj.insert(&"d", "e");
     ///
     /// *(obj.get_mut(&"d").unwrap()) = "f".into();
     /// assert_eq!(obj.contains_key(&"d"), true);
     /// assert_eq!(obj["d"], "f");
     /// ```
-    ///
     #[inline]
     pub fn get_mut<Q: AsRef<str>>(&mut self, key: &Q) -> Option<&mut Value> {
         self.0.get_key_mut(key.as_ref()).map(|v| v.0)
@@ -177,14 +172,13 @@ impl Object {
     /// ```
     /// use sonic_rs::{object, Value};
     ///
-    /// let mut obj = object!{"a": 1, "b": true, "c": null};
+    /// let mut obj = object! {"a": 1, "b": true, "c": null};
     /// obj.insert(&"d", "e");
     ///
     /// assert_eq!(obj.get_key_value(&"d").unwrap(), ("d", &Value::from("e")));
     /// assert_eq!(obj.get_key_value(&"a").unwrap(), ("a", &Value::from(1)));
     /// assert_eq!(obj.get_key_value(&"e"), None);
     /// ```
-    ///
     #[inline]
     pub fn get_key_value<Q: AsRef<str>>(&self, key: &Q) -> Option<(&str, &Value)> {
         self.0.get_key_value(key.as_ref())
@@ -204,9 +198,9 @@ impl Object {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{object, json, Value};
+    /// use sonic_rs::{json, object, Value};
     ///
-    /// let mut obj = object!{"a": 1, "b": true, "c": null};
+    /// let mut obj = object! {"a": 1, "b": true, "c": null};
     /// assert_eq!(obj.len(), 3);
     /// assert_eq!(obj.insert(&"d", "e"), None);
     /// assert_eq!(obj.len(), 4);
@@ -219,7 +213,6 @@ impl Object {
     /// assert_eq!(obj.insert(&"i", Value::from("j")), None);
     /// assert_eq!(obj.len(), 5);
     /// ```
-    ///
     #[inline]
     pub fn insert<K: AsRef<str>, V: Into<Value>>(&mut self, key: &K, value: V) -> Option<Value> {
         match self.entry(key) {
@@ -239,13 +232,12 @@ impl Object {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{object};
+    /// use sonic_rs::object;
     ///
-    /// let mut obj = object!{"a": 1, "b": true, "c": null};
+    /// let mut obj = object! {"a": 1, "b": true, "c": null};
     /// assert_eq!(obj.remove(&"d"), None);
     /// assert_eq!(obj.remove(&"a").unwrap(), 1);
     /// ```
-    ///
     #[inline]
     pub fn remove<Q: AsRef<str>>(&mut self, key: &Q) -> Option<Value> {
         self.0.remove_key(key.as_ref())
@@ -259,15 +251,14 @@ impl Object {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{object};
+    /// use sonic_rs::object;
     ///
-    /// let mut obj = object!{"a": 1, "b": true, "c": null};
+    /// let mut obj = object! {"a": 1, "b": true, "c": null};
     /// assert_eq!(obj.remove_entry(&"d"), None);
     /// let (key, val) = obj.remove_entry(&"a").unwrap();
     /// assert_eq!(key, "a");
     /// assert_eq!(val, 1);
     /// ```
-    ///
     #[inline]
     pub fn remove_entry<'k, Q: AsRef<str>>(&mut self, key: &'k Q) -> Option<(&'k str, Value)> {
         self.0.remove_key(key.as_ref()).map(|v| (key.as_ref(), v))
@@ -304,14 +295,15 @@ impl Object {
     /// ```
     /// use sonic_rs::{object, Value};
     ///
-    /// let mut obj = object!{};
+    /// let mut obj = object! {};
     ///
     /// for i in 0..10 {
     ///     obj.entry(&i.to_string()).or_insert(1);
     /// }
     ///
     /// for i in 0..10 {
-    ///     obj.entry(&i.to_string()).and_modify(|v| *v = Value::from(i + 1));
+    ///     obj.entry(&i.to_string())
+    ///         .and_modify(|v| *v = Value::from(i + 1));
     /// }
     ///
     /// assert_eq!(obj[&"1"], 2);
@@ -319,7 +311,6 @@ impl Object {
     /// assert_eq!(obj[&"3"], 4);
     /// assert_eq!(obj.get(&"10"), None);
     /// ```
-    ///
     #[inline]
     pub fn entry<'a, Q: AsRef<str>>(&'a mut self, key: &Q) -> Entry<'a> {
         let (obj, mut dormant_obj) = DormantMutRef::new(self);
@@ -355,7 +346,7 @@ impl Object {
     /// ```
     /// use sonic_rs::object;
     ///
-    /// let mut obj = object!{"a": 1, "b": true, "c": null};
+    /// let mut obj = object! {"a": 1, "b": true, "c": null};
     /// obj.retain(|key, _| key == "a");
     /// assert_eq!(obj.len(), 1);
     /// assert_eq!(obj["a"], 1);
@@ -393,13 +384,13 @@ impl Object {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{object, json};
+    /// use sonic_rs::{json, object};
     ///
-    /// let mut a = object!{};
-    /// let mut b = object!{"a": null, "b": 1};
+    /// let mut a = object! {};
+    /// let mut b = object! {"a": null, "b": 1};
     /// a.append(&mut b);
     ///
-    /// assert_eq!(a, object!{"a": null, "b": 1});
+    /// assert_eq!(a, object! {"a": null, "b": 1});
     /// assert!(b.is_empty());
     /// ```
     #[inline]
@@ -414,7 +405,7 @@ impl Object {
     /// # Examples
     /// ```
     /// use sonic_rs::object;
-    /// let mut obj = object!{};
+    /// let mut obj = object! {};
     /// obj.reserve(1);
     /// assert!(obj.capacity() >= 1);
     ///
@@ -441,10 +432,9 @@ impl<'a> OccupiedEntry<'a> {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{object, Value};
-    /// use sonic_rs::value::object::Entry;
+    /// use sonic_rs::{object, value::object::Entry, Value};
     ///
-    /// let mut obj = object!{"a": 1, "b": true, "c": null};
+    /// let mut obj = object! {"a": 1, "b": true, "c": null};
     ///
     /// if let Entry::Occupied(entry) = obj.entry(&"a") {
     ///     assert_eq!(entry.get(), 1);
@@ -453,7 +443,6 @@ impl<'a> OccupiedEntry<'a> {
     /// if let Entry::Occupied(entry) = obj.entry(&"b") {
     ///     assert_eq!(entry.get(), true);
     /// }
-    ///
     /// ```
     #[inline]
     pub fn get(&self) -> &Value {
@@ -465,10 +454,9 @@ impl<'a> OccupiedEntry<'a> {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{object, Value};
-    /// use sonic_rs::value::object::Entry;
+    /// use sonic_rs::{object, value::object::Entry, Value};
     ///
-    /// let mut obj = object!{"a": 1, "b": true, "c": null};
+    /// let mut obj = object! {"a": 1, "b": true, "c": null};
     /// obj.insert(&"a", Value::from("hello"));
     ///
     /// if let Entry::Occupied(mut entry) = obj.entry(&"a") {
@@ -490,10 +478,9 @@ impl<'a> OccupiedEntry<'a> {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{object, Value};
-    /// use sonic_rs::value::object::Entry;
+    /// use sonic_rs::{object, value::object::Entry, Value};
     ///
-    /// let mut obj = object!{"a": 1, "b": true, "c": null};
+    /// let mut obj = object! {"a": 1, "b": true, "c": null};
     /// obj.insert(&"a", Value::from("hello"));
     ///
     /// if let Entry::Occupied(mut entry) = obj.entry(&"a") {
@@ -514,10 +501,9 @@ impl<'a> OccupiedEntry<'a> {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::object;
-    /// use sonic_rs::value::object::Entry;
+    /// use sonic_rs::{object, value::object::Entry};
     ///
-    /// let mut obj = object!{"a": 1, "b": true, "c": null};
+    /// let mut obj = object! {"a": 1, "b": true, "c": null};
     ///
     /// if let Entry::Occupied(mut entry) = obj.entry(&"a") {
     ///     assert_eq!(entry.insert("hello"), 1);
@@ -525,7 +511,6 @@ impl<'a> OccupiedEntry<'a> {
     /// if let Entry::Occupied(mut entry) = obj.entry(&"a") {
     ///     assert_eq!(entry.insert("world"), "hello");
     /// }
-    ///
     /// ```
     #[inline]
     pub fn insert<T: Into<Value>>(&mut self, val: T) -> Value {
@@ -541,10 +526,9 @@ impl<'a> OccupiedEntry<'a> {
     ///
     /// # Examples
     /// ```
-    /// use sonic_rs::{object, Value};
-    /// use sonic_rs::value::object::Entry;
+    /// use sonic_rs::{object, value::object::Entry, Value};
     ///
-    /// let mut obj = object!{"a": 1, "b": true, "c": null};
+    /// let mut obj = object! {"a": 1, "b": true, "c": null};
     ///
     /// if let Entry::Occupied(mut entry) = obj.entry(&"a") {
     ///     assert_eq!(entry.remove(), 1);
@@ -594,17 +578,15 @@ impl<'a> VacantEntry<'a> {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::object;
-    /// use sonic_rs::value::object::Entry;
+    /// use sonic_rs::{object, value::object::Entry};
     ///
-    /// let mut obj = object!{};
+    /// let mut obj = object! {};
     ///
     /// if let Entry::Vacant(entry) = obj.entry(&"hello") {
-    ///    assert_eq!(entry.insert(1), &1);
+    ///     assert_eq!(entry.insert(1), &1);
     /// }
     /// assert_eq!(obj.get(&"hello").unwrap(), 1);
     /// ```
-    ///
     pub fn insert<T: Into<Value>>(self, val: T) -> &'a mut Value {
         let obj = unsafe { self.dormant_obj.awaken() };
         obj.reserve(1);
@@ -634,9 +616,9 @@ impl<'a> Entry<'a> {
     /// Ensures a value is in the entry by inserting the default if empty,
     /// Example:
     /// ```rust
-    ///  use sonic_rs::object;
+    /// use sonic_rs::object;
     ///
-    /// let mut obj = object!{};
+    /// let mut obj = object! {};
     /// obj.entry(&"hello").or_insert(1);
     /// assert_eq!(obj.get(&"hello").unwrap(), 1);
     ///
@@ -656,10 +638,10 @@ impl<'a> Entry<'a> {
     /// ```rust
     /// use sonic_rs::Object;
     /// let mut obj = Object::new();
-    /// obj.entry(&"hello").or_insert_with(|| 1.into() );
+    /// obj.entry(&"hello").or_insert_with(|| 1.into());
     /// assert_eq!(obj.get(&"hello").unwrap(), 1);
     ///
-    /// obj.entry(&"hello").or_insert_with(|| 2.into() );
+    /// obj.entry(&"hello").or_insert_with(|| 2.into());
     /// assert_eq!(obj.get(&"hello").unwrap(), 1);
     /// ```
     #[inline]
@@ -679,19 +661,21 @@ impl<'a> Entry<'a> {
         }
     }
 
-    /// Provides in-place mutable access to an occupied entry before any potential inserts into the object.
+    /// Provides in-place mutable access to an occupied entry before any potential inserts into the
+    /// object.
     ///
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::object;
-    /// use sonic_rs::value::object::Entry;
+    /// use sonic_rs::{object, value::object::Entry};
     ///
-    /// let mut obj = object!{"a": 0, "b": true, "c": null};
+    /// let mut obj = object! {"a": 0, "b": true, "c": null};
     /// obj.entry(&"a").and_modify(|v| *v = 2.into());
     /// assert_eq!(obj.get(&"a").unwrap(), 2);
     ///
-    /// obj.entry(&"a").and_modify(|v| *v = 2.into()).and_modify(|v| *v = 3.into());
+    /// obj.entry(&"a")
+    ///     .and_modify(|v| *v = 2.into())
+    ///     .and_modify(|v| *v = 3.into());
     /// assert_eq!(obj.get(&"a").unwrap(), 3);
     ///
     /// obj.entry(&"d").and_modify(|v| *v = 3.into());
@@ -700,7 +684,6 @@ impl<'a> Entry<'a> {
     /// obj.entry(&"d").and_modify(|v| *v = 3.into()).or_insert(4);
     /// assert_eq!(obj.get(&"d").unwrap(), 4);
     /// ```
-    ///
     #[inline]
     pub fn and_modify<F: FnOnce(&mut Value)>(self, f: F) -> Self {
         match self {
@@ -712,14 +695,13 @@ impl<'a> Entry<'a> {
         }
     }
 
-    /// Ensures a value is in the entry by inserting the default value if empty, and returns a mutable reference to the value in the entry.
-    /// # Examples
+    /// Ensures a value is in the entry by inserting the default value if empty, and returns a
+    /// mutable reference to the value in the entry. # Examples
     ///
     /// ```
-    /// use sonic_rs::{object, Value};
-    /// use sonic_rs::value::object::Entry;
+    /// use sonic_rs::{object, value::object::Entry, Value};
     ///
-    /// let mut obj = object!{"c": null};    
+    /// let mut obj = object! {"c": null};
     /// assert_eq!(obj.entry(&"a").or_default(), &Value::default());
     /// assert_eq!(obj.entry(&"d").or_default(), &Value::default());
     /// ```
@@ -743,12 +725,13 @@ impl<'a> Entry<'a> {
     /// ```
     /// use sonic_rs::{object, Value};
     ///
-    /// let mut obj = object!{"c": null};
+    /// let mut obj = object! {"c": null};
     ///
-    /// obj.entry(&"a").or_insert_with_key(|key | Value::from(key.len()));
+    /// obj.entry(&"a")
+    ///     .or_insert_with_key(|key| Value::from(key.len()));
     /// assert_eq!(obj.get(&"a").unwrap(), 1);
     ///
-    /// obj.entry(&"b").or_insert_with_key(|key | Value::from(key));
+    /// obj.entry(&"b").or_insert_with_key(|key| Value::from(key));
     /// assert_eq!(obj.get(&"b").unwrap(), "b");
     /// ```
     #[inline]
@@ -772,8 +755,7 @@ impl<'a> Entry<'a> {
 
 //////////////////////////////////////////////////////////////////////////////
 
-use std::iter::FusedIterator;
-use std::slice;
+use std::{iter::FusedIterator, slice};
 
 macro_rules! impl_entry_iter {
     (($name:ident $($generics:tt)*): $item:ty) => {
@@ -953,10 +935,7 @@ impl<'de> serde::de::Deserialize<'de> for Object {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::object;
-    use crate::Array;
-    use crate::JsonValueMutTrait;
-    use crate::{from_str, to_string};
+    use crate::{from_str, object, to_string, Array, JsonValueMutTrait};
 
     #[test]
     fn test_object_serde() {

@@ -1,11 +1,9 @@
-use super::owned::OwnedLazyValue;
-use super::value::LazyValue;
-use ::serde::de;
-use ::serde::de::Visitor;
-use ::serde::Deserialize;
-use ::serde::Deserializer;
-use faststr::FastStr;
 use std::marker::PhantomData;
+
+use ::serde::{de, de::Visitor, Deserialize, Deserializer};
+use faststr::FastStr;
+
+use super::{owned::OwnedLazyValue, value::LazyValue};
 
 impl<'de: 'a, 'a> Deserialize<'de> for LazyValue<'a> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

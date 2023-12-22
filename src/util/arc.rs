@@ -1,13 +1,14 @@
-use std::fmt;
-use std::fmt::Display;
-use std::fmt::Formatter;
-use std::marker::PhantomData;
-use std::ops::Deref;
-use std::ptr::NonNull;
-use std::sync::atomic;
-use std::sync::atomic::Ordering::Acquire;
-use std::sync::atomic::Ordering::Relaxed;
-use std::sync::atomic::Ordering::Release;
+use std::{
+    fmt,
+    fmt::{Display, Formatter},
+    marker::PhantomData,
+    ops::Deref,
+    ptr::NonNull,
+    sync::{
+        atomic,
+        atomic::Ordering::{Acquire, Relaxed, Release},
+    },
+};
 
 macro_rules! field_offset {
     ($type:ty, $field:tt) => {{

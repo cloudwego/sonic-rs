@@ -2,16 +2,24 @@
 
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
 
-use super::de::tri;
-use crate::error::{Error, ErrorCode, Result};
-use crate::format::{CompactFormatter, Formatter, PrettyFormatter};
-use crate::writer::WriteExt;
+use core::{
+    fmt::{self, Display},
+    num::FpCategory,
+};
+use std::{
+    io,
+    string::{String, ToString},
+    vec::Vec,
+};
+
 use ::serde::ser::{self, Impossible, Serialize};
-use core::fmt::{self, Display};
-use core::num::FpCategory;
-use std::io;
-use std::string::{String, ToString};
-use std::vec::Vec;
+
+use super::de::tri;
+use crate::{
+    error::{Error, ErrorCode, Result},
+    format::{CompactFormatter, Formatter, PrettyFormatter},
+    writer::WriteExt,
+};
 
 /// A structure for serializing Rust values into JSON.
 pub struct Serializer<W, F = CompactFormatter> {

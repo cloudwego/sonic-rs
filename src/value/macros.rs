@@ -49,12 +49,7 @@
 /// # use sonic_rs::json;
 /// #
 ///
-/// let value = json!([
-///     "notice",
-///     "the",
-///     "trailing",
-///     "comma -->",
-/// ]);
+/// let value = json!(["notice", "the", "trailing", "comma -->",]);
 /// ```
 #[macro_export(local_inner_macros)]
 macro_rules! json {
@@ -115,9 +110,7 @@ macro_rules! json {
 /// assert_eq!(array[1].as_str(), Some("foo"));
 /// assert_eq!(array[array.len() - 2][0].as_u64(), Some(1));
 /// assert_eq!(array[array.len() - 1], json!({"key": "value"}));
-///
 /// ```
-///
 #[macro_export(local_inner_macros)]
 macro_rules! array {
     () => {
@@ -142,7 +135,7 @@ macro_rules! array {
 /// let code = 200;
 /// let features = vec!["sonic_rs", "json"];
 ///
-/// let object = object!{
+/// let object = object! {
 ///     "code": code,
 ///     "success": code == 200,
 ///     "payload": {
@@ -153,7 +146,6 @@ macro_rules! array {
 /// assert_eq!(object["code"], 200);
 /// assert_eq!(object["payload"]["features"][0], "sonic_rs");
 /// ```
-///
 #[macro_export(local_inner_macros)]
 macro_rules! object {
     () => {
@@ -420,8 +412,9 @@ macro_rules! json_expect_expr_comma {
 
 #[cfg(test)]
 mod test {
-    use crate::value::value_trait::JsonValueTrait;
     use std::collections::HashMap;
+
+    use crate::value::value_trait::JsonValueTrait;
 
     #[test]
     fn test_json_memory() {

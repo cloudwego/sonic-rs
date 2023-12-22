@@ -1,10 +1,9 @@
 #[macro_use]
 extern crate criterion;
 
-use criterion::SamplingMode;
-use criterion::{criterion_group, BatchSize, Criterion, Throughput};
-use std::fs::File;
-use std::io::Read;
+use std::{fs::File, io::Read};
+
+use criterion::{criterion_group, BatchSize, Criterion, SamplingMode, Throughput};
 
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
@@ -101,8 +100,10 @@ macro_rules! bench_file {
     };
 }
 
-use json_benchmark::canada::Canada;
-use json_benchmark::copy::{citm_catalog::CitmCatalog, twitter::Twitter};
+use json_benchmark::{
+    canada::Canada,
+    copy::{citm_catalog::CitmCatalog, twitter::Twitter},
+};
 
 bench_file!(
     json: twitter,

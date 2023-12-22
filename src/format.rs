@@ -1,8 +1,8 @@
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
 
-use crate::util::string::format_string;
-use crate::writer::WriteExt;
 use std::io::{self, Write};
+
+use crate::{util::string::format_string, writer::WriteExt};
 
 // We only use our own error type; no need for From conversions provided by the
 // standard library's try! macro. This reduces lines of LLVM IR by 4%.
