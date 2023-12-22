@@ -1,7 +1,6 @@
 use bytes::Bytes;
 use faststr::FastStr;
-use sonic_rs::JsonValueTrait;
-use sonic_rs::{to_array_iter, to_object_iter_unchecked};
+use sonic_rs::{to_array_iter, to_object_iter_unchecked, JsonValueTrait};
 fn main() {
     let json = Bytes::from(r#"[1, 2, 3, 4, 5, 6]"#);
     let iter = to_array_iter(&json);
@@ -18,7 +17,8 @@ fn main() {
         if elem.is_err() {
             assert_eq!(
                 elem.err().unwrap().to_string(),
-                "Expected this character to be either a ',' or a ']' while parsing at line 1 column 17"
+                "Expected this character to be either a ',' or a ']' while parsing at line 1 \
+                 column 17"
             );
         }
     }

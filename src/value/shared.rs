@@ -1,12 +1,12 @@
-use super::alloctor::SyncBump;
-use crate::util::{arc::Arc, taggedptr::TaggedPtr};
-use std::cell::UnsafeCell;
-
 use std::{
+    cell::UnsafeCell,
     fmt::{Debug, Formatter},
     mem::ManuallyDrop,
     sync::atomic::AtomicBool,
 };
+
+use super::alloctor::SyncBump;
+use crate::util::{arc::Arc, taggedptr::TaggedPtr};
 
 // Represent a shared allocator.
 #[derive(Debug)]

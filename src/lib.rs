@@ -19,9 +19,11 @@ pub mod serde;
 pub mod value;
 pub mod writer;
 
+// re-export the serde trait
+pub use ::serde::{Deserialize, Serialize};
+
 #[doc(inline)]
 pub use crate::error::{Error, Result};
-
 #[doc(inline)]
 pub use crate::lazyvalue::{
     get, get_from_bytes, get_from_bytes_unchecked, get_from_faststr, get_from_faststr_unchecked,
@@ -29,21 +31,15 @@ pub use crate::lazyvalue::{
     get_many_unchecked, get_unchecked, to_array_iter, to_array_iter_unchecked, to_object_iter,
     to_object_iter_unchecked, ArrayJsonIter, LazyValue, ObjectJsonIter, OwnedLazyValue,
 };
-
 #[doc(inline)]
 pub use crate::pointer::{JsonPointer, PointerNode, PointerTree};
-
 #[doc(inline)]
 pub use crate::serde::{
     from_slice, from_slice_unchecked, from_str, to_string, to_string_pretty, to_vec, to_vec_pretty,
     to_writer, to_writer_pretty, Deserializer, JsonNumberTrait, Number, RawNumber, Serializer,
 };
-
 #[doc(inline)]
 pub use crate::value::{
     from_value, to_value, Array, JsonContainerTrait, JsonType, JsonValueMutTrait, JsonValueTrait,
     Object, Value, ValueRef,
 };
-
-// re-export the serde trait
-pub use ::serde::{Deserialize, Serialize};

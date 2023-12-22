@@ -1,5 +1,6 @@
-use crate::util::private::Sealed;
 use std::{marker::PhantomData, ops::Deref, ptr::NonNull};
+
+use crate::util::private::Sealed;
 
 // support borrow for owned deserizlie or skip
 pub(crate) enum Reference<'b, 'c, T>

@@ -1,21 +1,18 @@
-use bytes::buf::Writer;
-use bytes::BytesMut;
-use std::io;
-use std::io::BufWriter;
-use std::mem::MaybeUninit;
-use std::slice::from_raw_parts_mut;
+use std::{io, io::BufWriter, mem::MaybeUninit, slice::from_raw_parts_mut};
+
+use bytes::{buf::Writer, BytesMut};
 
 /// The trait is a extension to [`io::Write`] with a reserved capacity.
 pub trait WriteExt: io::Write {
-    /// Reserve with `additional` capacity and returns the remaining spare capacity of the write as a slice of
-    /// `MaybeUninit<u8>`.
+    /// Reserve with `additional` capacity and returns the remaining spare capacity of the write as
+    /// a slice of `MaybeUninit<u8>`.
     ///
-    /// The returned slice will be used to write new data before marking the data as initialized using the
-    /// [`add_len`] method.
-    ///
+    /// The returned slice will be used to write new data before marking the data as initialized
+    /// using the [`add_len`] method.
     fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]>;
 
-    /// Flush the `additional` length to the output stream, ensuring that `additional` bytes intermediately buffered contents reach their destination.
+    /// Flush the `additional` length to the output stream, ensuring that `additional` bytes
+    /// intermediately buffered contents reach their destination.
     ///
     /// # Safety
     ///
@@ -95,10 +92,11 @@ impl<W: WriteExt + ?Sized> WriteExt for Box<W> {
 
 #[cfg(test)]
 mod test {
+    use std::io::Write;
+
     use bytes::{BufMut, BytesMut};
 
     use crate::writer::WriteExt;
-    use std::io::Write;
 
     #[test]
     fn test_writer() {

@@ -1,18 +1,20 @@
-use super::array::{Array, DEFAULT_ARRAY_CAP};
-use super::object::Object;
-use crate::serde::number::N;
-use crate::value::node::Value;
-use crate::value::object::DEFAULT_OBJ_CAP;
-use crate::value::shared::get_shared;
-use crate::value::shared::get_shared_or_new;
-use crate::value::shared::set_shared;
-use crate::value::shared::Shared;
-use crate::Number;
+use std::{borrow::Cow, convert::Into, fmt::Debug, str::FromStr};
+
 use faststr::FastStr;
-use std::borrow::Cow;
-use std::convert::Into;
-use std::fmt::Debug;
-use std::str::FromStr;
+
+use super::{
+    array::{Array, DEFAULT_ARRAY_CAP},
+    object::Object,
+};
+use crate::{
+    serde::number::N,
+    value::{
+        node::Value,
+        object::DEFAULT_OBJ_CAP,
+        shared::{get_shared, get_shared_or_new, set_shared, Shared},
+    },
+    Number,
+};
 
 impl From<Number> for Value {
     /// Convert `Number` to a `Value`.
@@ -20,7 +22,7 @@ impl From<Number> for Value {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{Number, Value, json};
+    /// use sonic_rs::{json, Number, Value};
     ///
     /// let x = Value::from(Number::from(7));
     /// assert_eq!(x, json!(7));
@@ -57,8 +59,7 @@ impl From<bool> for Value {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::Value;
-    /// use sonic_rs::JsonValueTrait;
+    /// use sonic_rs::{JsonValueTrait, Value};
     ///
     /// let x: Value = true.into();
     /// assert!(x.is_true());
@@ -102,8 +103,9 @@ impl<'a> From<Cow<'a, str>> for Value {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::Value;
     /// use std::borrow::Cow;
+    ///
+    /// use sonic_rs::Value;
     ///
     /// let s1: Cow<str> = Cow::Borrowed("hello");
     /// let x1 = Value::from(s1);
@@ -125,7 +127,7 @@ impl From<char> for Value {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{Value, json};
+    /// use sonic_rs::{json, Value};
     ///
     /// let c: char = '😁';
     /// let x: Value = c.into();
@@ -143,14 +145,16 @@ impl<T: Into<Value>> From<Vec<T>> for Value {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{Value, json};
+    /// use sonic_rs::{json, Value};
     ///
     /// assert_eq!(Value::from(vec!["hi", "hello"]), json!(["hi", "hello"]));
     ///
     /// assert_eq!(Value::from(Vec::<i32>::new()), json!([]));
     ///
-    /// assert_eq!(Value::from(vec![json!(null), json!("hi")]), json!([null, "hi"]));
-    ///
+    /// assert_eq!(
+    ///     Value::from(vec![json!(null), json!("hi")]),
+    ///     json!([null, "hi"])
+    /// );
     /// ```
     #[inline]
     fn from(val: Vec<T>) -> Self {
@@ -191,7 +195,6 @@ impl<T: Clone + Into<Value>, const N: usize> From<&[T; N]> for Value {
     /// let x  = Value::from(&["hi", "hello"]);
     ///
     /// assert_eq!(x, json!(["hi", "hello"]));
-    ///
     #[inline]
     fn from(val: &[T; N]) -> Self {
         Into::<Value>::into(val.as_ref())
@@ -204,9 +207,9 @@ impl<T: Clone + Into<Value>> From<&[T]> for Value {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{Value, json};
+    /// use sonic_rs::{json, Value};
     ///
-    /// let x  = Value::from(&["hi", "hello"][..]);
+    /// let x = Value::from(&["hi", "hello"][..]);
     ///
     /// assert_eq!(x, json!(["hi", "hello"]));
     ///
@@ -246,11 +249,9 @@ impl From<()> for Value {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::Value;
-    /// use sonic_rs::JsonValueTrait;
+    /// use sonic_rs::{JsonValueTrait, Value};
     ///
     /// assert!(Value::from(()).is_null());
-    ///
     /// ```
     #[inline]
     fn from(_: ()) -> Self {
@@ -268,8 +269,7 @@ where
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::Value;
-    /// use sonic_rs::JsonValueTrait;
+    /// use sonic_rs::{JsonValueTrait, Value};
     ///
     /// let u = Some(123);
     /// let x = Value::from(u);
@@ -295,9 +295,9 @@ impl FromStr for Value {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::Value;
-    /// use sonic_rs::JsonValueTrait;
     /// use std::str::FromStr;
+    ///
+    /// use sonic_rs::{JsonValueTrait, Value};
     ///
     /// let x = Value::from_str("string").unwrap();
     /// assert_eq!(x.as_str().unwrap(), "string");
@@ -305,7 +305,6 @@ impl FromStr for Value {
     /// # Performance
     ///
     /// If it is `&'static str`, recommend to use [`Value::from_static_str`].
-    ///
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(Value::new_str_owned(s))
     }
@@ -331,7 +330,6 @@ impl<'a, K: AsRef<str>, V: Clone + Into<Value>> FromIterator<(K, &'a V)> for Val
     /// let x: Value = Value::from_iter(&object!{"sonic_rs": 40, "json": 2});
     /// assert_eq!(x, json!({"sonic_rs": 40, "json": 2}));
     /// ```
-    ///
     fn from_iter<T: IntoIterator<Item = (K, &'a V)>>(iter: T) -> Self {
         let (shared, is_root) = get_shared_or_new();
         if is_root {
@@ -360,8 +358,9 @@ impl<T: Into<Value>> FromIterator<T> for Value {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{Value, json};
     /// use std::iter::FromIterator;
+    ///
+    /// use sonic_rs::{json, Value};
     ///
     /// let v = std::iter::repeat(6).take(3);
     /// let x: Value = v.collect();
@@ -370,7 +369,6 @@ impl<T: Into<Value>> FromIterator<T> for Value {
     /// let x = Value::from_iter(vec!["sonic_rs", "json", "serde"]);
     /// assert_eq!(x, json!(["sonic_rs", "json", "serde"]));
     /// ```
-    ///
     #[inline]
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let (shared, is_root) = get_shared_or_new();
@@ -400,8 +398,7 @@ impl<T: Into<Value>> From<Vec<T>> for Array {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::value::Array;
-    /// use sonic_rs::array;
+    /// use sonic_rs::{array, value::Array};
     ///
     /// let v = vec!["hi", "hello"];
     /// let x: Array = v.into();
@@ -421,13 +418,12 @@ impl<T: Clone + Into<Value>, const N: usize> From<&[T; N]> for Array {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{Array, array};
+    /// use sonic_rs::{array, Array};
     ///
     /// let v = &["hi", "hello"];
     /// let x: Array = v.into();
     /// assert_eq!(x, array!["hi", "hello"]);
     /// ```
-    ///
     fn from(val: &[T; N]) -> Self {
         debug_assert!(get_shared().is_null(), "array should not be shared");
         let value = Into::<Value>::into(val.as_ref());
@@ -441,8 +437,9 @@ impl<T: Into<Value>> FromIterator<T> for Array {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{Array, json, array};
     /// use std::iter::FromIterator;
+    ///
+    /// use sonic_rs::{array, json, Array};
     ///
     /// let v = std::iter::repeat(6).take(3);
     /// let x: Array = v.collect();
@@ -451,7 +448,6 @@ impl<T: Into<Value>> FromIterator<T> for Array {
     /// let x = Array::from_iter(vec!["sonic_rs", "json", "serde"]);
     /// assert_eq!(x, array!["sonic_rs", "json", "serde"]);
     /// ```
-    ///
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         debug_assert!(get_shared().is_null(), "array should not be shared");
         let value = Value::from_iter(iter);
@@ -465,14 +461,12 @@ impl<T: Clone + Into<Value>> From<&[T]> for Array {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::value::Array;
-    /// use sonic_rs::array;
+    /// use sonic_rs::{array, value::Array};
     ///
     /// let v = &["hi", "hello"];
     /// let x: Array = v.into();
     /// assert_eq!(x, array!["hi", "hello"]);
     /// ```
-    ///
     fn from(val: &[T]) -> Self {
         debug_assert!(get_shared().is_null(), "array should not be shared");
         let value = Into::<Value>::into(val);
@@ -488,20 +482,20 @@ impl<'a, K: AsRef<str>, V: Clone + Into<Value> + 'a> FromIterator<(K, &'a V)> fo
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{Value, object, Object};
     /// use std::collections::HashMap;
+    ///
+    /// use sonic_rs::{object, Object, Value};
     ///
     /// let mut map = HashMap::new();
     /// map.insert("sonic_rs", 40);
     /// map.insert("json", 2);
     ///
     /// let x: Object = map.iter().collect();
-    /// assert_eq!(x, object!{"sonic_rs": 40, "json": 2});
+    /// assert_eq!(x, object! {"sonic_rs": 40, "json": 2});
     ///
-    /// let x = Object::from_iter(&object!{"sonic_rs": 40, "json": 2});
-    /// assert_eq!(x, object!{"sonic_rs": 40, "json": 2});
+    /// let x = Object::from_iter(&object! {"sonic_rs": 40, "json": 2});
+    /// assert_eq!(x, object! {"sonic_rs": 40, "json": 2});
     /// ```
-    ///
     #[inline]
     fn from_iter<T: IntoIterator<Item = (K, &'a V)>>(iter: T) -> Self {
         debug_assert!(get_shared().is_null(), "object should not be shared");
@@ -516,7 +510,7 @@ impl<'a, T: Clone + Into<Value> + 'a> Extend<&'a T> for Array {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{Array, array, json};
+    /// use sonic_rs::{array, json, Array};
     /// let mut arr = array![];
     ///
     /// // array extend from a slice &[i32]
@@ -529,9 +523,7 @@ impl<'a, T: Clone + Into<Value> + 'a> Extend<&'a T> for Array {
     /// // array extend from other array
     /// arr.extend(&array![4, 5, 6]);
     /// assert_eq!(arr, array![1, 2, 3, 4, 5, 6]);
-    ///
     /// ```
-    ///
     #[inline]
     fn extend<I: IntoIterator<Item = &'a T>>(&mut self, iter: I) {
         debug_assert!(
@@ -556,11 +548,12 @@ impl<'a, K: AsRef<str> + ?Sized, V: Clone + Debug + Into<Value> + 'a> Extend<(&'
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{Object, object, json, Value};
     /// use std::collections::HashMap;
     ///
+    /// use sonic_rs::{json, object, Object, Value};
+    ///
     /// let mut obj = object![];
-    /// let mut map: HashMap<&str, Value> ={
+    /// let mut map: HashMap<&str, Value> = {
     ///     let mut map = HashMap::new();
     ///     map.insert("sonic", json!(40));
     ///     map.insert("rs", json!(null));
@@ -568,13 +561,11 @@ impl<'a, K: AsRef<str> + ?Sized, V: Clone + Debug + Into<Value> + 'a> Extend<(&'
     /// };
     ///
     /// obj.extend(&map);
-    /// assert_eq!(obj, object!{"sonic": 40, "rs": null});
+    /// assert_eq!(obj, object! {"sonic": 40, "rs": null});
     ///
-    /// obj.extend(&object!{"object": [1, 2, 3]});
-    /// assert_eq!(obj, object!{"sonic": 40, "rs": null, "object": [1, 2, 3]});
-    ///
+    /// obj.extend(&object! {"object": [1, 2, 3]});
+    /// assert_eq!(obj, object! {"sonic": 40, "rs": null, "object": [1, 2, 3]});
     /// ```
-    ///
     fn extend<I: IntoIterator<Item = (&'a K, &'a V)>>(&mut self, iter: I) {
         debug_assert!(
             get_shared().is_null(),
@@ -610,11 +601,9 @@ impl From<Object> for Value {
 #[cfg(test)]
 mod test {
 
-    use crate::array;
-    use crate::json;
-    use crate::object;
-    use crate::value::node::Value;
     use std::collections::HashMap;
+
+    use crate::{array, json, object, value::node::Value};
 
     #[test]
     fn test_from() {
@@ -650,9 +639,9 @@ mod test {
 
     #[test]
     fn test_from_iter() {
+        use std::{collections::HashMap, iter::FromIterator};
+
         use crate::{json, Value};
-        use std::collections::HashMap;
-        use std::iter::FromIterator;
 
         let mut map = HashMap::new();
         map.insert("sonic_rs", 40);

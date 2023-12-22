@@ -1,7 +1,10 @@
-use crate::reader::{PaddedSliceRead, SliceRead};
-use crate::PointerNode;
 use bytes::Bytes;
 use faststr::FastStr;
+
+use crate::{
+    reader::{PaddedSliceRead, SliceRead},
+    PointerNode,
+};
 
 // Prevent users from implementing the trait in sonic-rs.
 pub trait Sealed {}

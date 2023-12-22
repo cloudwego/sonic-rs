@@ -1,30 +1,38 @@
-use super::reader::{Reader, Reference};
-use crate::error::ErrorCode::{self, *};
-use crate::error::{Error, Result};
-use crate::index::Index;
-use crate::pointer::tree::MultiIndex;
-use crate::pointer::tree::MultiKey;
-use crate::pointer::tree::PointerTreeInner;
-use crate::pointer::tree::PointerTreeNode;
-use crate::pointer::{JsonPointer, PointerTree};
-use crate::util::arc::Arc;
-use crate::util::arch::{get_nonspace_bits, prefix_xor};
-use crate::util::num::{parse_number, ParserNumber};
-use crate::util::string::*;
-use crate::util::unicode::{codepoint_to_utf8, hex_to_u32_nocheck};
-use crate::value::shared::Shared;
-use crate::value::visitor::JsonVisitor;
-use crate::JsonType;
+use std::{
+    num::NonZeroU8,
+    ops::Deref,
+    slice::{from_raw_parts, from_raw_parts_mut},
+    str::from_utf8_unchecked,
+};
+
 use ::serde::de::{Expected, Unexpected};
 use arrayref::array_ref;
 use faststr::FastStr;
 use packed_simd::{m8x32, u8x32, u8x64};
 use smallvec::SmallVec;
-use std::num::NonZeroU8;
-use std::ops::Deref;
-use std::slice::from_raw_parts;
-use std::slice::from_raw_parts_mut;
-use std::str::from_utf8_unchecked;
+
+use super::reader::{Reader, Reference};
+use crate::{
+    error::{
+        Error,
+        ErrorCode::{self, *},
+        Result,
+    },
+    index::Index,
+    pointer::{
+        tree::{MultiIndex, MultiKey, PointerTreeInner, PointerTreeNode},
+        JsonPointer, PointerTree,
+    },
+    util::{
+        arc::Arc,
+        arch::{get_nonspace_bits, prefix_xor},
+        num::{parse_number, ParserNumber},
+        string::*,
+        unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
+    },
+    value::{shared::Shared, visitor::JsonVisitor},
+    JsonType,
+};
 
 pub(crate) const DEFAULT_KEY_BUF_CAPACITY: usize = 128;
 
@@ -941,7 +949,8 @@ where
             return perr!(self, EofWhileParsing);
         };
 
-        // only check surrogate here, and we will check the code pointer later when use `codepoint_to_utf8`
+        // only check surrogate here, and we will check the code pointer later when use
+        // `codepoint_to_utf8`
         if (0xD800..0xDC00).contains(&point1) {
             // parse the second utf8 code point of surrogate
             let point2 = if let Some(asc) = self.read.next_n(6) {
@@ -1171,8 +1180,8 @@ where
         None
     }
 
-    // skip_string skips a JSON string, and return the later parts afer closed quote, and the escaped status.
-    // skip_string always start with the quote marks.
+    // skip_string skips a JSON string, and return the later parts afer closed quote, and the
+    // escaped status. skip_string always start with the quote marks.
     #[inline(always)]
     fn skip_string_impl(&mut self) -> Result<ParseStatus> {
         const LANS: usize = u8x32::lanes();

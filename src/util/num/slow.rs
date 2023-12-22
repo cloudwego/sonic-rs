@@ -2,9 +2,11 @@
 
 // The code is cloned from [rust-lang](https://github.com/rust-lang/rust) and modified necessary parts.
 
-use super::common::BiasedFp;
-use super::decimal::{parse_decimal, Decimal};
-use super::float::RawFloat;
+use super::{
+    common::BiasedFp,
+    decimal::{parse_decimal, Decimal},
+    float::RawFloat,
+};
 
 /// Parse the significant digits and biased, binary exponent of a float.
 ///

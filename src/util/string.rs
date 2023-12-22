@@ -1,17 +1,23 @@
-use crate::error::ErrorCode::{
-    self, ControlCharacterWhileParsingString, InvalidEscape, InvalidUnicodeCodePoint,
+use std::{
+    mem::MaybeUninit,
+    slice::{from_raw_parts, from_raw_parts_mut},
 };
-use crate::util::unicode::handle_unicode_codepoint_mut;
+
 use packed_simd::u8x32;
-use std::mem::MaybeUninit;
-use std::slice::{from_raw_parts, from_raw_parts_mut};
+
+use crate::{
+    error::ErrorCode::{
+        self, ControlCharacterWhileParsingString, InvalidEscape, InvalidUnicodeCodePoint,
+    },
+    util::unicode::handle_unicode_codepoint_mut,
+};
 
 pub const ESCAPED_TAB: [u8; 256] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, b'"', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, b'/', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    b'\\', 0, 0, 0, 0, 0, b'\x08', /*\b*/
-    0, 0, 0, b'\x0c', /*\f*/
+    b'\\', 0, 0, 0, 0, 0, b'\x08', /* \b */
+    0, 0, 0, b'\x0c', /* \f */
     0, 0, 0, 0, 0, 0, 0, b'\n', 0, 0, 0, b'\r', 0, b'\t', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -582,7 +588,8 @@ mod test {
         assert_eq!(format_string("\\testtest\"", dst_ref, true), 14);
         assert_eq!(dst[..14], *b"\"\\\\testtest\\\"\"");
 
-        let long_str = "this is a long string that should be \\\"quoted and escaped multiple times to test the performance and correctness of the function.";
+        let long_str = "this is a long string that should be \\\"quoted and escaped multiple \
+                        times to test the performance and correctness of the function.";
         assert_eq!(format_string(long_str, dst_ref, true), 129 + 4);
         assert_eq!(dst[..133], *b"\"this is a long string that should be \\\\\\\"quoted and escaped multiple times to test the performance and correctness of the function.\"");
 

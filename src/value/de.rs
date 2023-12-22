@@ -1,19 +1,20 @@
-use super::node::ValueRef;
-use crate::error::{Error, ErrorCode};
-use crate::reader::Reader;
-use crate::serde::number::N;
-use crate::serde::tri;
-use crate::value::node::Value;
-use crate::value::Object;
-use ::serde::de::Visitor;
-use ::serde::de::{
-    self, Deserialize, DeserializeSeed, EnumAccess, Expected, IntoDeserializer, MapAccess,
-    SeqAccess, Unexpected, VariantAccess,
+use std::{mem::MaybeUninit, result::Result as StdResult, slice};
+
+use ::serde::{
+    de::{
+        self, Deserialize, DeserializeSeed, EnumAccess, Expected, IntoDeserializer, MapAccess,
+        SeqAccess, Unexpected, VariantAccess, Visitor,
+    },
+    forward_to_deserialize_any,
 };
-use ::serde::forward_to_deserialize_any;
-use std::mem::MaybeUninit;
-use std::result::Result as StdResult;
-use std::slice;
+
+use super::node::ValueRef;
+use crate::{
+    error::{Error, ErrorCode},
+    reader::Reader,
+    serde::{number::N, tri},
+    value::{node::Value, Object},
+};
 
 /// Interpret a `sonic_rs::Value` as an instance of type `T`.
 ///
@@ -52,7 +53,6 @@ use std::slice;
 /// the JSON map or some number is too big to fit in the expected primitive
 /// type.
 ///
-///
 pub fn from_value<'de, T>(value: &'de Value) -> Result<T, Error>
 where
     T: Deserialize<'de>,
@@ -72,7 +72,6 @@ impl<'de> Deserialize<'de> for Value {
     /// assert_eq!(v["a"], 1);
     /// assert_eq!(v["b"], 2);
     /// ```
-    ///
     fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
     where
         D: ::serde::Deserializer<'de>,

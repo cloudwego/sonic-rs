@@ -1,16 +1,15 @@
-use crate::index::Index;
-use crate::{JsonNumberTrait, Number};
+use crate::{index::Index, JsonNumberTrait, Number};
 
 /// JsonType is an enum that represents the type of a JSON value.
 ///
 /// # Examples
 ///
 /// ```
-///  use sonic_rs::{Value, JsonValueTrait, JsonType};
+/// use sonic_rs::{JsonType, JsonValueTrait, Value};
 ///
-///  let json: Value = sonic_rs::from_str(r#"{"a": 1, "b": true}"#).unwrap();
+/// let json: Value = sonic_rs::from_str(r#"{"a": 1, "b": true}"#).unwrap();
 ///
-///  assert_eq!(json.get(&"a").unwrap().get_type(), JsonType::Number);
+/// assert_eq!(json.get(&"a").unwrap().get_type(), JsonType::Number);
 /// ```
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(u8)]
@@ -45,14 +44,15 @@ pub trait JsonValueTrait {
     where
         Self: 'v;
 
-    /// Gets the type of the value. Returns `JsonType::Null` as default if `self` is `Option::None` or `Result::Err(_)`.
+    /// Gets the type of the value. Returns `JsonType::Null` as default if `self` is `Option::None`
+    /// or `Result::Err(_)`.
     ///
     /// # Examples
     /// ```
-    /// use sonic_rs::value::JsonType;
-    /// use sonic_rs::value::JsonValueTrait;
-    /// use sonic_rs::value::Value;
-    /// use sonic_rs::Result;
+    /// use sonic_rs::{
+    ///     value::{JsonType, JsonValueTrait, Value},
+    ///     Result,
+    /// };
     ///
     /// let json: Value = sonic_rs::from_str(r#"{"a": 1, "b": true}"#).unwrap();
     ///
@@ -62,7 +62,7 @@ pub trait JsonValueTrait {
     /// assert!(v.is_none());
     /// assert_eq!(v.get_type(), JsonType::Null);
     ///
-    /// let v: Result<Value> =  sonic_rs::from_str("invalid json");
+    /// let v: Result<Value> = sonic_rs::from_str("invalid json");
     /// assert!(v.is_err());
     /// assert_eq!(v.get_type(), JsonType::Null);
     /// ```
@@ -72,11 +72,10 @@ pub trait JsonValueTrait {
     ///
     /// # Examples
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json};
+    /// use sonic_rs::{json, JsonValueTrait};
     ///
     /// let val = json!(true);
     /// assert!(val.is_boolean());
-    ///
     /// ```
     #[inline]
     fn is_boolean(&self) -> bool {
@@ -87,11 +86,10 @@ pub trait JsonValueTrait {
     ///
     /// # Examples
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json};
+    /// use sonic_rs::{json, JsonValueTrait};
     ///
     /// let val = json!(true);
     /// assert!(val.is_true());
-    ///
     /// ```
     #[inline]
     fn is_true(&self) -> bool {
@@ -102,11 +100,10 @@ pub trait JsonValueTrait {
     ///
     /// # Examples
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json};
+    /// use sonic_rs::{json, JsonValueTrait};
     ///
     /// let val = json!(false);
     /// assert!(val.is_false());
-    ///
     /// ```
     #[inline]
     fn is_false(&self) -> bool {
@@ -121,7 +118,7 @@ pub trait JsonValueTrait {
     ///
     /// # Examples
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json, Result, Value};
+    /// use sonic_rs::{json, JsonValueTrait, Result, Value};
     ///
     /// let val = json!(null);
     /// assert!(val.is_null());
@@ -133,7 +130,6 @@ pub trait JsonValueTrait {
     /// let val: Result<Value> = sonic_rs::from_str("invalid json");
     /// assert!(val.is_err());
     /// assert!(val.is_null());
-    ///
     /// ```
     #[inline]
     fn is_null(&self) -> bool {
@@ -145,7 +141,7 @@ pub trait JsonValueTrait {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json};
+    /// use sonic_rs::{json, JsonValueTrait};
     ///
     /// assert!(json!(1).is_number());
     /// assert!(Option::Some(json!(1.23)).is_number());
@@ -160,7 +156,7 @@ pub trait JsonValueTrait {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json};
+    /// use sonic_rs::{json, JsonValueTrait};
     /// assert!(json!("foo").is_str());
     /// ```
     #[inline]
@@ -173,7 +169,7 @@ pub trait JsonValueTrait {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json};
+    /// use sonic_rs::{json, JsonValueTrait};
     /// assert!(json!([]).is_array());
     /// ```
     #[inline]
@@ -186,7 +182,7 @@ pub trait JsonValueTrait {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json};
+    /// use sonic_rs::{json, JsonValueTrait};
     /// assert!(json!({}).is_object());
     /// ```
     #[inline]
@@ -200,7 +196,7 @@ pub trait JsonValueTrait {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json};
+    /// use sonic_rs::{json, JsonValueTrait};
     /// assert!(!json!(123).is_f64()); // false
     /// assert!(!json!(-123).is_f64()); // false
     ///
@@ -216,7 +212,7 @@ pub trait JsonValueTrait {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json};
+    /// use sonic_rs::{json, JsonValueTrait};
     ///
     /// assert!(json!(-123).is_i64());
     /// assert!(json!(0).is_i64());
@@ -237,7 +233,7 @@ pub trait JsonValueTrait {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json};
+    /// use sonic_rs::{json, JsonValueTrait};
     ///
     /// assert!(json!(123).is_u64());
     /// assert!(json!(0).is_u64());
@@ -256,7 +252,7 @@ pub trait JsonValueTrait {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json};
+    /// use sonic_rs::{json, JsonValueTrait};
     ///
     /// assert_eq!(json!(123).as_i64(), Some(123));
     /// assert_eq!(json!(-123).as_i64(), Some(-123));
@@ -274,7 +270,7 @@ pub trait JsonValueTrait {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json};
+    /// use sonic_rs::{json, JsonValueTrait};
     ///
     /// assert_eq!(json!(123).as_u64(), Some(123));
     /// assert_eq!(json!(-123).as_u64(), None);
@@ -293,7 +289,7 @@ pub trait JsonValueTrait {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json};
+    /// use sonic_rs::{json, JsonValueTrait};
     ///
     /// assert_eq!(json!(123).as_f64(), Some(123 as f64));
     /// assert_eq!(json!(-123).as_f64(), Some(-123 as f64));
@@ -311,10 +307,9 @@ pub trait JsonValueTrait {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json, Number};
+    /// use sonic_rs::{json, JsonValueTrait, Number};
     ///
     /// assert_eq!(json!(123).as_number(), Some(Number::from(123)));
-    ///
     /// ```
     fn as_number(&self) -> Option<Number>;
 
@@ -323,7 +318,7 @@ pub trait JsonValueTrait {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json};
+    /// use sonic_rs::{json, JsonValueTrait};
     /// assert_eq!(json!("foo").as_str(), Some("foo"));
     /// ```
     fn as_str(&self) -> Option<&str>;
@@ -334,7 +329,7 @@ pub trait JsonValueTrait {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json};
+    /// use sonic_rs::{json, JsonValueTrait};
     /// assert_eq!(json!(true).as_bool(), Some(true));
     /// ```
     fn as_bool(&self) -> Option<bool>;
@@ -350,9 +345,7 @@ pub trait JsonValueTrait {
     ///
     /// # Examples
     /// ```
-    /// use sonic_rs::value::JsonType;
-    /// use sonic_rs::value::JsonValueTrait;
-    /// use sonic_rs::value::Value;
+    /// use sonic_rs::value::{JsonType, JsonValueTrait, Value};
     ///
     /// let json: Value = sonic_rs::from_str(r#"{"a": 1, "b": true}"#).unwrap();
     ///
@@ -388,8 +381,8 @@ pub trait JsonValueTrait {
 
 /// A trait for all JSON object or array values. Used by `Value`.
 ///
-/// The `Option<V: JsonContainerTrait>` and `Result<V: JsonContainerTrait, E>` also implement this trait.
-/// The `Option::None` or `Result::Err(_)` will be viewed as a null value.
+/// The `Option<V: JsonContainerTrait>` and `Result<V: JsonContainerTrait, E>` also implement this
+/// trait. The `Option::None` or `Result::Err(_)` will be viewed as a null value.
 pub trait JsonContainerTrait {
     type ObjectType;
     type ArrayType;
@@ -399,15 +392,12 @@ pub trait JsonContainerTrait {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json, object};
-    /// use sonic_rs::JsonContainerTrait;
-    /// use sonic_rs::Value;
+    /// use sonic_rs::{json, object, JsonContainerTrait, JsonValueTrait, Value};
     ///
     /// let value: Value = sonic_rs::from_str(r#"{"a": 1, "b": true}"#).unwrap();
     ///
     /// assert!(value.is_object());
-    /// assert_eq!(value.as_object(), Some(&object!{"a": 1, "b": true}));
-    ///
+    /// assert_eq!(value.as_object(), Some(&object! {"a": 1, "b": true}));
     /// ```
     fn as_object(&self) -> Option<&Self::ObjectType>;
 
@@ -416,22 +406,20 @@ pub trait JsonContainerTrait {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{JsonValueTrait, json, Value, JsonContainerTrait, array};
+    /// use sonic_rs::{array, json, JsonContainerTrait, JsonValueTrait, Value};
     ///
     /// let value: Value = sonic_rs::from_str(r#"[1, 2, 3]"#).unwrap();
     ///
     /// assert!(value.is_array());
     /// assert_eq!(value.as_array(), Some(&array![1, 2, 3]));
-    ///
     /// ```
     fn as_array(&self) -> Option<&Self::ArrayType>;
 }
 
 /// A trait for all mutable JSON values. Used by mutable `Value`.
 ///
-/// The `Option<V: JsonValueMutTrait>` and `Result<V: JsonValueMutTrait, E>` also implement this trait.
-/// The `Option::None` or `Result::Err(_)` will be viewed as a null value.
-///
+/// The `Option<V: JsonValueMutTrait>` and `Result<V: JsonValueMutTrait, E>` also implement this
+/// trait. The `Option::None` or `Result::Err(_)` will be viewed as a null value.
 pub trait JsonValueMutTrait {
     type ValueType;
     type ObjectType;
@@ -449,7 +437,6 @@ pub trait JsonValueMutTrait {
     /// let obj = value.as_object_mut().unwrap();
     /// obj["a"] = json!(2);
     /// assert_eq!(value, json!({"a": 2, "b": true}));
-    ///
     /// ```
     fn as_object_mut(&mut self) -> Option<&mut Self::ObjectType>;
 
@@ -458,14 +445,12 @@ pub trait JsonValueMutTrait {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{JsonValueMutTrait, json};
-    /// use sonic_rs::Value;
+    /// use sonic_rs::{json, JsonValueMutTrait, Value};
     ///
     /// let mut value: Value = sonic_rs::from_str(r#"[1, 2, 3]"#).unwrap();
-    ///  let arr = value.as_array_mut().unwrap();
-    ///  arr[0] = json!(2);
+    /// let arr = value.as_array_mut().unwrap();
+    /// arr[0] = json!(2);
     /// assert_eq!(value, json!([2, 2, 3]));
-    ///
     /// ```
     fn as_array_mut(&mut self) -> Option<&mut Self::ArrayType>;
 

@@ -1,25 +1,23 @@
-use super::shared::Shared;
-use super::shared::SharedCtxGuard;
-use crate::serde::tri;
-use crate::util::arc::Arc;
-use crate::value::node::Value;
-use crate::value::value_trait::JsonValueTrait;
-use std::fmt::Debug;
-use std::iter::FusedIterator;
-use std::ops::Deref;
-use std::ops::DerefMut;
-use std::ops::Range;
-use std::ops::RangeBounds;
-use std::ptr::NonNull;
-use std::slice::from_raw_parts;
-use std::slice::from_raw_parts_mut;
+use std::{
+    fmt::Debug,
+    iter::FusedIterator,
+    ops::{Deref, DerefMut, Range, RangeBounds},
+    ptr::NonNull,
+    slice::{from_raw_parts, from_raw_parts_mut},
+};
+
+use super::shared::{Shared, SharedCtxGuard};
+use crate::{
+    serde::tri,
+    util::arc::Arc,
+    value::{node::Value, value_trait::JsonValueTrait},
+};
 
 /// Array represents a JSON array. Its APIs are likes `Array<Value>`.
 ///
 /// # Example
 /// ```
-/// use sonic_rs::JsonContainerTrait;
-/// use sonic_rs::{array, Array};
+/// use sonic_rs::{array, Array, JsonContainerTrait};
 ///
 /// let mut arr: Array = sonic_rs::from_str("[1, 2, 3]").unwrap();
 /// assert_eq!(arr[0], 1);
@@ -30,7 +28,6 @@ use std::slice::from_raw_parts_mut;
 /// let j = sonic_rs::json!([1, 2, 3]);
 /// assert_eq!(j.as_array().unwrap()[0], 1);
 /// ```
-///
 #[derive(Debug, Eq, PartialEq, Clone)]
 #[repr(transparent)]
 pub struct Array(pub(crate) Value);
@@ -47,7 +44,6 @@ impl Array {
     /// Constructs a new, empty `Array`.
     ///
     /// The array will not allocate until elements are pushed onto it.
-    ///
     #[inline]
     pub const fn new() -> Self {
         let value = Value {
@@ -68,7 +64,6 @@ impl Array {
     /// # Panics
     ///
     /// Panics if the new capacity exceeds `isize::MAX` bytes.
-    ///
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
         let mut array = Self::new();
@@ -93,7 +88,6 @@ impl Array {
     /// arr.reserve(10);
     /// assert!(arr.capacity() >= 13);
     /// ```
-    ///
     #[inline]
     pub fn reserve(&mut self, additional: usize) {
         self.0.reserve::<Value>(additional);
@@ -155,7 +149,10 @@ impl Array {
     ///
     /// let mut arr = array![];
     /// let mut p = 1;
-    /// arr.resize_with(4, || { p *= 2; p.into() });
+    /// arr.resize_with(4, || {
+    ///     p *= 2;
+    ///     p.into()
+    /// });
     /// assert_eq!(arr, [2, 4, 8, 16]);
     /// ```
     #[inline]
@@ -289,18 +286,18 @@ impl Array {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::array;
-    /// use sonic_rs::JsonValueTrait;
+    /// use sonic_rs::{array, JsonValueTrait};
     ///
     /// let mut arr = array![1, 2, 3, 4];
-    /// arr.retain_mut(|x|  {
-    /// let v = (x.as_i64().unwrap());
-    /// if v <= 3 {
-    ///     *x = (v + 1).into();
-    ///     true
-    /// } else {
-    ///     false
-    /// }});
+    /// arr.retain_mut(|x| {
+    ///     let v = (x.as_i64().unwrap());
+    ///     if v <= 3 {
+    ///         *x = (v + 1).into();
+    ///         true
+    ///     } else {
+    ///         false
+    ///     }
+    /// });
     /// assert_eq!(arr, [2, 3, 4]);
     /// ```
     #[inline]
@@ -686,7 +683,6 @@ impl DerefMut for Array {
 ///
 /// This `struct` is created by [`Array::drain`].
 /// See its documentation for more.
-///
 pub struct Drain<'a> {
     pub(super) tail_start: usize,
     pub(super) tail_len: usize,
@@ -720,9 +716,10 @@ impl Iterator for Drain<'_> {
     }
 }
 
-use std::ops::Index;
-use std::ops::IndexMut;
-use std::slice::SliceIndex;
+use std::{
+    ops::{Index, IndexMut},
+    slice::SliceIndex,
+};
 
 impl<I: SliceIndex<[Value]>> Index<I> for Array {
     type Output = I::Output;
@@ -896,8 +893,7 @@ impl<'de> serde::de::Deserialize<'de> for Array {
 #[cfg(test)]
 mod test {
     use super::Array;
-    use crate::value::node::Value;
-    use crate::value::value_trait::JsonValueMutTrait;
+    use crate::value::{node::Value, value_trait::JsonValueMutTrait};
 
     #[test]
     fn test_value_array() {

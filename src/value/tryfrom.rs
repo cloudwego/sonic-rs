@@ -1,6 +1,5 @@
 use super::Value;
-use crate::LazyValue;
-use crate::Number;
+use crate::{LazyValue, Number};
 
 impl TryFrom<f32> for Value {
     type Error = crate::Error;
@@ -10,15 +9,14 @@ impl TryFrom<f32> for Value {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::Value;
-    /// use sonic_rs::JsonValueTrait;
+    /// use sonic_rs::{JsonValueTrait, Value};
     ///
     /// let f1: f32 = 2.333;
     /// let x1: Value = f1.try_into().unwrap();
     /// assert_eq!(x1, f1);
     ///
-    /// let x2: Value =  f32::INFINITY.try_into().unwrap_or_default();
-    /// let x3: Value =  f32::NAN.try_into().unwrap_or_default();
+    /// let x2: Value = f32::INFINITY.try_into().unwrap_or_default();
+    /// let x3: Value = f32::NAN.try_into().unwrap_or_default();
     ///
     /// assert!(x2.is_null() && x3.is_null());
     /// ```
@@ -34,15 +32,14 @@ impl TryFrom<f64> for Value {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::Value;
-    /// use sonic_rs::JsonValueTrait;
+    /// use sonic_rs::{JsonValueTrait, Value};
     ///
     /// let f1: f64 = 2.333;
     /// let x1: Value = f1.try_into().unwrap();
     /// assert_eq!(x1, 2.333);
     ///
-    /// let x2: Value =  f64::INFINITY.try_into().unwrap_or_default();
-    /// let x3: Value =  f64::NAN.try_into().unwrap_or_default();
+    /// let x2: Value = f64::INFINITY.try_into().unwrap_or_default();
+    /// let x3: Value = f64::NAN.try_into().unwrap_or_default();
     ///
     /// assert!(x2.is_null() && x3.is_null());
     /// ```
@@ -53,20 +50,23 @@ impl TryFrom<f64> for Value {
     }
 }
 
-/// Try parse a `LazyValue` into a `Value`.  `LazyValue` is always a valid JSON, at least it is followed the JSON syntax.
+/// Try parse a `LazyValue` into a `Value`.  `LazyValue` is always a valid JSON, at least it is
+/// followed the JSON syntax.
 ///
-/// However, in some cases, the parse will failed and return errors, such as the float number in JSON is inifity.
+/// However, in some cases, the parse will failed and return errors, such as the float number in
+/// JSON is inifity.
 ///
 /// # Examples
 /// ```
-/// use sonic_rs::{Value, Result};
-/// use sonic_rs::JsonValueTrait;
-/// use sonic_rs::LazyValue;
+/// use sonic_rs::{JsonValueTrait, LazyValue, Result, Value};
 ///
 /// let lazy = sonic_rs::get(r#"{"a": 111e9999999, "b": 2}"#, &["a"]).unwrap();
 /// let x1: Result<Value> = lazy.try_into();
 ///
-/// assert!(x1.unwrap_err().to_string().contains("Float number must be finite"));
+/// assert!(x1
+///     .unwrap_err()
+///     .to_string()
+///     .contains("Float number must be finite"));
 /// ```
 impl<'de> TryFrom<LazyValue<'de>> for Value {
     type Error = crate::Error;

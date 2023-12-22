@@ -1,8 +1,9 @@
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
 
-use crate::error::make_error;
-use crate::util::num::ParserNumber;
-use crate::util::private::Sealed;
+use crate::{
+    error::make_error,
+    util::{num::ParserNumber, private::Sealed},
+};
 
 /// Represents a JSON number, whether integer or floating point.
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -19,11 +20,17 @@ pub(crate) enum N {
     Float(f64),
 }
 
+use core::{
+    fmt::{self, Debug, Display},
+    hash::{Hash, Hasher},
+};
+
+use serde::{
+    de::{self, Visitor},
+    forward_to_deserialize_any, Deserialize, Deserializer, Serialize, Serializer,
+};
+
 use crate::error::Error;
-use core::fmt::{self, Debug, Display};
-use core::hash::{Hash, Hasher};
-use serde::de::{self, Visitor};
-use serde::{forward_to_deserialize_any, Deserialize, Deserializer, Serialize, Serializer};
 
 impl PartialEq for N {
     fn eq(&self, other: &Self) -> bool {
@@ -104,7 +111,6 @@ impl JsonNumberTrait for Number {
     ///
     /// Currently this function returns true if and only if both `is_i64` and
     /// `is_u64` return false but this is not a guarantee in the future.
-    ///
     #[inline]
     fn is_f64(&self) -> bool {
         match self.n {
@@ -154,7 +160,6 @@ impl JsonNumberTrait for Number {
 impl Number {
     /// Converts a finite `f64` to a `Number`. Infinite or NaN values are not JSON
     /// numbers.
-    ///
     #[inline]
     pub fn from_f64(f: f64) -> Option<Number> {
         if f.is_finite() {

@@ -1,8 +1,13 @@
-use super::object::Pair;
-use crate::value::node::Value;
-use crate::value::value_trait::{JsonContainerTrait, JsonValueTrait};
-use crate::JsonType;
 use faststr::FastStr;
+
+use super::object::Pair;
+use crate::{
+    value::{
+        node::Value,
+        value_trait::{JsonContainerTrait, JsonValueTrait},
+    },
+    JsonType,
+};
 impl Eq for Value {}
 
 impl PartialEq for Value {
@@ -243,8 +248,7 @@ impl_slice_eq!([], Vec<U>);
 
 //////////////////////////////////////////////////////////////////////////////
 
-use super::array::Array;
-use super::object::Object;
+use super::{array::Array, object::Object};
 
 // TODO: compare value with object/array.
 
@@ -301,8 +305,9 @@ impl_container_eq!(Array Object);
 
 #[cfg(test)]
 mod test {
-    use crate::{array, json};
     use faststr::FastStr;
+
+    use crate::{array, json};
     #[test]
     fn test_slice_eq() {
         assert_eq!(json!([1, 2, 3]), &[1, 2, 3]);

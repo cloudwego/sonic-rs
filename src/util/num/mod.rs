@@ -5,12 +5,10 @@ mod lemire;
 mod slow;
 mod table;
 
-use self::common::BiasedFp;
-use self::float::RawFloat;
-use self::table::POWER_OF_FIVE_128;
-use crate::error::ErrorCode;
-use crate::util::arch::simd_str2int;
 use std::result::Result;
+
+use self::{common::BiasedFp, float::RawFloat, table::POWER_OF_FIVE_128};
+use crate::{error::ErrorCode, util::arch::simd_str2int};
 
 const FLOATING_LONGEST_DIGITS: usize = 17;
 const F64_BITS: u32 = 64;
@@ -110,7 +108,8 @@ const POW10_UINT: [u64; 18] = [
 ];
 
 // parse at most 16 digits for fraction, record the exponent.
-// because we calcaute at least the first significant digit when both normal or subnormal float points
+// because we calcaute at least the first significant digit when both normal or subnormal float
+// points
 #[inline(always)]
 fn parse_number_fraction(
     data: &[u8],

@@ -1,11 +1,9 @@
 #[macro_use]
 extern crate criterion;
 
-use criterion::SamplingMode;
-use criterion::{criterion_group, BatchSize, Criterion, Throughput};
-use std::fs::File;
-use std::io::Read;
-use std::str::from_utf8_unchecked;
+use std::{fs::File, io::Read, str::from_utf8_unchecked};
+
+use criterion::{criterion_group, BatchSize, Criterion, SamplingMode, Throughput};
 
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
@@ -146,6 +144,7 @@ bench_file!(citm_catalog);
 bench_file!(twitter);
 bench_file!(github_events);
 
-// criterion_group!(benches, canada, otfcc, citm_catalog, twitter, lottie, github_events, twitterescaped, book, poet, fgo);
+// criterion_group!(benches, canada, otfcc, citm_catalog, twitter, lottie, github_events,
+// twitterescaped, book, poet, fgo);
 criterion_group!(benches, twitter, canada, citm_catalog);
 criterion_main!(benches);

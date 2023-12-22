@@ -1,6 +1,7 @@
+use std::{alloc::Layout, ptr::NonNull};
+
 use bumpalo::Bump;
 use parking_lot::Mutex;
-use std::{alloc::Layout, ptr::NonNull};
 
 #[derive(Debug)]
 pub(crate) struct SyncBump(pub(crate) Mutex<Bump>);

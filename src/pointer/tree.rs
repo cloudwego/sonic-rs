@@ -1,6 +1,8 @@
-use crate::index::Index;
-use faststr::FastStr;
 use std::collections::HashMap;
+
+use faststr::FastStr;
+
+use crate::index::Index;
 
 /// PointerTree is designed for [`crate::get_many`] and [`crate::get_many_unchecked`].
 /// It is recommended to use `get_many` when you need to get multiple values from json.
@@ -25,9 +27,9 @@ use std::collections::HashMap;
 ///
 /// // the node order is as the order of `add_path`
 /// for val in nodes.unwrap() {
-/// println!("{}", val.as_raw_str());
-/// // 123
-/// // "found"
+///     println!("{}", val.as_raw_str());
+///     // 123
+///     // "found"
 /// }
 /// ```
 

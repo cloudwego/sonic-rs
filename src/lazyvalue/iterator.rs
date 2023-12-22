@@ -1,10 +1,12 @@
-use crate::error::Result;
-use crate::input::JsonInput;
-use crate::input::JsonSlice;
-use crate::lazyvalue::LazyValue;
-use crate::parser::{Parser, DEFAULT_KEY_BUF_CAPACITY};
-use crate::reader::SliceRead;
 use faststr::FastStr;
+
+use crate::{
+    error::Result,
+    input::{JsonInput, JsonSlice},
+    lazyvalue::LazyValue,
+    parser::{Parser, DEFAULT_KEY_BUF_CAPACITY},
+    reader::SliceRead,
+};
 
 /// A lazied iterator for JSON object text. It will parse the JSON when iterating.
 ///
@@ -14,9 +16,8 @@ use faststr::FastStr;
 ///
 /// # Examples
 ///```
-/// use sonic_rs::JsonValueTrait;
-/// use sonic_rs::to_object_iter;
 /// use faststr::FastStr;
+/// use sonic_rs::{to_object_iter, JsonValueTrait};
 ///
 /// let json = FastStr::from(r#"{"a": null, "b":[1, 2, 3]}"#);
 /// let iter = to_object_iter(&json);
@@ -45,8 +46,7 @@ pub struct ObjectJsonIter<'de>(ObjectInner<'de>);
 ///
 /// # Examples
 /// ```
-/// use sonic_rs::JsonValueTrait;
-/// use sonic_rs::to_array_iter;
+/// use sonic_rs::{to_array_iter, JsonValueTrait};
 ///
 /// let iter = to_array_iter(r#"[0, 1, 2, 3, 4, 5, 6]"#);
 /// for (i, ret) in iter.enumerate() {
@@ -60,7 +60,10 @@ pub struct ObjectJsonIter<'de>(ObjectInner<'de>);
 ///     // do something for each elem
 ///     // deal with errors when invalid json
 ///     if elem.is_err() {
-///         assert!(elem.unwrap_err().to_string().contains("Expected this character to be either a ',' or a ']'"));
+///         assert!(elem
+///             .unwrap_err()
+///             .to_string()
+///             .contains("Expected this character to be either a ',' or a ']'"));
 ///     }
 /// }
 /// ```
@@ -168,28 +171,28 @@ impl<'de> ArrayInner<'de> {
     }
 }
 
-/// Convert a json to a lazy ObjectJsonIter. The iterator is lazied and the parsing will doing when iterating.
-/// The item of the iterator is a Result. If parse error, it will return Err.
+/// Convert a json to a lazy ObjectJsonIter. The iterator is lazied and the parsing will doing when
+/// iterating. The item of the iterator is a Result. If parse error, it will return Err.
 pub fn to_object_iter<'de, I: JsonInput<'de>>(json: I) -> ObjectJsonIter<'de> {
     ObjectJsonIter(ObjectInner::new(json.to_json_slice(), true))
 }
 
-/// Convert a json to a lazy ArrayJsonIter. The iterator is lazied and the parsing will doing when iterating.
-/// The item of the iterator is a Result. If parse error, it will return Err.
+/// Convert a json to a lazy ArrayJsonIter. The iterator is lazied and the parsing will doing when
+/// iterating. The item of the iterator is a Result. If parse error, it will return Err.
 pub fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayJsonIter<'de> {
     ArrayJsonIter(ArrayInner::new(json.to_json_slice(), true))
 }
 
-/// Convert a json to a lazy UnsafeObjectJsonIter. The iterator is lazied and the parsing will doing when iterating.
-/// The item of the iterator is a Result. If parse error, it will return Err.
+/// Convert a json to a lazy UnsafeObjectJsonIter. The iterator is lazied and the parsing will doing
+/// when iterating. The item of the iterator is a Result. If parse error, it will return Err.
 /// # Safety
 /// If the json is invalid, the result is undefined.
 pub unsafe fn to_object_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> ObjectJsonIter<'de> {
     ObjectJsonIter(ObjectInner::new(json.to_json_slice(), false))
 }
 
-/// Convert a json to a lazy UnsafeArrayJsonIter. The iterator is lazied and the parsing will doing when iterating.
-/// The item of the iterator is a Result. If parse error, it will return Err.
+/// Convert a json to a lazy UnsafeArrayJsonIter. The iterator is lazied and the parsing will doing
+/// when iterating. The item of the iterator is a Result. If parse error, it will return Err.
 /// # Safety
 /// If the json is invalid, the result is undefined.
 pub unsafe fn to_array_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> ArrayJsonIter<'de> {
@@ -214,9 +217,10 @@ impl<'de> Iterator for ArrayJsonIter<'de> {
 
 #[cfg(test)]
 mod test {
+    use bytes::Bytes;
+
     use super::*;
     use crate::{value::JsonValueTrait, JsonType};
-    use bytes::Bytes;
 
     #[test]
     fn test_object_iter() {

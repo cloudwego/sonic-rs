@@ -1,9 +1,8 @@
-use faststr::FastStr;
-use serde::ser::SerializeMap;
-use serde::Serializer;
-use sonic_rs::to_object_iter;
-use sonic_rs::writer::WriteExt;
 use std::collections::HashSet;
+
+use faststr::FastStr;
+use serde::{ser::SerializeMap, Serializer};
+use sonic_rs::{to_object_iter, writer::WriteExt};
 
 #[allow(clippy::mutable_key_type)]
 fn filter_json<W: WriteExt>(json: &str, keys: HashSet<FastStr>, w: W) -> sonic_rs::Result<()> {

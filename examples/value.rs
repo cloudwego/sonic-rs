@@ -1,8 +1,6 @@
 // Parse json into sonic_rs `Value`.
 
-use sonic_rs::JsonValueMutTrait;
-use sonic_rs::{from_str, json};
-use sonic_rs::{pointer, JsonValueTrait, Value};
+use sonic_rs::{from_str, json, pointer, JsonValueMutTrait, JsonValueTrait, Value};
 
 fn main() {
     let json = r#"{

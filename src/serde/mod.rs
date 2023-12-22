@@ -3,24 +3,26 @@ pub(crate) mod number;
 pub(crate) mod rawnumber;
 mod ser;
 
-pub use self::de::{from_slice, from_slice_unchecked, from_str, Deserializer};
-pub use self::number::{JsonNumberTrait, Number};
-pub use self::rawnumber::RawNumber;
-pub use self::ser::{
-    to_string, to_string_pretty, to_vec, to_vec_pretty, to_writer, to_writer_pretty, Serializer,
-};
-
 pub(crate) use self::de::tri;
+pub use self::{
+    de::{from_slice, from_slice_unchecked, from_str, Deserializer},
+    number::{JsonNumberTrait, Number},
+    rawnumber::RawNumber,
+    ser::{
+        to_string, to_string_pretty, to_vec, to_vec_pretty, to_writer, to_writer_pretty, Serializer,
+    },
+};
 
 #[cfg(test)]
 #[allow(clippy::mutable_key_type)]
 mod test {
-    use super::*;
-    use crate::Result;
+    use std::{borrow::Cow, collections::HashMap, hash::Hash, marker::PhantomData};
+
     use faststr::FastStr;
     use serde::{Deserialize, Serialize};
-    use std::borrow::Cow;
-    use std::{collections::HashMap, hash::Hash, marker::PhantomData};
+
+    use super::*;
+    use crate::Result;
 
     #[derive(Debug, Deserialize, Serialize, PartialEq)]
     struct Foo {
@@ -189,8 +191,7 @@ mod test {
 
     #[test]
     fn test_serde_time() {
-        use chrono::DateTime;
-        use chrono::Utc;
+        use chrono::{DateTime, Utc};
 
         let time: DateTime<Utc> = Utc::now();
         let out = to_string_pretty(&time).unwrap();

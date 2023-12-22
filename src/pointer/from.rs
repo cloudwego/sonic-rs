@@ -1,5 +1,6 @@
-use crate::PointerNode;
 use faststr::FastStr;
+
+use crate::PointerNode;
 
 impl From<usize> for PointerNode {
     fn from(value: usize) -> Self {

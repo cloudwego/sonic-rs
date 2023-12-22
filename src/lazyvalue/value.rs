@@ -1,24 +1,21 @@
-use std::borrow::Cow;
-use std::cell::UnsafeCell;
-use std::hash::Hash;
-use std::str::from_utf8_unchecked;
+use std::{borrow::Cow, cell::UnsafeCell, hash::Hash, str::from_utf8_unchecked};
 
 use faststr::FastStr;
 
-use crate::get_unchecked;
-use crate::index::Index;
-use crate::input::JsonSlice;
-use crate::parser::Parser;
-use crate::reader::Reader;
-use crate::reader::Reference;
-use crate::reader::SliceRead;
-use crate::serde::Number;
-use crate::JsonType;
-use crate::{from_str, JsonValueTrait};
+use crate::{
+    from_str, get_unchecked,
+    index::Index,
+    input::JsonSlice,
+    parser::Parser,
+    reader::{Reader, Reference, SliceRead},
+    serde::Number,
+    JsonType, JsonValueTrait,
+};
 
 /// LazyValue wrappers a unparsed raw JSON text. It is borrowed from the origin JSON text.
 ///
-/// LazyValue can be [`get`](crate::get),  [`get_unchecked`](crate::get_unchecked) or [`deserialize`](crate::from_str) from a JSON text.
+/// LazyValue can be [`get`](crate::get),  [`get_unchecked`](crate::get_unchecked) or
+/// [`deserialize`](crate::from_str) from a JSON text.
 ///
 /// # Examples
 ///
@@ -45,7 +42,6 @@ use crate::{from_str, JsonValueTrait};
 /// assert_eq!(lv_a.as_str().unwrap(), "hello world");
 /// assert_eq!(lv_c.as_str(), None);
 /// assert!(lv_c.is_array());
-///
 /// ```
 ///
 /// # Serde Examples
@@ -55,8 +51,7 @@ use crate::{from_str, JsonValueTrait};
 ///
 /// ```
 /// # use sonic_rs::LazyValue;
-/// use serde::Serialize;
-/// use serde::Deserialize;
+/// use serde::{Deserialize, Serialize};
 ///
 /// #[derive(Debug, Deserialize, Serialize, PartialEq)]
 /// struct TestLazyValue<'a> {
@@ -220,8 +215,8 @@ impl<'a> LazyValue<'a> {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::LazyValue;
     /// use faststr::FastStr;
+    /// use sonic_rs::LazyValue;
     ///
     /// let lv: LazyValue = sonic_rs::get(r#"{"a": "hello world"}"#, &["a"]).unwrap();
     /// // will copy the raw_str into a new faststr
@@ -230,7 +225,6 @@ impl<'a> LazyValue<'a> {
     /// let fs = FastStr::new(r#"{"a": "hello world"}"#);
     /// let lv: LazyValue = sonic_rs::get(&fs, &["a"]).unwrap();
     /// assert_eq!(lv.as_raw_faststr(), "\"hello world\""); // zero-copy
-    ///
     /// ```
     pub fn as_raw_faststr(&self) -> FastStr {
         match &self.raw {
@@ -271,11 +265,8 @@ impl<'a> LazyValue<'a> {
 
 #[cfg(test)]
 mod test {
-    use crate::to_array_iter;
-    use crate::value::JsonValueTrait;
-    use crate::{get_unchecked, pointer};
-
     use super::*;
+    use crate::{get_unchecked, pointer, to_array_iter, value::JsonValueTrait};
 
     const TEST_JSON: &str = r#"{
         "bool": true,

@@ -1,16 +1,18 @@
-use super::LazyValue;
-use crate::error::Result;
-use crate::index::Index;
-use crate::input::JsonInput;
-use crate::parser::Parser;
-use crate::pointer::PointerTree;
-use crate::reader::Reader;
-use crate::reader::SliceRead;
-use crate::util::utf8::from_utf8;
 use bytes::Bytes;
 use faststr::FastStr;
 
-/// Gets a field from path. And return it as a `LazyValue`. If not found, return `None`.
+use super::LazyValue;
+use crate::{
+    error::Result,
+    index::Index,
+    input::JsonInput,
+    parser::Parser,
+    pointer::PointerTree,
+    reader::{Reader, SliceRead},
+    util::utf8::from_utf8,
+};
+
+/// Gets a field from path. And return it as a `LazyValue`. If not found, return an error.
 /// If path is empty, return the whole JSON as a `LazyValue`.
 ///
 /// # Safety
@@ -31,7 +33,6 @@ use faststr::FastStr;
 /// let lv = unsafe { get_from_str_unchecked(r#"[1, 2, 3]"#, &["b"]) };
 /// assert!(lv.unwrap_err().is_unmatched_type());
 /// ```
-///
 pub unsafe fn get_from_str_unchecked<Path: IntoIterator>(
     json: &str,
     path: Path,
@@ -42,13 +43,12 @@ where
     get_unchecked(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If not found, return `None`.
+/// Gets a field from path. And return it as a `LazyValue`. If not found, return an error.
 /// If path is empty, return the whole JSON as a `LazyValue`.
 ///
 /// # Safety
 ///
 /// The JSON must be valid and well-formed, otherwise it may return unexpected result.
-///
 pub unsafe fn get_from_bytes_unchecked<Path: IntoIterator>(
     json: &Bytes,
     path: Path,
@@ -59,7 +59,7 @@ where
     get_unchecked(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`.  If not found, return `None`.
+/// Gets a field from path. And return it as a `LazyValue`.  If not found, return an error.
 /// If path is empty, return the whole JSON as a `LazyValue`.
 ///
 /// # Safety
@@ -84,7 +84,6 @@ where
 /// let lv = unsafe { get_from_faststr_unchecked(&fs, &["b"]) };
 /// assert!(lv.unwrap_err().is_unmatched_type());
 /// ```
-///
 pub unsafe fn get_from_faststr_unchecked<Path: IntoIterator>(
     json: &FastStr,
     path: Path,
@@ -100,7 +99,6 @@ where
 ///
 /// # Safety
 /// The JSON must be valid and well-formed, otherwise it may return unexpected result.
-///
 pub unsafe fn get_from_slice_unchecked<Path: IntoIterator>(
     json: &[u8],
     path: Path,
@@ -121,8 +119,8 @@ where
 ///
 /// # Examples
 /// ```
-/// use sonic_rs::get_unchecked;
 /// use faststr::FastStr;
+/// use sonic_rs::get_unchecked;
 ///
 /// let lv = unsafe { get_unchecked(r#"{"a": 1}"#, &["a"]).unwrap() };
 /// assert_eq!(lv.as_raw_str(), "1");
@@ -132,7 +130,6 @@ where
 /// let lv = unsafe { get_unchecked(&fs, &["b"]) };
 /// assert!(lv.unwrap_err().is_not_found());
 /// ```
-///
 pub unsafe fn get_unchecked<'de, Input, Path: IntoIterator>(
     json: Input,
     path: Path,
@@ -151,8 +148,9 @@ where
 
 /// get_many returns multiple fields from the `PointerTree`.
 ///
-/// The result is a `Result<Vec<LazyValue>>`. The order of the `Vec` is same as the order of the tree.
-///  
+/// The result is a `Result<Vec<LazyValue>>`. The order of the `Vec` is same as the order of the
+/// tree.
+///
 /// If json is invalid, or the field not be found, it will return a err.
 ///
 /// # Safety
@@ -202,7 +200,6 @@ where
 /// let lv = get_from_str(r#"{"a": 1}"#, &["b"]);
 /// assert!(lv.is_err());
 /// ```
-///
 pub fn get_from_str<Path: IntoIterator>(json: &str, path: Path) -> Result<LazyValue<'_>>
 where
     Path::Item: Index,
@@ -223,7 +220,6 @@ where
 /// let lv = get_from_slice(br#"{"a": 1}"#, &["b"]);
 /// assert!(lv.is_err());
 /// ```
-///
 pub fn get_from_slice<Path: IntoIterator>(json: &[u8], path: Path) -> Result<LazyValue<'_>>
 where
     Path::Item: Index,
@@ -248,7 +244,6 @@ where
 /// let lv = get_from_bytes(&bs, &["b"]);
 /// assert!(lv.is_err());
 /// ```
-///
 pub fn get_from_bytes<Path: IntoIterator>(json: &Bytes, path: Path) -> Result<LazyValue<'_>>
 where
     Path::Item: Index,
@@ -272,7 +267,6 @@ where
 /// let lv = get_from_faststr(&fs, &["b"]);
 /// assert!(lv.is_err());
 /// ```
-///
 pub fn get_from_faststr<Path: IntoIterator>(json: &FastStr, path: Path) -> Result<LazyValue<'_>>
 where
     Path::Item: Index,
@@ -290,11 +284,11 @@ where
 ///
 /// # Examples
 /// ```
-/// use sonic_rs::get;
-/// use faststr::FastStr;
 /// use bytes::Bytes;
+/// use faststr::FastStr;
+/// use sonic_rs::get;
 ///
-/// let lv =  get(r#"{"a": 1}"#, &["a"]).unwrap();
+/// let lv = get(r#"{"a": 1}"#, &["a"]).unwrap();
 /// assert_eq!(lv.as_raw_str(), "1");
 ///
 /// /// not found the field "a"
@@ -307,7 +301,6 @@ where
 /// let lv = get(&b, &["a"]);
 /// assert!(lv.is_err());
 /// ```
-///
 pub fn get<'de, Input, Path: IntoIterator>(json: Input, path: Path) -> Result<LazyValue<'de>>
 where
     Input: JsonInput<'de>,
@@ -330,8 +323,8 @@ where
 
 /// get_many returns multiple fields from the `PointerTree`.
 ///
-/// The result is a `Result<Vec<LazyValue>>`. The order of the `Vec` is same as the order of the tree.
-///  
+/// The result is a `Result<Vec<LazyValue>>`. The order of the `Vec` is same as the order of the
+/// tree.  
 /// If json is invalid, or the field not be found, it will return a err.
 ///
 /// # Examples
@@ -371,9 +364,10 @@ where
 
 #[cfg(test)]
 mod test {
+    use std::str::{from_utf8_unchecked, FromStr};
+
     use super::*;
     use crate::{pointer, JsonPointer};
-    use std::str::{from_utf8_unchecked, FromStr};
 
     #[test]
     fn test_get_from_json() {

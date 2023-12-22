@@ -1,8 +1,7 @@
-use super::owned::OwnedLazyValue;
-use super::value::LazyValue;
+use ::serde::{ser::SerializeStruct, Serialize};
+
+use super::{owned::OwnedLazyValue, value::LazyValue};
 use crate::Result;
-use ::serde::ser::SerializeStruct;
-use ::serde::Serialize;
 
 impl<'a> serde::ser::Serialize for LazyValue<'a> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -50,10 +49,9 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::OwnedLazyValue;
-    use crate::{from_str, to_string, LazyValue, Result};
-    use ::serde::Deserialize;
-    use ::serde::Serialize;
+    use ::serde::{Deserialize, Serialize};
+
+    use crate::{from_str, to_string, LazyValue, OwnedLazyValue, Result};
 
     #[test]
     fn test_lazyvalue_serde() {

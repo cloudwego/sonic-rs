@@ -1,7 +1,6 @@
 // Copied from Rust-lang BTreeMap implementation
 
-use core::marker::PhantomData;
-use core::ptr::NonNull;
+use core::{marker::PhantomData, ptr::NonNull};
 
 /// Models a reborrow of some unique reference, when you know that the reborrow
 /// and all its descendants (i.e., all pointers and references derived from it)

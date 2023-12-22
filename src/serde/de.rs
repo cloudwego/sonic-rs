@@ -1,19 +1,24 @@
 //! Deserialize JSON data to a Rust data structure.
 
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
-use crate::error::{
-    Error,
-    ErrorCode::{self, EofWhileParsing, RecursionLimitExceeded},
-    Result,
+use std::{mem::ManuallyDrop, ptr::slice_from_raw_parts};
+
+use ::serde::{
+    de::{self, Expected, Unexpected},
+    forward_to_deserialize_any,
 };
-use crate::parser::{as_str, Parser};
-use crate::reader::{Reader, Reference, SliceRead};
-use crate::util::num::ParserNumber;
-use crate::value::node::Value;
-use ::serde::de::{self, Expected, Unexpected};
-use ::serde::forward_to_deserialize_any;
-use std::mem::ManuallyDrop;
-use std::ptr::slice_from_raw_parts;
+
+use crate::{
+    error::{
+        Error,
+        ErrorCode::{self, EofWhileParsing, RecursionLimitExceeded},
+        Result,
+    },
+    parser::{as_str, Parser},
+    reader::{Reader, Reference, SliceRead},
+    util::num::ParserNumber,
+    value::node::Value,
+};
 
 const MAX_ALLOWED_DEPTH: u8 = u8::MAX;
 
@@ -196,7 +201,8 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
             self.parser.read.eat(n);
             val
         } else {
-            // deserialize some json parts into `Value`, not use padding buffer, avoid the memory copy
+            // deserialize some json parts into `Value`, not use padding buffer, avoid the memory
+            // copy
             val.parse_without_padding(&mut self.parser)?;
             val
         };
@@ -209,7 +215,8 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
 
         let val = ManuallyDrop::new(val);
         // #Safety
-        // the json is validate before parsing json, and we pass the document using visit_bytes here.
+        // the json is validate before parsing json, and we pass the document using visit_bytes
+        // here.
         unsafe {
             let binary =
                 &*slice_from_raw_parts(&val as *const _ as *const u8, std::mem::size_of::<Value>());
@@ -448,7 +455,6 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
 
     /// Parses a JSON string as bytes `serde_bytes::ByteBuf`.
     /// Note that this function does not check whether the bytes represent a valid UTF-8 string.
-    ///
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -929,8 +935,8 @@ impl<'de, 'a, R: Reader<'de> + 'a> de::VariantAccess<'de> for UnitVariantAccess<
 }
 
 /// Only deserialize from this after peeking a '"' byte! Otherwise it may
-/// deserialize invalid JSON successfully./// Only deserialize from this after peeking a '"' byte! Otherwise it may
-/// deserialize invalid JSON successfully.
+/// deserialize invalid JSON successfully./// Only deserialize from this after peeking a '"' byte!
+/// Otherwise it may deserialize invalid JSON successfully.
 struct MapKey<'a, R: 'a> {
     de: &'a mut Deserializer<R>,
 }
@@ -1146,7 +1152,6 @@ where
 }
 
 /// Deserialize an instance of type `T` from a string of JSON text.
-///
 pub fn from_str<'a, T>(s: &'a str) -> Result<T>
 where
     T: de::Deserialize<'a>,
