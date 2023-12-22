@@ -63,7 +63,7 @@ use crate::{
 pub struct LazyValue<'a> {
     // the raw slice from origin json
     pub(crate) raw: JsonSlice<'a>,
-    pub(crate) unescape: Option<Arc<String>>,
+    pub(crate) unescape: Option<Arc<str>>,
 }
 
 impl Default for LazyValue<'_> {
@@ -133,7 +133,7 @@ impl<'a> JsonValueTrait for LazyValue<'a> {
         if !self.is_str() {
             None
         } else if let Some(escaped) = self.unescape.as_ref() {
-            Some(escaped.as_str())
+            Some(escaped.as_ref())
         } else {
             // remove the quotes
             let origin = {
@@ -264,16 +264,13 @@ impl<'a> LazyValue<'a> {
     }
 
     pub(crate) fn new(raw: JsonSlice<'a>, has_escaped: bool) -> Result<Self> {
-        let escaped = if has_escaped {
-            let unescaped: String = unsafe { crate::from_slice_unchecked(raw.as_ref()) }?;
-            Some(Arc::new(unescaped))
+        let unescape = if has_escaped {
+            let unescape: Arc<str> = unsafe { crate::from_slice_unchecked(raw.as_ref()) }?;
+            Some(unescape)
         } else {
             None
         };
-        Ok(Self {
-            raw,
-            unescape: escaped,
-        })
+        Ok(Self { raw, unescape })
     }
 }
 
