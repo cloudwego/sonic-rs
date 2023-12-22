@@ -2,13 +2,10 @@
 
 use libfuzzer_sys::fuzz_target;
 use serde_json::Value as JValue;
-use sonic_rs::from_slice;
-use sonic_rs::from_str;
-use sonic_rs::value::JsonContainerTrait;
-use sonic_rs::JsonNumberTrait;
-use sonic_rs::JsonValueTrait;
-use sonic_rs::Value;
-use sonic_rs::{to_array_iter, to_array_iter_unchecked, to_object_iter, to_object_iter_unchecked};
+use sonic_rs::{
+    from_slice, from_str, to_array_iter, to_array_iter_unchecked, to_object_iter,
+    to_object_iter_unchecked, value::JsonContainerTrait, JsonNumberTrait, JsonValueTrait, Value,
+};
 
 macro_rules! test_struct {
     ($ty:ty, $data:expr) => {
@@ -161,10 +158,10 @@ fn compare_value(jv: &JValue, sv: &sonic_rs::Value) -> bool {
     true
 }
 
+use std::{borrow::Cow, collections::HashMap, hash::Hash, marker::PhantomData};
+
 use faststr::FastStr;
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
-use std::{collections::HashMap, hash::Hash, marker::PhantomData};
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 struct Foo {
