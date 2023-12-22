@@ -14,7 +14,7 @@ use crate::{
         ErrorCode::{self, EofWhileParsing, RecursionLimitExceeded},
         Result,
     },
-    parser::{as_str, Parser},
+    parser::{as_str, ParseStatus, Parser},
     reader::{Reader, Reference, SliceRead},
     util::num::ParserNumber,
     value::node::Value,
@@ -185,8 +185,12 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     where
         V: de::Visitor<'de>,
     {
-        let raw = as_str(self.parser.skip_one()?);
-        visitor.visit_borrowed_str(raw)
+        let (raw, status) = self.parser.skip_one()?;
+        if status == ParseStatus::HasEsacped {
+            visitor.visit_str(as_str(raw))
+        } else {
+            visitor.visit_borrowed_str(as_str(raw))
+        }
     }
 
     fn deserialize_value<V>(&mut self, visitor: V) -> Result<V::Value>

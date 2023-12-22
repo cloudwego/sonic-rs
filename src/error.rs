@@ -7,6 +7,7 @@ use core::{
     result,
 };
 use std::{
+    borrow::Cow,
     error,
     str::FromStr,
     string::{String, ToString},
@@ -196,7 +197,7 @@ struct ErrorImpl {
 #[derive(ErrorTrait, Debug)]
 pub(crate) enum ErrorCode {
     #[error("{0}")]
-    Message(Box<str>),
+    Message(Cow<'static, str>),
 
     #[error("io error while serializing or deserializing")]
     Io(std::io::Error),
@@ -435,7 +436,7 @@ pub fn make_error(mut msg: String) -> Error {
     let (line, column) = parse_line_col(&mut msg).unwrap_or((0, 0));
     Error {
         err: Box::new(ErrorImpl {
-            code: ErrorCode::Message(msg.into_boxed_str()),
+            code: ErrorCode::Message(msg.into()),
             line,
             column,
             descript: None,

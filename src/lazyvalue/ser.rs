@@ -1,7 +1,6 @@
-use ::serde::{ser::SerializeStruct, Serialize};
+use ::serde::ser::SerializeStruct;
 
 use super::{owned::OwnedLazyValue, value::LazyValue};
-use crate::Result;
 
 impl<'a> serde::ser::Serialize for LazyValue<'a> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -27,24 +26,6 @@ impl serde::ser::Serialize for OwnedLazyValue {
         s.serialize_field(super::TOKEN, raw)?;
         s.end()
     }
-}
-
-/// Convert a `T: Serialize` into a `LazyValue`.
-pub fn to_lazyvalue<'a, T>(value: &T) -> Result<LazyValue<'a>>
-where
-    T: ?Sized + Serialize,
-{
-    let json_string = crate::to_string(value)?;
-    Ok(LazyValue::new(json_string.into()))
-}
-
-/// Convert a `T: Serialize` into a `OwnedLazyValue`.
-pub fn to_ownedlazyvalue<T>(value: &T) -> Result<OwnedLazyValue>
-where
-    T: ?Sized + Serialize,
-{
-    let json_string = crate::to_string(value)?;
-    Ok(OwnedLazyValue::new(json_string.into()))
 }
 
 #[cfg(test)]

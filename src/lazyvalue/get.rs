@@ -6,7 +6,7 @@ use crate::{
     error::Result,
     index::Index,
     input::JsonInput,
-    parser::Parser,
+    parser::{ParseStatus, Parser},
     pointer::PointerTree,
     reader::{Reader, SliceRead},
     util::utf8::from_utf8,
@@ -141,9 +141,8 @@ where
     let slice = json.to_u8_slice();
     let reader = SliceRead::new(slice);
     let mut parser = Parser::new(reader);
-    parser
-        .get_from_with_iter(path)
-        .map(|sub| LazyValue::new(json.from_subset(sub)))
+    let (sub, status) = parser.get_from_with_iter(path)?;
+    LazyValue::new(json.from_subset(sub), status == ParseStatus::HasEsacped)
 }
 
 /// get_many returns multiple fields from the `PointerTree`.
@@ -180,11 +179,7 @@ where
     let slice = json.to_u8_slice();
     let reader = SliceRead::new(slice);
     let mut parser = Parser::new(reader);
-    let out = parser.get_many(tree, false)?;
-    Ok(out
-        .into_iter()
-        .map(|subset| LazyValue::new(json.from_subset(subset)))
-        .collect())
+    parser.get_many(tree, false)
 }
 
 /// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
@@ -309,16 +304,15 @@ where
     let slice = json.to_u8_slice();
     let reader = SliceRead::new(slice);
     let mut parser = Parser::new(reader);
-    let node = parser
-        .get_from_with_iter_checked(path)
-        .map(|sub| LazyValue::new(json.from_subset(sub)))?;
+    let (sub, status) = parser.get_from_with_iter_checked(path)?;
+    let lv = LazyValue::new(json.from_subset(sub), status == ParseStatus::HasEsacped)?;
 
     // validate the utf-8 if slice
     let index = parser.read.index();
     if json.need_utf8_valid() {
         from_utf8(&slice[..index])?;
     }
-    Ok(node)
+    Ok(lv)
 }
 
 /// get_many returns multiple fields from the `PointerTree`.
@@ -348,11 +342,7 @@ where
     let slice = json.to_u8_slice();
     let reader = SliceRead::new(slice);
     let mut parser = Parser::new(reader);
-    let out = parser.get_many(tree, true)?;
-    let nodes = out
-        .into_iter()
-        .map(|subset| LazyValue::new(json.from_subset(subset)))
-        .collect();
+    let nodes = parser.get_many(tree, true)?;
 
     // validate the utf-8 if slice
     let index = parser.read.index();
