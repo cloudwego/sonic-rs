@@ -9,7 +9,7 @@ mod error;
 mod input;
 mod parser;
 mod pointer;
-pub mod reader;
+mod reader;
 mod util;
 
 pub mod format;

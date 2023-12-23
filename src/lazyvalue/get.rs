@@ -12,8 +12,11 @@ use crate::{
     util::utf8::from_utf8,
 };
 
-/// Gets a field from path. And return it as a `LazyValue`. If not found, return an error.
-/// If path is empty, return the whole JSON as a `LazyValue`.
+/// Gets a field from a `path`. And return it as a [`Result<LazyValue>`][crate::LazyValue].
+///
+/// If not found, return an error. If the `path` is empty, return the whole JSON as a `LazyValue`.
+///
+/// The `Item` of the `path` should implement the [`Index`][crate::index::Index] trait.
 ///
 /// # Safety
 ///
@@ -21,15 +24,27 @@ use crate::{
 ///
 /// # Examples
 /// ```
-/// use sonic_rs::get_from_str_unchecked;
+/// # use sonic_rs::get_from_str_unchecked;
+///
+/// // get from the &[&str]
 /// let lv = unsafe { get_from_str_unchecked(r#"{"a": 1}"#, &["a"]).unwrap() };
 /// assert_eq!(lv.as_raw_str(), "1");
 ///
-/// /// not found the field "a"
+/// // get from the &[usize]
+/// let lv = unsafe { get_from_str_unchecked(r#"[0, 1, "two"]"#, &[2]).unwrap() };
+/// assert_eq!(lv.as_raw_str(), "\"two\"");
+///
+/// // get from pointer!
+/// use sonic_rs::pointer;
+/// let lv =
+///     unsafe { get_from_str_unchecked(r#"{"a": [0, 1, "two"]}"#, &pointer!["a", 2]).unwrap() };
+/// assert_eq!(lv.as_raw_str(), "\"two\"");
+///
+/// // not found the field "a"
 /// let lv = unsafe { get_from_str_unchecked(r#"{"a": 1}"#, &["b"]) };
 /// assert!(lv.unwrap_err().is_not_found());
 ///
-/// /// the type of JSON is unmatched, expect it is a object
+/// // the type of JSON is unmatched, expect it is a object
 /// let lv = unsafe { get_from_str_unchecked(r#"[1, 2, 3]"#, &["b"]) };
 /// assert!(lv.unwrap_err().is_unmatched_type());
 /// ```
@@ -43,8 +58,11 @@ where
     get_unchecked(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If not found, return an error.
-/// If path is empty, return the whole JSON as a `LazyValue`.
+/// Gets a field from a `path`. And return it as a [`Result<LazyValue>`][crate::LazyValue].
+///
+/// If not found, return an error. If the `path` is empty, return the whole JSON as a `LazyValue`.
+///
+/// The `Item` of the `path` should implement the [`Index`][crate::index::Index] trait.
 ///
 /// # Safety
 ///
@@ -59,8 +77,11 @@ where
     get_unchecked(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`.  If not found, return an error.
-/// If path is empty, return the whole JSON as a `LazyValue`.
+/// Gets a field from a `path`. And return it as a [`Result<LazyValue>`][crate::LazyValue].
+///
+/// If not found, return an error. If the `path` is empty, return the whole JSON as a `LazyValue`.
+///
+/// The `Item` of the `path` should implement the [`Index`][crate::index::Index] trait.
 ///
 /// # Safety
 ///
@@ -71,17 +92,28 @@ where
 /// ```
 /// # use sonic_rs::get_from_faststr_unchecked;
 ///
+/// // get from the &[&str]
 /// let fs = faststr::FastStr::new(r#"{"a": 1}"#);
 /// let lv = unsafe { get_from_faststr_unchecked(&fs, &["a"]).unwrap() };
 /// assert_eq!(lv.as_raw_str(), "1");
 ///
-/// /// not found the field "a"
+/// // not found the field "a"
 /// let lv = unsafe { get_from_faststr_unchecked(&fs, &["b"]) };
 /// assert!(lv.unwrap_err().is_not_found());
 ///
+/// // get from the &[usize]
+/// let fs = faststr::FastStr::new(r#"[0, 1, "two"]"#);
+/// let lv = unsafe { get_from_faststr_unchecked(&fs, &[2]).unwrap() };
+/// assert_eq!(lv.as_raw_str(), "\"two\"");
+///
+/// // get from pointer!
+/// use sonic_rs::pointer;
+/// let fs = faststr::FastStr::new(r#"{"a": [0, 1, "two"]}"#);
+/// let lv = unsafe { get_from_faststr_unchecked(&fs, &pointer!["a", 2]).unwrap() };
+/// assert_eq!(lv.as_raw_str(), "\"two\"");
+///
 /// /// the type of JSON is unmatched, expect it is a object
-/// let fs = faststr::FastStr::from(r#"[1, 2, 3]"#);
-/// let lv = unsafe { get_from_faststr_unchecked(&fs, &["b"]) };
+/// let lv = unsafe { get_from_faststr_unchecked(&fs, &pointer!["a", "get key from array"]) };
 /// assert!(lv.unwrap_err().is_unmatched_type());
 /// ```
 pub unsafe fn get_from_faststr_unchecked<Path: IntoIterator>(
@@ -94,8 +126,11 @@ where
     get_unchecked(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
-/// If path is empty, return the whole JSON as a `LazyValue`.
+/// Gets a field from a `path`. And return it as a [`Result<LazyValue>`][crate::LazyValue].
+///
+/// If not found, return an error. If the `path` is empty, return the whole JSON as a `LazyValue`.
+///
+/// The `Item` of the `path` should implement the [`Index`][crate::index::Index] trait.
 ///
 /// # Safety
 /// The JSON must be valid and well-formed, otherwise it may return unexpected result.
@@ -109,8 +144,11 @@ where
     get_unchecked(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
-/// If path is empty, return the whole JSON as a `LazyValue`.
+/// Gets a field from a `path`. And return it as a [`Result<LazyValue>`][crate::LazyValue].
+///
+/// If not found, return an error. If the `path` is empty, return the whole JSON as a `LazyValue`.
+///
+/// The `Item` of the `path` should implement the [`Index`][crate::index::Index] trait.
 ///
 /// The input `json` is allowed to be `&FastStr`, `&[u8]`, `&str`, `&String` or `&bytes::Bytes`.
 ///
@@ -182,18 +220,36 @@ where
     parser.get_many(tree, false)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
-/// If path is empty, return the whole JSON as a `LazyValue`.
+/// Gets a field from a `path`. And return it as a [`Result<LazyValue>`][crate::LazyValue].
+///
+/// If not found, return an error. If the `path` is empty, return the whole JSON as a `LazyValue`.
+///
+/// The `Item` of the `path` should implement the [`Index`][crate::index::Index] trait.
 ///
 /// # Examples
 /// ```
-/// use sonic_rs::get_from_str;
+/// # use sonic_rs::get_from_str;
+///
+/// // get from the &[&str]
 /// let lv = get_from_str(r#"{"a": 1}"#, &["a"]).unwrap();
 /// assert_eq!(lv.as_raw_str(), "1");
 ///
-/// /// not found the field "a"
+/// // get from the &[usize]
+/// let lv = get_from_str(r#"[0, 1, "two"]"#, &[2]).unwrap();
+/// assert_eq!(lv.as_raw_str(), "\"two\"");
+///
+/// // get from pointer!
+/// use sonic_rs::pointer;
+/// let lv = get_from_str(r#"{"a": [0, 1, "two"]}"#, &pointer!["a", 2]).unwrap();
+/// assert_eq!(lv.as_raw_str(), "\"two\"");
+///
+/// // not found the field "a"
 /// let lv = get_from_str(r#"{"a": 1}"#, &["b"]);
-/// assert!(lv.is_err());
+/// assert!(lv.unwrap_err().is_not_found());
+///
+/// // the type of JSON is unmatched, expect it is a object
+/// let lv = get_from_str(r#"[1, 2, 3]"#, &["b"]);
+/// assert!(lv.unwrap_err().is_unmatched_type());
 /// ```
 pub fn get_from_str<Path: IntoIterator>(json: &str, path: Path) -> Result<LazyValue<'_>>
 where
@@ -202,8 +258,11 @@ where
     get(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
-/// If path is empty, return the whole JSON as a `LazyValue`.
+/// Gets a field from a `path`. And return it as a [`Result<LazyValue>`][crate::LazyValue].
+///
+/// If not found, return an error. If the `path` is empty, return the whole JSON as a `LazyValue`.
+///
+/// The `Item` of the `path` should implement the [`Index`][crate::index::Index] trait.
 ///
 /// # Examples
 /// ```
@@ -222,8 +281,11 @@ where
     get(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
-/// If path is empty, return the whole JSON as a `LazyValue`.
+/// Gets a field from a `path`. And return it as a [`Result<LazyValue>`][crate::LazyValue].
+///
+/// If not found, return an error. If the `path` is empty, return the whole JSON as a `LazyValue`.
+///
+/// The `Item` of the `path` should implement the [`Index`][crate::index::Index] trait.
 ///
 /// # Examples
 /// ```
@@ -246,21 +308,40 @@ where
     get(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
-/// If path is empty, return the whole JSON as a `LazyValue`.
+/// Gets a field from a `path`. And return it as a [`Result<LazyValue>`][crate::LazyValue].
+///
+/// If not found, return an error. If the `path` is empty, return the whole JSON as a `LazyValue`.
+///
+/// The `Item` of the `path` should implement the [`Index`][crate::index::Index] trait.
 ///
 /// # Examples
+///
 /// ```
 /// # use sonic_rs::get_from_faststr;
-/// use faststr::FastStr;
 ///
-/// let fs = FastStr::new(r#"{"a": 1}"#);
+/// // get from the &[&str]
+/// let fs = faststr::FastStr::new(r#"{"a": 1}"#);
 /// let lv = get_from_faststr(&fs, &["a"]).unwrap();
 /// assert_eq!(lv.as_raw_str(), "1");
 ///
-/// /// not found the field "a"
+/// // not found the field "a"
 /// let lv = get_from_faststr(&fs, &["b"]);
-/// assert!(lv.is_err());
+/// assert!(lv.unwrap_err().is_not_found());
+///
+/// // get from the &[usize]
+/// let fs = faststr::FastStr::new(r#"[0, 1, "two"]"#);
+/// let lv = get_from_faststr(&fs, &[2]).unwrap();
+/// assert_eq!(lv.as_raw_str(), "\"two\"");
+///
+/// // get from pointer!
+/// use sonic_rs::pointer;
+/// let fs = faststr::FastStr::new(r#"{"a": [0, 1, "two"]}"#);
+/// let lv = get_from_faststr(&fs, &pointer!["a", 2]).unwrap();
+/// assert_eq!(lv.as_raw_str(), "\"two\"");
+///
+/// /// the type of JSON is unmatched, expect it is a object
+/// let lv = get_from_faststr(&fs, &pointer!["a", "get key from array"]);
+/// assert!(lv.unwrap_err().is_unmatched_type());
 /// ```
 pub fn get_from_faststr<Path: IntoIterator>(json: &FastStr, path: Path) -> Result<LazyValue<'_>>
 where
@@ -269,8 +350,11 @@ where
     get(json, path)
 }
 
-/// Gets a field from path. And return it as a `LazyValue`. If not found, return a err.
-/// If path is empty, return the whole JSON as a `LazyValue`.
+/// Gets a field from a `path`. And return it as a [`Result<LazyValue>`][crate::LazyValue].
+///
+/// If not found, return an error. If the `path` is empty, return the whole JSON as a `LazyValue`.
+///
+/// The `Item` of the `path` should implement the [`Index`][crate::index::Index] trait.
 ///
 /// The input `json` is allowed to be `&FastStr`, `&[u8]`, `&str`, `&String` or `&bytes::Bytes`.
 ///
@@ -315,7 +399,7 @@ where
     Ok(lv)
 }
 
-/// get_many returns multiple fields from the `PointerTree`.
+/// get_many returns multiple fields from the [`PointerTree`].
 ///
 /// The result is a `Result<Vec<LazyValue>>`. The order of the `Vec` is same as the order of the
 /// tree.  

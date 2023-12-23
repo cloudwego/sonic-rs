@@ -4,9 +4,11 @@ use faststr::FastStr;
 
 use crate::index::Index;
 
-/// PointerTree is designed for [`crate::get_many`] and [`crate::get_many_unchecked`].
-/// It is recommended to use `get_many` when you need to get multiple values from json.
-/// Instead of using `get` multiple times.
+/// PointerTree is designed for [`get_many`][`crate::get_many`] and
+/// [`get_many_unchecked`][`crate::get_many_unchecked`].
+///
+/// It is recommended to use `get_many` when you need to get multiple values from json. Instead of
+/// using `get` multiple times.
 ///
 /// # Examples
 ///

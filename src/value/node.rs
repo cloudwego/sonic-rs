@@ -31,6 +31,7 @@ use crate::{
 };
 
 /// Represents any valid JSON value.
+///
 /// `Value` can be parsed from a JSON and from any type that implements `serde::Serialize`.
 ///
 /// # Example
@@ -557,7 +558,7 @@ impl JsonValueMutTrait for Value {
     }
 }
 
-/// ValueRef is a immutable reference helper for Value.
+/// ValueRef is a immutable reference helper for `Value`.
 ///
 /// # Example
 ///
