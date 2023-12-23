@@ -21,16 +21,14 @@ impl<'de: 'a, 'a> Deserialize<'de> for LazyValue<'a> {
                 write!(formatter, "any valid JSON value")
             }
 
-            // TRICK: used for pass the string which has escaped chars
+            // NOTE: only used for visit the str that has escaped chars
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                // parse the escaped string
                 LazyValue::new(FastStr::new(v).into(), true).map_err(de::Error::custom)
             }
 
-            // borrowed from origin json
             fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
             where
                 E: de::Error,
@@ -51,25 +49,23 @@ impl<'de> Deserialize<'de> for OwnedLazyValue {
     where
         D: Deserializer<'de>,
     {
-        struct LazyValueVisitor;
+        struct OwnedVisitor;
 
-        impl<'de> Visitor<'de> for LazyValueVisitor {
+        impl<'de> Visitor<'de> for OwnedVisitor {
             type Value = OwnedLazyValue;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
                 write!(formatter, "any valid JSON value")
             }
 
-            // TRICK: used for pass the string which has escaped chars
+            // NOTE: only used for visit the str that has escaped chars
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                // parse the escaped string
                 OwnedLazyValue::new(FastStr::new(v).into(), true).map_err(de::Error::custom)
             }
 
-            // borrowed from origin json
             fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
             where
                 E: de::Error,
@@ -78,7 +74,7 @@ impl<'de> Deserialize<'de> for OwnedLazyValue {
             }
         }
 
-        let visit = LazyValueVisitor;
+        let visit = OwnedVisitor;
         deserializer.deserialize_newtype_struct(super::TOKEN, visit)
     }
 }

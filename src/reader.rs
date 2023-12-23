@@ -50,7 +50,8 @@ where
     }
 }
 
-// Reader is a unified wrapper for inputs.
+/// Reader is a unified wrapper for inputs.
+#[doc(hidden)]
 pub trait Reader<'de>: Sealed {
     fn remain(&self) -> usize;
     fn eat(&mut self, n: usize);
@@ -80,7 +81,7 @@ pub trait Reader<'de>: Sealed {
 }
 
 /// JSON input source that reads from a slice of bytes.
-pub struct SliceRead<'a> {
+pub(crate) struct SliceRead<'a> {
     slice: &'a [u8],
     pub(crate) index: usize,
 }

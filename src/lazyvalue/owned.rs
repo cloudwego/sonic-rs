@@ -7,8 +7,9 @@ use crate::{
     JsonValueTrait, LazyValue, Result,
 };
 
-/// OwnedLazyValue wrappers a unparsed raw JSON text. It is owned. It can be converted from
-/// [`LazyValue`](crate::lazyvalue::LazyValue). It can be used for serde.
+/// OwnedLazyValue wrappers a unparsed raw JSON text. It is owned.
+///
+/// It can be converted from [`LazyValue`](crate::lazyvalue::LazyValue). It can be used for serde.
 ///
 /// # Examples
 ///

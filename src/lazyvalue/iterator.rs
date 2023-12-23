@@ -10,9 +10,7 @@ use crate::{
 
 /// A lazied iterator for JSON object text. It will parse the JSON when iterating.
 ///
-/// The item of the iterator is `Result<LazyValue>`.  
-///
-/// If the JSON is invalid, it will return error in iterator.
+/// The item of the iterator is [`Result<LazyValue>`][`crate::LazyValue`].
 ///
 /// # Examples
 ///```
@@ -40,9 +38,7 @@ pub struct ObjectJsonIter<'de>(ObjectInner<'de>);
 
 /// A lazied iterator for JSON array text. It will parse the JSON when iterating.
 ///
-/// The item of the iterator is `Result<(FastStr, LazyValue)>`.
-///
-/// If the JSON is invalid, it will return error in iterator.
+/// The item of the iterator is [`Result<LazyValue>`][`crate::LazyValue`].
 ///
 /// # Examples
 /// ```
@@ -171,30 +167,153 @@ impl<'de> ArrayInner<'de> {
     }
 }
 
-/// Convert a json to a lazy ObjectJsonIter. The iterator is lazied and the parsing will doing when
-/// iterating. The item of the iterator is a Result. If parse error, it will return Err.
+/// Traverse the JSON object text through a lazy iterator. The JSON parsing will doing when
+/// iterating.
+///
+/// The item of the iterator is a key-value pair: ([FastStr][`faststr::FastStr`],
+/// [Result<LazyValue>][`crate::LazyValue`]).
+///
+/// # Errors
+///
+/// If the JSON is empty, not a object or parse error, the result will be Err and the `next()` will
+/// return `None`.
+///
+/// # Examples
+///
+/// ```
+/// # use sonic_rs::to_object_iter;
+/// use faststr::FastStr;
+/// use sonic_rs::JsonValueTrait;
+///
+/// let json = FastStr::from(r#"{"a": null, "b":[1, 2, 3]}"#);
+/// for ret in to_object_iter(&json) {
+///     assert!(ret.is_ok());
+///     let (k, v) = ret.unwrap();
+///     if k == "a" {
+///         assert!(v.is_null());
+///     } else if k == "b" {
+///         assert_eq!(v.as_raw_str(), "[1, 2, 3]");
+///     }
+/// }
+///
+/// // the JSON is invalid, will report error when encountering the error
+/// for (i, ret) in to_object_iter(r#"{"a": null, "b":[1, 2, 3"#).enumerate() {
+///     if i == 0 {
+///         assert!(ret.is_ok());
+///     }
+///     if i == 1 {
+///         assert!(ret.is_err());
+///     }
+/// }
+/// ```
 pub fn to_object_iter<'de, I: JsonInput<'de>>(json: I) -> ObjectJsonIter<'de> {
     ObjectJsonIter(ObjectInner::new(json.to_json_slice(), true))
 }
 
-/// Convert a json to a lazy ArrayJsonIter. The iterator is lazied and the parsing will doing when
-/// iterating. The item of the iterator is a Result. If parse error, it will return Err.
+/// Traverse the JSON array text through a lazy iterator. The JSON parsing will doing when
+/// iterating.
+///
+/// The item of the iterator is [`Result<LazyValue>`][`crate::LazyValue`].
+///
+/// # Errors
+///
+/// If the JSON is empty, not array or parse error, it will return Err and `next()` will return
+/// `None`.
+///
+/// # Examples
+///
+/// ```
+/// # use sonic_rs::to_array_iter;
+/// use sonic_rs::JsonValueTrait;
+///
+/// for (i, ret) in to_array_iter(r#"[0, 1, 2, 3, 4, 5, 6]"#).enumerate() {
+///     let lv = ret.unwrap(); // get lazyvalue
+///     assert_eq!(i.to_string(), lv.as_raw_str()); // lv is not parsed
+///     assert_eq!(i, lv.as_u64().unwrap() as usize);
+/// }
+///
+/// for elem in to_array_iter(r#"[1, 2, 3, 4, 5, 6"#) {
+///     // do something for each elem
+///     // deal with errors when invalid json
+///     if elem.is_err() {
+///         assert!(elem
+///             .unwrap_err()
+///             .to_string()
+///             .contains("Expected this character to be either a ',' or a ']'"));
+///     }
+/// }
+/// ```
 pub fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayJsonIter<'de> {
     ArrayJsonIter(ArrayInner::new(json.to_json_slice(), true))
 }
 
-/// Convert a json to a lazy UnsafeObjectJsonIter. The iterator is lazied and the parsing will doing
-/// when iterating. The item of the iterator is a Result. If parse error, it will return Err.
+/// Traverse the JSON text through a lazy object iterator. The JSON parsing will doing when
+/// iterating.
+///
+/// The item of the iterator is a key-value pair: ([FastStr][`faststr::FastStr`],
+/// [Result<LazyValue>][`crate::LazyValue`]).
+///
+/// # Errors
+///
+/// If the JSON is empty, or not a object, the result will be Err and the `next()` will return
+/// `None`.
+///
 /// # Safety
+///
 /// If the json is invalid, the result is undefined.
+///
+/// # Examples
+///
+/// ```
+/// # use sonic_rs::to_object_iter_unchecked;
+/// use faststr::FastStr;
+/// use sonic_rs::JsonValueTrait;
+///
+/// let json = FastStr::from(r#"{"a": null, "b":[1, 2, 3]}"#);
+/// for ret in unsafe { to_object_iter_unchecked(&json) } {
+///     assert!(ret.is_ok());
+///     let (k, v) = ret.unwrap();
+///     if k == "a" {
+///         assert!(v.is_null());
+///     } else if k == "b" {
+///         assert_eq!(v.as_raw_str(), "[1, 2, 3]");
+///     }
+/// }
+/// ```
 pub unsafe fn to_object_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> ObjectJsonIter<'de> {
     ObjectJsonIter(ObjectInner::new(json.to_json_slice(), false))
 }
 
-/// Convert a json to a lazy UnsafeArrayJsonIter. The iterator is lazied and the parsing will doing
-/// when iterating. The item of the iterator is a Result. If parse error, it will return Err.
+/// Traverse the JSON text through a lazy object iterator. The JSON parsing will doing when
+/// iterating.
+///
+/// The item of the iterator is [`Result<LazyValue>`][`crate::LazyValue`].
+///
+/// # Errors
+///
+/// If the JSON is empty, or not a array, the result will be Err and the `next()` will return
+/// `None`.
+///
 /// # Safety
+///
 /// If the json is invalid, the result is undefined.
+///
+/// # Examples
+/// ```
+/// # use sonic_rs::to_array_iter_unchecked;
+/// use sonic_rs::JsonValueTrait;
+///
+/// for (i, ret) in unsafe { to_array_iter_unchecked(r#"[0, 1, 2, 3, 4, 5, 6]"#) }.enumerate() {
+///     let lv = ret.unwrap(); // get lazyvalue
+///     assert_eq!(i.to_string(), lv.as_raw_str()); // lv is not parsed
+///     assert_eq!(i, lv.as_u64().unwrap() as usize);
+/// }
+///
+/// // the JSON is empty
+/// for elem in unsafe { to_array_iter_unchecked("") } {
+///     assert!(elem.is_err());
+/// }
+/// ```
 pub unsafe fn to_array_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> ArrayJsonIter<'de> {
     ArrayJsonIter(ArrayInner::new(json.to_json_slice(), false))
 }

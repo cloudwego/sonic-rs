@@ -10,14 +10,17 @@ pub enum PointerNode {
     Index(usize),
 }
 
-/// Reprsents a json pointer path. Used to indexing a [`crate::Value`], [`crate::LazyValue`],
-/// [`crate::get`] or [`crate::get_unchecked`].
+/// Reprsents a json pointer path.
+///
+/// Used to indexing a [`Value`][`crate::Value`], [`LazyValue`][`crate::LazyValue`],
+/// [`get`][`crate::get`] or [`get_unchecked`][`crate::get_unchecked`].
 ///
 /// The path can includes both keys or indexes.
 /// - keys: string-like, used to indexing an object.
 /// - indexes: usize-like, used to indexing an array.
 ///
 /// # Examples
+///
 /// ```
 /// # use sonic_rs::pointer;
 /// use sonic_rs::JsonValueTrait;
