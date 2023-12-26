@@ -1,4 +1,4 @@
-mod alloctor;
+mod allocator;
 pub mod array;
 pub(crate) mod de;
 mod from;

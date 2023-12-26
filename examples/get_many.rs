@@ -4,7 +4,7 @@ fn main() {
     let json = r#"
         {"u": 123, "a": {"b" : {"c": [null, "found"]}}}"#;
 
-    // build a pointer tree, representing multile json path
+    // build a pointer tree, representing multiple json path
     let mut tree = sonic_rs::PointerTree::new();
 
     tree.add_path(&["u"]);

@@ -134,7 +134,7 @@ When serializing JSON strings, especially long ones, utilizing SIMD is highly re
             u8x32::from_slice_unaligned_unchecked(raw)
         };
         v.write_to_slice_unaligned_unchecked(std::slice::from_raw_parts_mut(dptr, LANS));
-        // if find the esacped charater, then deal with it
+        // if find the escaped character, then deal with it
         let mask = escaped_mask(v);
         if mask == 0 {
             nb -= LANS;

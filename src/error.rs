@@ -190,7 +190,7 @@ struct ErrorImpl {
     code: ErrorCode,
     line: usize,
     column: usize,
-    // the descript of the error postion
+    // the descript of the error position
     descript: Option<String>,
 }
 

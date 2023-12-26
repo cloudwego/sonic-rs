@@ -13,14 +13,6 @@ English | [中文](README_ZH.md)
 
 A fast Rust JSON library based on SIMD. It has some references to other open-source libraries like [sonic_cpp](https://github.com/bytedance/sonic-cpp), [serde_json](https://github.com/serde-rs/json), [sonic](https://github.com/bytedance/sonic), [simdjson](https://github.com/simdjson/simdjson), [rust-std](https://github.com/rust-lang/rust/tree/master/library/core/src/num) and more.
 
-The main optimization in sonic-rs is the use of SIMD. However, we do not use the two-stage SIMD algorithms from `simd-json`. We primarily use SIMD in the following scenarios:
-1. parsing/serialize long JSON strings
-2. parsing the fraction of float number
-3. Getting a specific elem or field from JSON
-4. Skipping white spaces when parsing JSON
-
-More details about optimization can be found in [performance.md](docs/performance.md).
-
 ***For Golang user to use `sonic_rs`, please see [for_Golang_user.md](docs/for_Golang_user.md)***
 
 - [sonic-rs](#sonic-rs)
@@ -72,14 +64,22 @@ sonic-rs = 0.3
 
 4. Use JSON as a lazy array or object iterator with the blazing performance.
 
-5. Supprt `LazyValue`, `Number` and `RawNumber`(just like Golang's `JsonNumber`) in default.
+5. Support `LazyValue`, `Number` and `RawNumber`(just like Golang's `JsonNumber`) in default.
 
-6. The floating parsing percision is as Rust std in default.
+6. The floating parsing precision is as Rust std in default.
 
 
 ## Benchmark
 
-Benchmarks environemnt:
+The main optimization in sonic-rs is the use of SIMD. However, we do not use the two-stage SIMD algorithms from `simd-json`. We primarily use SIMD in the following scenarios:
+1. parsing/serialize long JSON strings
+2. parsing the fraction of float number
+3. Getting a specific elem or field from JSON
+4. Skipping white spaces when parsing JSON
+
+More details about optimization can be found in [performance.md](docs/performance.md).
+
+Benchmarks environment:
 
 ```
 Architecture:        x86_64
@@ -448,8 +448,10 @@ fn main() {
 ### JSON LazyValue & Number & RawNumber
 
 If we need parse a JSON value as a raw string, we can use `LazyValue`.
+
 If we need parse a JSON number into a untyped type, we can use `Number`.
-If we need parse a JSON number ***without loss of percision***, we can use `RawNumber`. It likes `JsonNumber` in Golang, and can also be parsed from a JSON string.
+
+If we need parse a JSON number ***without loss of precision***, we can use `RawNumber`. It likes `encoding/json.Number` in Golang, and can also be parsed from a JSON string.
 
 Detailed examples can be found in [raw_value.rs](examples/raw_value.rs) and [json_number.rs](examples/json_number.rs).
 
@@ -462,25 +464,21 @@ Sonic's errors is follow as `serde-json` and have a display around the error pos
 
 ### About UTF-8
 
-By default, sonic-rs does not enable UTF-8 validation. This is a trade-off to achieve the fastest performance.
-
-- For the `from_slice` and `dom_from_slice` interfaces, validate UTF-8 in default. If users make sure that the json is utf-8 valid, recommended use the `from_slice_unchecked` and `dom_from_slice_unchecked`.
+By default, sonic-rs enable the UTF-8 validation, except the `xx_unchecked` APIs.
 
 
 ### About floating point precision
 
 By default, sonic-rs uses floating point precision consistent with the Rust standard library, and there is no need to add an extra `float_roundtrip` feature like `serde-json` to ensure floating point precision.
 
-If you want to achieve lossless precision when parsing floating-point numbers, such as Golang `JsonNumber` and `serde-json arbitrary_precision`, you can use `RawNumber`.
-
-### About compatibility with `serde_json`
+If you want to achieve lossless precision when parsing floating-point numbers, such as Golang `encoding/json.Number` and `serde-json arbitrary_precision`, you can use `sonic_rs::RawNumber`.
 
 
 ## Acknowledgement
 
 Thanks the following open-source libraries. sonic-rs has some references to other open-source libraries like [sonic_cpp](https://github.com/bytedance/sonic-cpp), [serde_json](https://github.com/serde-rs/json), [sonic](https://github.com/bytedance/sonic), [simdjson](https://github.com/simdjson/simdjson), [yyjson](https://github.com/ibireme/yyjson), [rust-std](https://github.com/rust-lang/rust/tree/master/library/core/src/num) and so on.
 
-We rewrote many SIMD algorithms from sonic-cpp/sonic/simdjson/yyjson for performance. We reused the de/ser codes and modified necessary parts from serde_json to make high compatibility with `serde`. We resued part codes about floating parsing from rust-std to make it more accurate.
+We rewrote many SIMD algorithms from sonic-cpp/sonic/simdjson/yyjson for performance. We reused the de/ser codes and modified necessary parts from serde_json to make high compatibility with `serde`. We reused part codes about floating parsing from rust-std to make it more accurate.
 
 ## Contributing
-Please read `CONTRIBUTING.md` for information on contributing to sonic-rs.
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for information on contributing to sonic-rs.

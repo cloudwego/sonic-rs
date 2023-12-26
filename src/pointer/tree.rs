@@ -19,7 +19,7 @@ use crate::index::Index;
 /// let json = r#"
 /// {"u": 123, "a": {"b" : {"c": [null, "found"]}}}"#;
 ///
-/// // build a pointer tree, representing multile json path
+/// // build a pointer tree, representing multiple json path
 /// let mut tree = PointerTree::new();
 ///
 /// tree.add_path(&["u"]);

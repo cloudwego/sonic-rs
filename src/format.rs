@@ -206,7 +206,7 @@ pub trait Formatter {
         self.end_array(writer)
     }
 
-    /// Only called before stringifing some values, such as intger key in HashMap
+    /// Only called before stringifing some values, such as integer key in HashMap
     #[inline]
     fn begin_string<W>(&mut self, writer: &mut W) -> io::Result<()>
     where
@@ -215,7 +215,7 @@ pub trait Formatter {
         writer.write_all(b"\"")
     }
 
-    /// Only called after stringifing some values, such as intger key in HashMap
+    /// Only called after stringifing some values, such as integer key in HashMap
     #[inline]
     fn end_string<W>(&mut self, writer: &mut W) -> io::Result<()>
     where

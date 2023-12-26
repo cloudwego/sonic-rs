@@ -186,7 +186,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         V: de::Visitor<'de>,
     {
         let (raw, status) = self.parser.skip_one()?;
-        if status == ParseStatus::HasEsacped {
+        if status == ParseStatus::HasEscaped {
             visitor.visit_str(as_str(raw))
         } else {
             visitor.visit_borrowed_str(as_str(raw))

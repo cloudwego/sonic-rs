@@ -13,13 +13,6 @@
 
 sonic-rs 是一个基于 SIMD 的高性能 JSON 库。它参考了其他开源库如 [sonic_cpp](https://github.com/bytedance/sonic-cpp)，[serde_json](https://github.com/serde-rs/json)，[sonic](https://github.com/bytedance/sonic)，[simdjson](https://github.com/simdjson/simdjson)，[rust-std](https://github.com/rust-lang/rust/tree/master/library/core/src/num) 等。
 
-sonic-rs 的主要优化是使用 SIMD。然而，sonic-rs 没有使用来自`simd-json`的两阶段SIMD算法。sonic-rs 主要在以下场景中使用 SIMD：
-1. 解析/序列化长 JSON 字符串
-2. 解析浮点数的小数部分
-3. 从 JSON 中获取特定元素或字段
-4. 在解析JSON时跳过空格
-
-有关优化的更多细节，请参见 [performance_zh.md](docs/performance_zh.md)。
 
 ***对于 Golang 用户迁移 Rust 使用 `sonic_rs`, 请参考 [for_Golang_user_zh.md](docs/for_Golang_user_zh.md)***
 
@@ -73,6 +66,14 @@ sonic-rs = 0.3
 
 
 ## 基准测试
+
+sonic-rs 的主要优化是使用 SIMD。然而，sonic-rs 没有使用来自`simd-json`的两阶段SIMD算法。sonic-rs 主要在以下场景中使用 SIMD：
+1. 解析/序列化长 JSON 字符串
+2. 解析浮点数的小数部分
+3. 从 JSON 中获取特定元素或字段
+4. 在解析JSON时跳过空格
+
+有关优化的更多细节，请参见 [performance_zh.md](docs/performance_zh.md)。
 
 基准测试环境:
 
@@ -458,9 +459,7 @@ sonic-rs的错误处理参考了 serde-json,同时加上了对错误位置的描
 
 ### 关于 UTF-8
 
-sonic-rs 默认并不开启 utf-8 校验，这是为了性能做出的权衡。
-
-- 对于 `from_slice` 和 `dom_from_slice` 接口，默认开启了 `utf8` 校验。如果用户确保是 `utf-8`, 也可以使用 `from_slice_unchecked` 和 `dom_from_slice_unchecked`。
+sonic-rs 默认开启了 UTF-8 校验，在使用 `unsafe` 的 API时，其内部并未校验 UTF-8。
 
 ### 关于浮点数精度
 
@@ -476,4 +475,4 @@ Thanks the following open-source libraries. sonic-rs has some references to othe
 
 ## 如何贡献
 
-Please read `CONTRIBUTING.md` for information on contributing to sonic-rs.
+请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。

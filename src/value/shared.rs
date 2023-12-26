@@ -5,7 +5,7 @@ use std::{
     sync::atomic::AtomicBool,
 };
 
-use super::alloctor::SyncBump;
+use super::allocator::SyncBump;
 use crate::util::{arc::Arc, taggedptr::TaggedPtr};
 
 // Represent a shared allocator.

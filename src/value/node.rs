@@ -12,7 +12,7 @@ use bumpalo::Bump;
 use serde::ser::{Serialize, SerializeMap, SerializeSeq};
 
 use super::{
-    alloctor::SyncBump,
+    allocator::SyncBump,
     object::Pair,
     shared::{get_shared_or_new, Shared},
     value_trait::{JsonContainerTrait, JsonValueMutTrait},
@@ -26,7 +26,7 @@ use crate::{
     reader::{PaddedSliceRead, Reader},
     serde::tri,
     util::{arc::Arc, taggedptr::TaggedPtr},
-    value::{alloctor::AllocatorTrait, array::Array, object::Object, value_trait::JsonValueTrait},
+    value::{allocator::AllocatorTrait, array::Array, object::Object, value_trait::JsonValueTrait},
     JsonType, Number,
 };
 
@@ -881,7 +881,7 @@ impl Value {
 
     #[inline]
     pub(crate) fn set_str_len(&mut self, len: usize) {
-        // check length and the exisit ptr is valid
+        // check length and the exist ptr is valid
         unsafe {
             debug_assert!(len < crate::value::MAX_STR_SIZE);
             debug_assert!(self.meta.val >> 48 == 0);
@@ -1716,9 +1716,9 @@ impl Serialize for Value {
                 seq.end()
             }
             OBJECT | ROOT_OBJECT => {
-                let entrys = self.object();
-                let mut map = tri!(serializer.serialize_map(Some(entrys.len())));
-                for (k, v) in entrys {
+                let entries = self.object();
+                let mut map = tri!(serializer.serialize_map(Some(entries.len())));
+                for (k, v) in entries {
                     tri!(map.serialize_entry(k, v));
                 }
                 map.end()
