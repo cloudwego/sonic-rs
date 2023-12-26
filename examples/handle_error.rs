@@ -46,6 +46,6 @@ fn main() {
     //     ......^...
     assert_eq!(
         format!("{}", err),
-        "Invalid UTF-8 characters in json at line 1 column 6\n\n\t{\"b\":\"�\"}\n\t......^...\n"
+        "Invalid UTF-8 characters in json at line 1 column 6\n\n\t{\"b\":\"�\"}\n\t......^..\n"
     );
 }

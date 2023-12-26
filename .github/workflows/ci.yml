@@ -16,6 +16,8 @@ jobs:
     needs:
       - test-linux
       - test-linux-aarch64
+      - test-macos
+      - test-windows
       - lint
     steps:
       - run: exit 0
@@ -31,14 +33,10 @@ jobs:
     - uses: Swatinem/rust-cache@v1
     - name: Run tests
       run: |
-        cargo check
-        cargo test --examples
-        cargo test
-        cargo install cargo-fuzz
-        cargo +nightly fuzz run fuzz_value -- -max_total_time=5m
-        ./scripts/test.sh
-
-
+        cargo clippy --all-features -- -D warnings
+        ./scripts/test_all.sh
+        ./scripts/sanitize.sh
+  
   test-linux-aarch64:
     runs-on: [self-hosted, arm]
 
@@ -49,10 +47,32 @@ jobs:
           components: rustfmt
       # - uses: Swatinem/rust-cache@v1
       - name: Run tests
-        run: |
-          cargo check 
-          cargo test
-          cargo test --examples
+        run:  ./scripts/test_all.sh
+
+  test-macos:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v1
+      - name: Run tests
+        run: ./scripts/test_all.sh
+
+          
+  test-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v1
+      - name: Run tests
+        run: ./scripts/test_all.sh
 
   lint:
     runs-on: [self-hosted, X64]
