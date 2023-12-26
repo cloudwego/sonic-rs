@@ -154,7 +154,7 @@ pub(crate) struct Parser<R> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParseStatus {
     None,
-    HasEsacped,
+    HasEscaped,
 }
 
 impl<'de, R> Parser<R>
@@ -173,7 +173,7 @@ where
 
     #[inline(always)]
     fn error_index(&self) -> usize {
-        // when parsing strings , we need record the error postion.
+        // when parsing strings , we need record the error position.
         // it must be smaller than reader.index().
         std::cmp::min(self.error_index, self.read.index().saturating_sub(1))
     }
@@ -192,7 +192,7 @@ where
         Error::syntax(reason, self.read.as_u8_slice(), index)
     }
 
-    // maybe error in generated in visitor, so we need fix the postion.
+    // maybe error in generated in visitor, so we need fix the position.
     #[cold]
     pub(crate) fn fix_position(&self, err: Error) -> Error {
         if err.line() == 0 {
@@ -319,7 +319,7 @@ where
     where
         V: JsonVisitor<'de>,
     {
-        // parseing empty object
+        // parsing empty object
         let mut count: usize = 0;
         check_visit!(self, visitor.visit_object_start(0));
         match self.skip_space() {
@@ -426,7 +426,7 @@ where
         } else {
             self.skip_one_unchecked()
         }?;
-        Ok(Some((raw, status == ParseStatus::HasEsacped)))
+        Ok(Some((raw, status == ParseStatus::HasEscaped)))
     }
 
     #[inline]
@@ -460,7 +460,7 @@ where
         } else {
             self.skip_one_unchecked()
         }?;
-        Ok(Some((key, raw, status == ParseStatus::HasEsacped)))
+        Ok(Some((key, raw, status == ParseStatus::HasEscaped)))
     }
 
     fn parse_value<V>(&mut self, visitor: &mut V, strbuf: &mut Vec<u8>) -> Result<()>
@@ -656,7 +656,7 @@ where
                     'scope_end: loop {
                         depth.pop();
                         if depth.is_empty() {
-                            // Note: we will not check trailing charaters
+                            // Note: we will not check trailing characters
                             // because get_from maybe returns all remaining bytes.
                             return Ok(());
                         }
@@ -877,7 +877,7 @@ where
                     'scope_end: loop {
                         depth.pop();
                         if depth.is_empty() {
-                            // Note: we will not check trailing charaters
+                            // Note: we will not check trailing characters
                             // because get_from maybe returns all remaining bytes.
                             return Ok(());
                         }
@@ -981,7 +981,7 @@ where
     }
 
     pub(crate) unsafe fn parse_escaped_char(&mut self, buf: &mut Vec<u8>) -> Result<()> {
-        'esacpe: loop {
+        'escape: loop {
             match self.read.next() {
                 Some(b'u') => {
                     let code = self.parse_escaped_utf8()?;
@@ -1000,12 +1000,12 @@ where
                 _ => return perr!(self, InvalidEscape),
             }
 
-            // fast path for continous escaped chars
+            // fast path for continuous escaped chars
             if self.read.peek() == Some(b'\\') {
                 self.read.eat(1);
-                continue 'esacpe;
+                continue 'escape;
             }
-            break 'esacpe;
+            break 'escape;
         }
         Ok(())
     }
@@ -1027,7 +1027,7 @@ where
                 unescaped_bits: (v.le(u8x32::splat(0x1f))).bitmask(),
             };
 
-            if block.has_unesacped() {
+            if block.has_unescaped() {
                 self.read.eat(block.unescaped_index());
                 return perr!(self, ControlCharacterWhileParsingString);
             }
@@ -1107,7 +1107,7 @@ where
                 ));
             }
 
-            if block.has_unesacped() {
+            if block.has_unescaped() {
                 self.read.eat(block.unescaped_index());
                 return perr!(self, ControlCharacterWhileParsingString);
             }
@@ -1182,7 +1182,7 @@ where
         None
     }
 
-    // skip_string skips a JSON string, and return the later parts afer closed quote, and the
+    // skip_string skips a JSON string, and return the later parts after closed quote, and the
     // escaped status. skip_string always start with the quote marks.
     #[inline(always)]
     fn skip_string_impl(&mut self) -> Result<ParseStatus> {
@@ -1200,7 +1200,7 @@ where
             // maybe has escaped quotes
             if ((quote_bits.wrapping_sub(1)) & bs_bits) != 0 || prev_escaped != 0 {
                 escaped = get_escaped_branchless_u32(&mut prev_escaped, bs_bits);
-                status = ParseStatus::HasEsacped;
+                status = ParseStatus::HasEscaped;
                 quote_bits &= !escaped;
             }
             // real quote bits
@@ -1223,7 +1223,7 @@ where
                 if r.remain() < 2 {
                     break;
                 }
-                status = ParseStatus::HasEsacped;
+                status = ParseStatus::HasEscaped;
                 r.eat(2);
                 continue;
             }
@@ -1283,7 +1283,7 @@ where
                 match chunk[cnt] {
                     b'\\' => {
                         self.skip_escaped_chars()?;
-                        status = ParseStatus::HasEsacped;
+                        status = ParseStatus::HasEscaped;
                     }
                     b'\"' => return Ok(status),
                     0..=0x1f => return perr!(self, ControlCharacterWhileParsingString),
@@ -1299,7 +1299,7 @@ where
             match ch {
                 b'\\' => {
                     self.skip_escaped_chars()?;
-                    status = ParseStatus::HasEsacped;
+                    status = ParseStatus::HasEscaped;
                 }
                 b'"' => return Ok(status),
                 0..=0x1f => return perr!(self, ControlCharacterWhileParsingString),
@@ -1656,7 +1656,7 @@ where
                     self.skip_single_digit()?;
 
                     let traversed = cnt + 2;
-                    // check the remainig digits
+                    // check the remaining digits
                     let nondigts = nondigits.wrapping_shr((traversed) as u32);
                     if nondigts != 0 {
                         // TODO: optimize without bound-checking here.
@@ -1826,7 +1826,7 @@ where
                 _ => {}
             };
 
-            // optimze: direct find the next quote of key. or object ending
+            // optimize: direct find the next quote of key. or object ending
             match self.get_next_token([b'"', b'}'], 1) {
                 Some(b'"') => continue,
                 Some(b'}') => return perr!(self, GetUnknownKeyInObject),
@@ -1935,7 +1935,7 @@ where
                 _ => {}
             };
 
-            // optimze: direct find the next token
+            // optimize: direct find the next token
             match self.get_next_token([b']', b','], 1) {
                 Some(b']') => return perr!(self, GetIndexOutOfArray),
                 Some(b',') => {
@@ -2042,7 +2042,7 @@ where
 
         if !node.order.is_empty() {
             slice = self.read.slice_unchecked(start, self.read.index());
-            let lv = LazyValue::new(slice.into(), status == ParseStatus::HasEsacped)?;
+            let lv = LazyValue::new(slice.into(), status == ParseStatus::HasEscaped)?;
             for p in &node.order {
                 out[*p] = lv.clone();
             }
@@ -2097,7 +2097,7 @@ where
                 };
             }
 
-            // optimze: direct find the next quote of key. or object ending
+            // optimize: direct find the next quote of key. or object ending
             match self.get_next_token([b'"', b'}'], 1) {
                 Some(b'"') => {}
                 Some(b'}') => break,
@@ -2106,7 +2106,7 @@ where
             }
         }
 
-        // check wheter remaining unknown keys
+        // check whether remaining unknown keys
         if visited < mkeys.len() {
             perr!(self, GetUnknownKeyInObject)
         } else {
@@ -2163,7 +2163,7 @@ where
             }
         }
 
-        // check wheter remaining unknown keys
+        // check whether remaining unknown keys
         if visited < mkeys.len() {
             perr!(self, GetUnknownKeyInObject)
         } else {
@@ -2222,7 +2222,7 @@ where
                 };
             }
 
-            // optimze: direct find the next token
+            // optimize: direct find the next token
             match self.get_next_token([b']', b','], 1) {
                 Some(b']') => break,
                 Some(b',') => {
@@ -2234,7 +2234,7 @@ where
             }
         }
 
-        // check wheter remaining unknown keys
+        // check whether remaining unknown keys
         if visited < midx.len() {
             perr!(self, GetIndexOutOfArray)
         } else {
@@ -2286,7 +2286,7 @@ where
             }
         }
 
-        // check wheter remaining unknown keys
+        // check whether remaining unknown keys
         if visited < midx.len() {
             perr!(self, GetIndexOutOfArray)
         } else {

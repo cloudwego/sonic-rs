@@ -18,45 +18,36 @@ jobs:
       - test-linux-aarch64
       - test-macos
       - test-windows
-      - lint
+      - clippy_lint
+    #   - check-spelling
     steps:
       - run: exit 0
 
   test-linux:
     runs-on: [self-hosted, X64]
-
     steps:
     - uses: actions/checkout@v3
     - uses: dtolnay/rust-toolchain@nightly
-      with:
-        components: rustfmt
     - uses: Swatinem/rust-cache@v1
     - name: Run tests
       run: |
-        cargo clippy --all-features -- -D warnings
         ./scripts/test_all.sh
         ./scripts/sanitize.sh
   
   test-linux-aarch64:
     runs-on: [self-hosted, arm]
-
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt
       # - uses: Swatinem/rust-cache@v1
       - name: Run tests
         run:  ./scripts/test_all.sh
 
   test-macos:
     runs-on: macos-latest
-
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
       - uses: Swatinem/rust-cache@v1
       - name: Run tests
         run: ./scripts/test_all.sh
@@ -64,17 +55,14 @@ jobs:
           
   test-windows:
     runs-on: windows-latest
-
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
       - uses: Swatinem/rust-cache@v1
       - name: Run tests
         run: ./scripts/test_all.sh
 
-  lint:
+  clippy_lint:
     runs-on: [self-hosted, X64]
 
     steps:
@@ -82,10 +70,20 @@ jobs:
     - uses: dtolnay/rust-toolchain@nightly
       with:
         components: rustfmt, clippy
-    # - uses: Swatinem/rust-cache@v1
     - uses: actions-rs/clippy-check@v1
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
     - name: Format check
       run: |
+        cargo clippy --all-targets --all-features -- -D warnings
         cargo fmt -- --check
+
+#   check-spelling:
+#     name: Check spelling
+#     runs-on: ubuntu-latest
+#     steps:
+#     - name: Check spelling
+#       uses: crate-ci/typos@master
+#       with:
+#         files:  ./*
+#         config: ./_typos.toml

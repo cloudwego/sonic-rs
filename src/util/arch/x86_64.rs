@@ -83,8 +83,8 @@ macro_rules! packadd_4 {
 
 // simd add for 5 ~ 8 digits
 macro_rules! simd_add_5_8 {
-    ($v:ident, $nd:literal) => {{
-        $v = _mm_slli_si128($v, 16 - $nd);
+    ($v:ident, $and:literal) => {{
+        $v = _mm_slli_si128($v, 16 - $and);
         packadd_1!($v);
         packadd_2!($v);
         (_mm_extract_epi32($v, 2) as u64) * 10000 + (_mm_extract_epi32($v, 3) as u64)
@@ -93,8 +93,8 @@ macro_rules! simd_add_5_8 {
 
 // simd add for 9 ~ 15 digits
 macro_rules! simd_add_9_15 {
-    ($v:ident, $nd:literal) => {{
-        $v = _mm_slli_si128($v, 16 - $nd);
+    ($v:ident, $and:literal) => {{
+        $v = _mm_slli_si128($v, 16 - $and);
         packadd_1!($v);
         packadd_2!($v);
         packadd_4!($v);

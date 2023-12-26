@@ -51,13 +51,13 @@ impl StringBlock {
     }
 
     #[inline(always)]
-    pub fn has_unesacped(&self) -> bool {
+    pub fn has_unescaped(&self) -> bool {
         (self.quote_bits.wrapping_sub(1) & self.unescaped_bits) != 0
     }
 
     #[inline(always)]
     pub fn has_quote_first(&self) -> bool {
-        (self.bs_bits.wrapping_sub(1) & self.quote_bits) != 0 && !self.has_unesacped()
+        (self.bs_bits.wrapping_sub(1) & self.quote_bits) != 0 && !self.has_unescaped()
     }
 
     #[inline(always)]
@@ -99,7 +99,7 @@ pub(crate) unsafe fn parse_string_inplace(
             *src = src.add(idx + 1);
             return Ok(src.offset_from(sdst) as usize - 1);
         }
-        if block.has_unesacped() {
+        if block.has_unescaped() {
             return Err(ControlCharacterWhileParsingString);
         }
         if block.has_backslash() {
@@ -114,7 +114,7 @@ pub(crate) unsafe fn parse_string_inplace(
 
     // loop for string with escaped chars
     loop {
-        'esacpe: loop {
+        'escape: loop {
             let escaped_char: u8 = *src.add(1);
             if escaped_char == b'u' {
                 if !handle_unicode_codepoint_mut(src, &mut dst) {
@@ -129,11 +129,11 @@ pub(crate) unsafe fn parse_string_inplace(
                 dst = dst.add(1);
             }
 
-            // fast path for continous escaped chars
+            // fast path for continuous escaped chars
             if **src == b'\\' {
-                continue 'esacpe;
+                continue 'escape;
             }
-            break 'esacpe;
+            break 'escape;
         }
 
         'find_and_move: loop {
@@ -156,7 +156,7 @@ pub(crate) unsafe fn parse_string_inplace(
                 *src = src.add(1); // skip ending quote
                 return Ok(dst.offset_from(sdst) as usize);
             }
-            if block.has_unesacped() {
+            if block.has_unescaped() {
                 return Err(ControlCharacterWhileParsingString);
             }
             if !block.has_backslash() {

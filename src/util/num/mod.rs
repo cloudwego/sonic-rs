@@ -200,7 +200,7 @@ pub(crate) fn parse_number(
                 }
 
                 // we calculate the first digit here for two reasons:
-                // 1. fastpath for samll float number
+                // 1. fastpath for small float number
                 // 2. we only need parse at most 16 digits in parse_number_fraction
                 // and it is friendly for simd
                 if !is_digit!(data, *index) {
@@ -257,7 +257,7 @@ pub(crate) fn parse_number(
             return Err(ErrorCode::InvalidNumber);
         }
 
-        // slow path for tooo long integer
+        // slow path for too long integer
         if digits_cnt > 19 {
             *index = digit_start;
             significant = 0;
@@ -484,7 +484,7 @@ mod test {
             num,
             input
         );
-        assert_eq!(data[index], b' ', "faild num is {}", input);
+        assert_eq!(data[index], b' ', "failed num is {}", input);
     }
 
     #[test]

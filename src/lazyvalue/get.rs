@@ -180,7 +180,7 @@ where
     let reader = SliceRead::new(slice);
     let mut parser = Parser::new(reader);
     let (sub, status) = parser.get_from_with_iter(path)?;
-    LazyValue::new(json.from_subset(sub), status == ParseStatus::HasEsacped)
+    LazyValue::new(json.from_subset(sub), status == ParseStatus::HasEscaped)
 }
 
 /// get_many returns multiple fields from the `PointerTree`.
@@ -198,7 +198,7 @@ where
 /// use sonic_rs::pointer;
 /// let json = r#"
 ///     {"u": 123, "a": {"b" : {"c": [null, "found"]}}}"#;
-/// // build a pointer tree, representing multile json path
+/// // build a pointer tree, representing multiple json path
 /// let mut tree = sonic_rs::PointerTree::new();
 /// tree.add_path(&["u"]);
 /// tree.add_path(&pointer!["a", "b", "c", 1]);
@@ -389,7 +389,7 @@ where
     let reader = SliceRead::new(slice);
     let mut parser = Parser::new(reader);
     let (sub, status) = parser.get_from_with_iter_checked(path)?;
-    let lv = LazyValue::new(json.from_subset(sub), status == ParseStatus::HasEsacped)?;
+    let lv = LazyValue::new(json.from_subset(sub), status == ParseStatus::HasEscaped)?;
 
     // validate the utf-8 if slice
     let index = parser.read.index();
@@ -410,7 +410,7 @@ where
 /// use sonic_rs::pointer;
 /// let json = r#"
 ///     {"u": 123, "a": {"b" : {"c": [null, "found"]}}}"#;
-/// // build a pointer tree, representing multile json path
+/// // build a pointer tree, representing multiple json path
 /// let mut tree = sonic_rs::PointerTree::new();
 /// tree.add_path(&["u"]);
 /// tree.add_path(&pointer!["a", "b", "c", 1]);

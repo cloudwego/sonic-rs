@@ -1,6 +1,6 @@
 use faststr::FastStr;
 
-/// Reprsents a json pointer path. It can be created by [`pointer!`] macro.
+/// Represents a json pointer path. It can be created by [`pointer!`] macro.
 pub type JsonPointer = Vec<PointerNode>;
 
 /// Represents a node in a json pointer path.
@@ -10,7 +10,7 @@ pub enum PointerNode {
     Index(usize),
 }
 
-/// Reprsents a json pointer path.
+/// Represents a json pointer path.
 ///
 /// Used to indexing a [`Value`][`crate::Value`], [`LazyValue`][`crate::LazyValue`],
 /// [`get`][`crate::get`] or [`get_unchecked`][`crate::get_unchecked`].
