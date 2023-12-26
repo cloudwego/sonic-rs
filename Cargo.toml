@@ -29,6 +29,7 @@ thiserror = "1.0"
 simdutf8 = "0.1"
 parking_lot = "0.12"
 libc = "0.2"
+page_size = "0.6"
 
 [dev-dependencies]
 jemallocator =  "0.5"

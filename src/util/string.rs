@@ -9,7 +9,7 @@ use crate::{
     error::ErrorCode::{
         self, ControlCharacterWhileParsingString, InvalidEscape, InvalidUnicodeCodePoint,
     },
-    util::unicode::handle_unicode_codepoint_mut,
+    util::{arch::page_size, unicode::handle_unicode_codepoint_mut},
 };
 
 pub const ESCAPED_TAB: [u8; 256] = [
@@ -487,7 +487,7 @@ unsafe fn escape_unchecked(src: &mut *const u8, nb: &mut usize, dst: &mut *mut u
 
 #[inline(always)]
 fn cross_page(ptr: *const u8, step: usize) -> bool {
-    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize };
+    let page_size = page_size();
     ((ptr as usize & (page_size - 1)) + step) > page_size
 }
 
