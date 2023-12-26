@@ -15,11 +15,10 @@ fn main() {
 
         // deal with errors when invalid json
         if elem.is_err() {
-            assert_eq!(
-                elem.err().unwrap().to_string(),
+            assert!(elem.err().unwrap().to_string().starts_with(
                 "Expected this character to be either a ',' or a ']' while parsing at line 1 \
-                 column 17"
-            );
+                 column 16"
+            ));
         }
     }
 

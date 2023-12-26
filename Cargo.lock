@@ -890,7 +890,6 @@ dependencies = [
  "itoa",
  "jemallocator",
  "json-benchmark",
- "libc",
  "packed_simd",
  "page_size",
  "parking_lot",
