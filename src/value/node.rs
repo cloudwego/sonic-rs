@@ -1333,7 +1333,7 @@ impl Value {
             nodes: nodes.into(),
             parent: 0,
         };
-        parser.parse_value_with_padding(&mut visitor)?;
+        parser.parse_value(&mut visitor)?;
         self.data = visitor.nodes()[0].data;
         self.meta = visitor.nodes()[0].meta;
         self.mark_root();
