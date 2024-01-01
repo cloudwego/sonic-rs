@@ -518,10 +518,7 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
         while nb >= LANS {
             let v = {
                 let raw = std::slice::from_raw_parts(sptr, LANS);
-                #[no_sanitize(address)]
-                {
-                    u8x32::from_slice_unaligned_unchecked(raw)
-                }
+                u8x32::from_slice_unaligned_unchecked(raw)
             };
             v.write_to_slice_unaligned_unchecked(std::slice::from_raw_parts_mut(dptr, LANS));
             let mask = escaped_mask(v);
