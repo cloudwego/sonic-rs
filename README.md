@@ -41,7 +41,9 @@ A fast Rust JSON library based on SIMD. It has some references to other open-sou
 ## Requirements/Notes
 
 1. Support x86_64 or aarch64. Note that the performance in aarch64 is lower and needs optimization.
-2. Requires Rust nightly version, as we use the `packed_simd` crate.
+
+2. ~~Requires Rust nightly version~~ Support Stable Rust now.
+
 3. please add the compile options `-C target-cpu=native`
 
 ## Quick to use sonic-rs
