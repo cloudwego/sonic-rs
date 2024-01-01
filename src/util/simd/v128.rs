@@ -1,0 +1,152 @@
+use std::ops::{BitAnd, BitOr, BitOrAssign};
+
+use crate::{
+    impl_lanes,
+    util::simd::{Mask, Simd},
+};
+
+#[derive(Debug)]
+pub struct Simd128i([i8; 16]);
+
+#[derive(Debug)]
+pub struct Simd128u([u8; 16]);
+
+#[derive(Debug)]
+pub struct Mask128([u8; 16]);
+
+impl Simd for Simd128i {
+    const LANES: usize = 16;
+    type Mask = Mask128;
+
+    unsafe fn loadu(ptr: *const u8) -> Self {
+        let v = std::slice::from_raw_parts(ptr, Self::LANES);
+        let mut res = [0i8; 16];
+        res.copy_from_slice(std::mem::transmute::<&[u8], &[i8]>(v));
+        Self(res)
+    }
+
+    unsafe fn storeu(&self, ptr: *mut u8) {
+        let data = std::mem::transmute::<&[i8], &[u8]>(&self.0);
+        std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, Self::LANES);
+    }
+
+    fn eq(&self, lhs: &Self) -> Self::Mask {
+        let mut mask = [0u8; 16];
+        for i in 0..Self::LANES {
+            mask[i] = if self.0[i] == lhs.0[i] { 1 } else { 0 };
+        }
+        Mask128(mask)
+    }
+
+    fn splat(value: u8) -> Self {
+        Self([value as i8; Self::LANES])
+    }
+
+    fn le(&self, lhs: &Self) -> Self::Mask {
+        let mut mask = [0u8; 16];
+        for i in 0..Self::LANES {
+            mask[i] = if self.0[i] <= lhs.0[i] { 1 } else { 0 };
+        }
+        Mask128(mask)
+    }
+
+    fn gt(&self, lhs: &Self) -> Self::Mask {
+        let mut mask = [0u8; 16];
+        for i in 0..Self::LANES {
+            mask[i] = if self.0[i] > lhs.0[i] { 1 } else { 0 };
+        }
+        Mask128(mask)
+    }
+}
+
+impl Simd for Simd128u {
+    const LANES: usize = 16;
+    type Mask = Mask128;
+
+    unsafe fn loadu(ptr: *const u8) -> Self {
+        let v = std::slice::from_raw_parts(ptr, Self::LANES);
+        let mut res = [0u8; 16];
+        res.copy_from_slice(v);
+        Self(res)
+    }
+
+    unsafe fn storeu(&self, ptr: *mut u8) {
+        let data = &self.0;
+        std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, Self::LANES);
+    }
+
+    fn eq(&self, lhs: &Self) -> Self::Mask {
+        let mut mask = [0u8; 16];
+        for i in 0..Self::LANES {
+            mask[i] = if self.0[i] == lhs.0[i] { 1 } else { 0 };
+        }
+        Mask128(mask)
+    }
+
+    fn splat(value: u8) -> Self {
+        Self([value; Self::LANES])
+    }
+
+    fn le(&self, lhs: &Self) -> Self::Mask {
+        let mut mask = [0u8; 16];
+        for i in 0..Self::LANES {
+            mask[i] = if self.0[i] <= lhs.0[i] { 1 } else { 0 };
+        }
+        Mask128(mask)
+    }
+
+    fn gt(&self, lhs: &Self) -> Self::Mask {
+        let mut mask = [0u8; 16];
+        for i in 0..Self::LANES {
+            mask[i] = if self.0[i] > lhs.0[i] { 1 } else { 0 };
+        }
+        Mask128(mask)
+    }
+}
+
+impl Mask for Mask128 {
+    type BitMap = u16;
+
+    fn bitmask(self) -> Self::BitMap {
+        self.0
+            .iter()
+            .enumerate()
+            .fold(0, |acc, (i, &b)| acc | ((b as u16) << i))
+    }
+
+    fn splat(b: bool) -> Self {
+        Mask128([b as u8; 16])
+    }
+}
+
+impl BitAnd for Mask128 {
+    type Output = Self;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        let mut result = [0u8; 16];
+        for i in 0..16 {
+            result[i] = self.0[i] & rhs.0[i];
+        }
+        Mask128(result)
+    }
+}
+
+impl BitOr for Mask128 {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        let mut result = [0u8; 16];
+        for i in 0..16 {
+            result[i] = self.0[i] | rhs.0[i];
+        }
+        Mask128(result)
+    }
+}
+
+impl BitOrAssign for Mask128 {
+    fn bitor_assign(&mut self, rhs: Self) {
+        for i in 0..16 {
+            self.0[i] |= rhs.0[i];
+        }
+    }
+}

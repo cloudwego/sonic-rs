@@ -1,0 +1,141 @@
+use std::{
+    arch::x86_64::*,
+    ops::{BitAnd, BitOr, BitOrAssign},
+};
+
+use crate::{
+    impl_lanes,
+    util::simd::{Mask, Simd},
+};
+
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct Simd128i(__m128i);
+
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct Simd128u(__m128i);
+
+impl Simd for Simd128i {
+    const LANES: usize = 16;
+    type Mask = Mask128;
+
+    #[inline(always)]
+    unsafe fn loadu(ptr: *const u8) -> Self {
+        Self(_mm_loadu_si128(ptr as *const __m128i))
+    }
+
+    #[inline(always)]
+    unsafe fn storeu(&self, ptr: *mut u8) {
+        _mm_storeu_si128(ptr as *mut __m128i, self.0)
+    }
+
+    #[inline(always)]
+    fn eq(&self, lhs: &Self) -> Self::Mask {
+        let eq = unsafe { _mm_cmpeq_epi8(self.0, lhs.0) };
+        Mask128(eq)
+    }
+
+    #[inline(always)]
+    fn splat(ch: u8) -> Self {
+        unsafe { Self(_mm_set1_epi8(ch as i8)) }
+    }
+
+    #[inline(always)]
+    fn le(&self, lhs: &Self) -> Self::Mask {
+        unsafe { Mask128(_mm_cmpgt_epi8(lhs.0, self.0)) }
+    }
+
+    #[inline(always)]
+    fn gt(&self, lhs: &Self) -> Self::Mask {
+        unsafe { Mask128(_mm_cmpgt_epi8(self.0, lhs.0)) }
+    }
+}
+
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct Mask128(__m128i);
+
+impl_lanes!(Simd128u, 16);
+
+impl_lanes!(Mask128, 16);
+
+impl Mask for Mask128 {
+    type BitMap = u16;
+
+    #[inline(always)]
+    fn bitmask(self) -> Self::BitMap {
+        unsafe { _mm_movemask_epi8(self.0) as u16 }
+    }
+
+    #[inline(always)]
+    fn splat(b: bool) -> Self {
+        let v: i8 = if b { -1 } else { 0 };
+        unsafe { Mask128(_mm_set1_epi8(v)) }
+    }
+}
+
+impl BitAnd<Mask128> for Mask128 {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitand(self, rhs: Mask128) -> Self::Output {
+        unsafe { Mask128(_mm_and_si128(self.0, rhs.0)) }
+    }
+}
+
+impl BitOr<Mask128> for Mask128 {
+    type Output = Self;
+
+    #[inline(always)]
+    fn bitor(self, rhs: Mask128) -> Self::Output {
+        unsafe { Mask128(_mm_or_si128(self.0, rhs.0)) }
+    }
+}
+
+impl BitOrAssign<Mask128> for Mask128 {
+    #[inline(always)]
+    fn bitor_assign(&mut self, rhs: Mask128) {
+        self.0 = unsafe { _mm_or_si128(self.0, rhs.0) };
+    }
+}
+
+impl Simd for Simd128u {
+    const LANES: usize = 16;
+    type Mask = Mask128;
+
+    #[inline(always)]
+    unsafe fn loadu(ptr: *const u8) -> Self {
+        Simd128u(_mm_loadu_si128(ptr as *const __m128i))
+    }
+
+    #[inline(always)]
+    unsafe fn storeu(&self, ptr: *mut u8) {
+        _mm_storeu_si128(ptr as *mut __m128i, self.0)
+    }
+
+    #[inline(always)]
+    fn eq(&self, lhs: &Self) -> Self::Mask {
+        let eq = unsafe { _mm_cmpeq_epi8(self.0, lhs.0) };
+        Mask128(eq)
+    }
+
+    #[inline(always)]
+    fn splat(ch: u8) -> Self {
+        Simd128u(unsafe { _mm_set1_epi8(ch as i8) })
+    }
+
+    #[inline(always)]
+    fn le(&self, lhs: &Self) -> Self::Mask {
+        unsafe {
+            let max = _mm_max_epu8(self.0, lhs.0);
+            let eq = _mm_cmpeq_epi8(max, lhs.0);
+            Mask128(eq)
+        }
+    }
+
+    #[inline(always)]
+    fn gt(&self, _lhs: &Self) -> Self::Mask {
+        todo!()
+    }
+}
