@@ -263,7 +263,7 @@ where
     }
 
     #[inline(always)]
-    fn parse_array<V>(&mut self, visitor: &mut V, strbuf: &mut Vec<u8>) -> Result<()>
+    fn parse_array<V>(&mut self, visitor: &mut V) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
@@ -283,9 +283,9 @@ where
             match first {
                 Some(b'-') => self.parse_number_visit(true, visitor),
                 Some(b'0'..=b'9') => self.parse_number_visit(false, visitor),
-                Some(b'"') => self.parse_string(visitor, strbuf),
-                Some(b'{') => self.parse_object(visitor, strbuf),
-                Some(b'[') => self.parse_array(visitor, strbuf),
+                Some(b'"') => self.parse_string_inplace(visitor),
+                Some(b'{') => self.parse_object(visitor),
+                Some(b'[') => self.parse_array(visitor),
                 Some(first) => self.parse_literal_visit(first, visitor),
                 None => perr!(self, EofWhileParsing),
             }?;
@@ -315,7 +315,7 @@ where
     }
 
     #[inline(always)]
-    fn parse_object<V>(&mut self, visitor: &mut V, strbuf: &mut Vec<u8>) -> Result<()>
+    fn parse_object<V>(&mut self, visitor: &mut V) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
@@ -335,9 +335,9 @@ where
 
         // loop for each object key and value
         loop {
-            self.parse_key(visitor, strbuf)?;
+            self.parse_string_inplace(visitor)?;
             self.parse_object_clo()?;
-            self.parse_value(visitor, strbuf)?;
+            self.parse_value(visitor)?;
             count += 1;
             match self.skip_space() {
                 Some(b'}') => {
@@ -463,251 +463,20 @@ where
         Ok(Some((key, raw, status == ParseStatus::HasEscaped)))
     }
 
-    fn parse_value<V>(&mut self, visitor: &mut V, strbuf: &mut Vec<u8>) -> Result<()>
+    // Not use non-recurse version here, because it maybe 5% slower than recurse version.
+    #[inline(always)]
+    pub(crate) fn parse_value<V>(&mut self, visitor: &mut V) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
         match self.skip_space() {
             Some(b'-') => self.parse_number_visit(true, visitor),
             Some(b'0'..=b'9') => self.parse_number_visit(false, visitor),
-            Some(b'"') => self.parse_string(visitor, strbuf),
-            Some(b'{') => self.parse_object(visitor, strbuf),
-            Some(b'[') => self.parse_array(visitor, strbuf),
+            Some(b'"') => self.parse_string_inplace(visitor),
+            Some(b'{') => self.parse_object(visitor),
+            Some(b'[') => self.parse_array(visitor),
             Some(first) => self.parse_literal_visit(first, visitor),
             None => perr!(self, EofWhileParsing),
-        }
-    }
-
-    #[cold]
-    fn parse_single<V>(&mut self, visitor: &mut V) -> Result<()>
-    where
-        V: JsonVisitor<'de>,
-    {
-        let r = &mut self.read;
-        if r.index() == 0 {
-            return perr!(self, EofWhileParsing);
-        }
-        match r.at(r.index() - 1) {
-            b'-' => self.parse_number_visit(true, visitor),
-            b'0'..=b'9' => self.parse_number_visit(false, visitor),
-            b'"' => self.parse_string_inplace(visitor),
-            first => self.parse_literal_visit(first, visitor),
-        }
-    }
-
-    pub(crate) fn parse_value_with_padding<V>(&mut self, visitor: &mut V) -> Result<()>
-    where
-        V: JsonVisitor<'de>,
-    {
-        const COMMON_DEPTH: usize = 20;
-        const ARR_MASK: u32 = 1u32 << 31;
-        const OBJ_MASK: u32 = 0u32;
-        let mut depth = SmallVec::<[u32; COMMON_DEPTH]>::new();
-        let mut c: u8;
-
-        enum Fsm {
-            ScopeEnd,
-            ArrVal,
-            ObjKey,
-        }
-
-        let mut state;
-        match self.skip_space2() {
-            b'[' => {
-                check_visit!(self, visitor.visit_array_start(0));
-                depth.push(ARR_MASK);
-                c = self.skip_space2();
-                if c == b']' {
-                    check_visit!(self, visitor.visit_array_end(0));
-                    state = Fsm::ScopeEnd;
-                } else {
-                    state = Fsm::ArrVal;
-                }
-            }
-            b'{' => {
-                check_visit!(self, visitor.visit_object_start(0));
-                depth.push(OBJ_MASK);
-                c = self.skip_space2();
-                if c == b'}' {
-                    check_visit!(self, visitor.visit_object_end(0));
-                    state = Fsm::ScopeEnd;
-                } else {
-                    state = Fsm::ObjKey;
-                }
-            }
-            _ => return self.parse_single(visitor),
-        }
-
-        loop {
-            match state {
-                Fsm::ArrVal => {
-                    'arr_val: loop {
-                        match c {
-                            b'{' => {
-                                check_visit!(self, visitor.visit_object_start(0));
-                                depth.push(OBJ_MASK);
-                                c = self.skip_space2();
-                                if c == b'}' {
-                                    check_visit!(self, visitor.visit_object_end(0));
-                                    state = Fsm::ScopeEnd;
-                                } else {
-                                    state = Fsm::ObjKey;
-                                }
-                                break 'arr_val;
-                            }
-                            b'[' => {
-                                check_visit!(self, visitor.visit_array_start(0));
-                                depth.push(ARR_MASK);
-                                c = self.skip_space2();
-                                if c == b']' {
-                                    check_visit!(self, visitor.visit_array_end(0));
-                                    state = Fsm::ScopeEnd;
-                                    break 'arr_val;
-                                }
-
-                                continue 'arr_val;
-                            }
-                            b'0'..=b'9' => self.parse_number_visit(false, visitor)?,
-                            b'-' => self.parse_number_visit(true, visitor)?,
-                            b'"' => self.parse_string_inplace(visitor)?,
-                            first => self.parse_literal_visit(first, visitor)?,
-                        }
-                        // count after array primitive value end
-                        let len = depth.len();
-                        depth[len - 1] += 1;
-                        match self.skip_space2() {
-                            b',' => {
-                                c = self.skip_space2();
-                                continue 'arr_val;
-                            }
-                            b']' => {
-                                let back = depth[depth.len() - 1];
-                                check_visit!(
-                                    self,
-                                    visitor.visit_array_end((back & (ARR_MASK - 1)) as usize)
-                                );
-                                state = Fsm::ScopeEnd;
-                                break 'arr_val;
-                            }
-                            _ => return perr!(self, ExpectedArrayCommaOrEnd),
-                        }
-                    }
-                }
-                Fsm::ObjKey => {
-                    'obj_key: loop {
-                        if c != b'"' {
-                            return perr!(self, ExpectObjectKeyOrEnd);
-                        }
-                        self.parse_string_inplace(visitor)?;
-                        self.parse_object_clo()?;
-                        match self.skip_space2() {
-                            b'{' => {
-                                check_visit!(self, visitor.visit_object_start(0));
-                                depth.push(OBJ_MASK);
-                                c = self.skip_space2();
-                                if c == b'}' {
-                                    check_visit!(self, visitor.visit_object_end(0));
-                                    state = Fsm::ScopeEnd;
-                                    break 'obj_key;
-                                }
-
-                                continue 'obj_key;
-                            }
-                            b'[' => {
-                                check_visit!(self, visitor.visit_array_start(0));
-                                depth.push(ARR_MASK);
-                                c = self.skip_space2();
-                                if c == b']' {
-                                    check_visit!(self, visitor.visit_array_end(0));
-                                    state = Fsm::ScopeEnd;
-                                } else {
-                                    state = Fsm::ArrVal;
-                                }
-                                break 'obj_key;
-                            }
-                            b'0'..=b'9' => self.parse_number_visit(false, visitor)?,
-                            b'-' => self.parse_number_visit(true, visitor)?,
-                            b'"' => self.parse_string_inplace(visitor)?,
-                            first => self.parse_literal_visit(first, visitor)?,
-                        }
-                        // count after object primitive value end
-                        let len = depth.len();
-                        depth[len - 1] += 1;
-                        match self.skip_space2() {
-                            b',' => {
-                                c = self.skip_space2();
-
-                                continue 'obj_key;
-                            }
-                            b'}' => {
-                                let back = depth[depth.len() - 1];
-                                check_visit!(
-                                    self,
-                                    visitor.visit_object_end((back & (ARR_MASK - 1)) as usize)
-                                );
-                                state = Fsm::ScopeEnd;
-                                break 'obj_key;
-                            }
-                            _ => return perr!(self, ExpectedArrayCommaOrEnd),
-                        }
-                    }
-                }
-                Fsm::ScopeEnd => {
-                    'scope_end: loop {
-                        depth.pop();
-                        if depth.is_empty() {
-                            // Note: we will not check trailing characters
-                            // because get_from maybe returns all remaining bytes.
-                            return Ok(());
-                        }
-                        // count after container value end
-                        let len = depth.len();
-                        depth[len - 1] += 1;
-                        c = self.skip_space2();
-                        if (depth[len - 1] & ARR_MASK) != 0 {
-                            // parent is array
-                            match c {
-                                b',' => {
-                                    c = self.skip_space2();
-                                    state = Fsm::ArrVal;
-
-                                    break 'scope_end;
-                                }
-                                b']' => {
-                                    let back = depth[depth.len() - 1];
-                                    check_visit!(
-                                        self,
-                                        visitor.visit_array_end((back & (ARR_MASK - 1)) as usize)
-                                    );
-
-                                    continue 'scope_end;
-                                }
-                                _ => return perr!(self, ExpectedArrayCommaOrEnd),
-                            }
-                        } else {
-                            // parent is object
-                            match c {
-                                b',' => {
-                                    c = self.skip_space2();
-                                    state = Fsm::ObjKey;
-
-                                    break 'scope_end;
-                                }
-                                b'}' => {
-                                    let back = depth[depth.len() - 1];
-                                    check_visit!(
-                                        self,
-                                        visitor.visit_object_end((back & (ARR_MASK - 1)) as usize)
-                                    );
-
-                                    continue 'scope_end;
-                                }
-                                _ => return perr!(self, ExpectedObjectCommaOrEnd),
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 
