@@ -201,19 +201,24 @@ impl Value {
     }
 
     pub(crate) fn clone_in(&self, shared: &Shared) -> Self {
-        // let arc_shared =
         match self.get_type() {
             JsonType::Array => {
-                let mut arr = Value::new_array(shared, self.len());
-                for v in self.children::<Value>().unwrap() {
-                    arr.append_value(v.clone_in(shared));
+                let len = self.len();
+                let mut arr = Value::new_array(shared, len);
+                if len > 0 {
+                    for v in self.children::<Value>().unwrap() {
+                        arr.append_value(v.clone_in(shared));
+                    }
                 }
                 arr
             }
             JsonType::Object => {
-                let mut obj = Value::new_object(shared, self.len());
-                for (k, v) in self.children::<(Value, Value)>().unwrap() {
-                    obj.append_pair((k.clone_in(shared), v.clone_in(shared)));
+                let len = self.len();
+                let mut obj = Value::new_object(shared, len);
+                if len > 0 {
+                    for (k, v) in self.children::<(Value, Value)>().unwrap() {
+                        obj.append_pair((k.clone_in(shared), v.clone_in(shared)));
+                    }
                 }
                 obj
             }
@@ -1735,17 +1740,40 @@ mod test {
     use super::*;
     use crate::{
         error::{make_error, Result},
-        from_slice, pointer,
+        from_slice, from_str, pointer,
     };
+
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+    struct ValueInStruct {
+        val: Value,
+    }
+
+    fn test_value_instruct(data: &str) -> Result<()> {
+        if let Ok(val) = from_str::<Value>(data) {
+            let valin = ValueInStruct { val: val.clone() };
+            let out = crate::to_string(&valin)?;
+            let valin2: ValueInStruct = from_str(&out).unwrap();
+            if valin2.val != val {
+                diff_json(data);
+                return Err(make_error(format!(
+                    "invalid result when test parse valid json to ValueInStruct {}",
+                    data
+                )));
+            }
+        }
+        Ok(())
+    }
 
     fn test_value(data: &str) -> Result<()> {
         let serde_value: serde_json::Result<serde_json::Value> = serde_json::from_str(data);
         let dom: Result<Value> = from_slice(data.as_bytes());
+
         if let Ok(serde_value) = serde_value {
             let dom = dom.unwrap();
             let sonic_out = crate::to_string(&dom)?;
             let serde_value2: serde_json::Value = serde_json::from_str(&sonic_out).unwrap();
             if serde_value == serde_value2 {
+                test_value_instruct(data)?;
                 Ok(())
             } else {
                 diff_json(data);
@@ -1995,14 +2023,14 @@ mod test {
             array: Array,
         }
 
-        let foo: Foo = crate::from_str(
+        let foo: Foo = crate::from_str(&String::from(
             r#"
         {
             "value": "hello",
             "object": {"a": "b"},
             "array": [1,2,3]
         }"#,
-        )
+        ))
         .unwrap();
 
         assert_eq!(ManuallyDrop::new(foo.value.arc_shared()).refcnt(), 3);

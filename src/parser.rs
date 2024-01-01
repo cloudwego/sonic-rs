@@ -231,6 +231,20 @@ where
         }
     }
 
+    // TODO: optimize me, avoid clone twice.
+    #[inline(always)]
+    fn parse_string_owned<V>(&mut self, visitor: &mut V, strbuf: &mut Vec<u8>) -> Result<()>
+    where
+        V: JsonVisitor<'de>,
+    {
+        let rs = self.parse_str_impl(strbuf)?;
+        if !visitor.visit_str(rs.as_ref()) {
+            perr!(self, UnexpectedVisitType)
+        } else {
+            Ok(())
+        }
+    }
+
     #[inline(always)]
     fn parse_string_inplace<V>(&mut self, visitor: &mut V) -> Result<()>
     where
@@ -523,7 +537,7 @@ where
             }
             b'-' => return self.parse_number_visit(true, visitor),
             b'0'..=b'9' => return self.parse_number_visit(false, visitor),
-            b'"' => return self.parse_string(visitor, &mut strbuf),
+            b'"' => return self.parse_string_owned(visitor, &mut strbuf),
             0 => return perr!(self, EofWhileParsing),
             first => return self.parse_literal_visit(first, visitor),
         }
@@ -559,7 +573,7 @@ where
                             }
                             b'0'..=b'9' => self.parse_number_visit(false, visitor)?,
                             b'-' => self.parse_number_visit(true, visitor)?,
-                            b'"' => self.parse_string(visitor, &mut strbuf)?,
+                            b'"' => self.parse_string_owned(visitor, &mut strbuf)?,
                             first => self.parse_literal_visit(first, visitor)?,
                         }
                         // count after array primitive value end
@@ -588,7 +602,7 @@ where
                         if c != b'"' {
                             return perr!(self, ExpectObjectKeyOrEnd);
                         }
-                        self.parse_string(visitor, &mut strbuf)?;
+                        self.parse_string_owned(visitor, &mut strbuf)?;
                         self.parse_object_clo()?;
                         match self.skip_space2() {
                             b'{' => {
@@ -617,7 +631,7 @@ where
                             }
                             b'0'..=b'9' => self.parse_number_visit(false, visitor)?,
                             b'-' => self.parse_number_visit(true, visitor)?,
-                            b'"' => self.parse_string(visitor, &mut strbuf)?,
+                            b'"' => self.parse_string_owned(visitor, &mut strbuf)?,
                             first => self.parse_literal_visit(first, visitor)?,
                         }
                         // count after object primitive value end
