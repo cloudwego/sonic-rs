@@ -1,9 +1,6 @@
-#![feature(slice_range)]
-#![feature(no_sanitize)]
 #![cfg_attr(not(doctest), doc = include_str!("../README.md"))]
 #![allow(dead_code)]
 #![doc(test(attr(warn(unused))))]
-#![feature(associated_type_defaults)]
 
 mod error;
 mod input;

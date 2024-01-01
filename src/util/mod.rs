@@ -2,6 +2,7 @@ pub(crate) mod arc;
 pub(crate) mod arch;
 pub(crate) mod num;
 pub(crate) mod private;
+pub(crate) mod range;
 pub(crate) mod reborrow;
 pub(crate) mod string;
 pub(crate) mod taggedptr;

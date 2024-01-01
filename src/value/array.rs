@@ -9,7 +9,7 @@ use std::{
 use super::shared::{Shared, SharedCtxGuard};
 use crate::{
     serde::tri,
-    util::arc::Arc,
+    util::{arc::Arc, range::range},
     value::{node::Value, value_trait::JsonValueTrait},
 };
 
@@ -542,12 +542,12 @@ impl Array {
     /// assert!(v.is_empty());
     /// ```
     #[inline]
-    pub fn drain<R>(&mut self, range: R) -> Drain<'_>
+    pub fn drain<R>(&mut self, r: R) -> Drain<'_>
     where
         R: RangeBounds<usize>,
     {
         let len = self.len();
-        let Range { start, end } = std::slice::range(range, ..len);
+        let Range { start, end } = range(r, ..len);
 
         unsafe {
             // set self.arr length's to start, to be safe in case Drain is leaked
@@ -588,7 +588,7 @@ impl Array {
     where
         R: RangeBounds<usize>,
     {
-        let range = std::slice::range(src, ..self.len());
+        let range: Range<usize> = range(src, ..self.len());
         if range.is_empty() {
             return;
         }
