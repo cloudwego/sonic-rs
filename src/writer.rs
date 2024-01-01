@@ -56,7 +56,7 @@ impl WriteExt for Writer<BytesMut> {
     }
 }
 
-impl<W: WriteExt + ?Sized> WriteExt for BufWriter<W> {
+impl<W: WriteExt> WriteExt for BufWriter<W> {
     fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
         self.get_mut().reserve_with(additional)
     }

@@ -42,7 +42,7 @@ sonic-rs 是一个基于 SIMD 的高性能 JSON 库。它参考了其他开源�
 ## ***要求/注意事项***
 
 1. 支持 x86_64 或 aarch64，aarch64 的性能较低，需要优化。
-2. 需要 Rust nightly 版本，因为 sonic-rs 使用了 `packed_simd` 包。
+2. ~~需要 Rust nightly 版本~~ 已经支持 Rust Stable。
 3. 在编译选项中开启 `-C target-cpu=native`
 
 ## 如何使用 sonic-rs
