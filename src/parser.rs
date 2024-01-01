@@ -8,7 +8,6 @@ use std::{
 use ::serde::de::{Expected, Unexpected};
 use arrayref::array_ref;
 use faststr::FastStr;
-use packed_simd::{m8x32, u8x32, u8x64};
 use smallvec::SmallVec;
 
 use super::reader::{Reader, Reference};
@@ -27,13 +26,13 @@ use crate::{
         arc::Arc,
         arch::{get_nonspace_bits, prefix_xor},
         num::{parse_number, ParserNumber},
+        simd::{i8x32, m8x32, u8x32, u8x64, Mask, Simd},
         string::*,
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
     value::{shared::Shared, visitor::JsonVisitor},
     JsonType, LazyValue,
 };
-
 pub(crate) const DEFAULT_KEY_BUF_CAPACITY: usize = 128;
 
 pub(crate) fn as_str(data: &[u8]) -> &str {
@@ -93,9 +92,9 @@ pub(crate) fn is_whitespace(ch: u8) -> bool {
 
 #[inline(always)]
 fn get_string_bits(data: &[u8; 64], prev_instring: &mut u64, prev_escaped: &mut u64) -> u64 {
-    let v = u8x64::from_slice_unaligned(data);
+    let v = unsafe { u8x64::from_slice_unaligned_unchecked(data) };
 
-    let bs_bits = (v.eq(u8x64::splat(b'\\'))).bitmask();
+    let bs_bits = (v.eq(&u8x64::splat(b'\\'))).bitmask();
     let escaped: u64;
     if bs_bits != 0 {
         escaped = get_escaped_branchless_u64(prev_escaped, bs_bits);
@@ -103,7 +102,7 @@ fn get_string_bits(data: &[u8; 64], prev_instring: &mut u64, prev_escaped: &mut 
         escaped = *prev_escaped;
         *prev_escaped = 0;
     }
-    let quote_bits = (v.eq(u8x64::splat(b'"'))).bitmask() & !escaped;
+    let quote_bits = (v.eq(&u8x64::splat(b'"'))).bitmask() & !escaped;
     let in_string = unsafe { prefix_xor(quote_bits) ^ *prev_instring };
     *prev_instring = (in_string as i64 >> 63) as u64;
     in_string
@@ -125,8 +124,8 @@ fn skip_container_loop(
     // the input is 64 bytes, so the v is always valid.
     let v = unsafe { u8x64::from_slice_unaligned_unchecked(input) };
     let last_lbrace_num = *lbrace_num;
-    let mut rbrace = (v.eq(u8x64::splat(right))).bitmask() & !instring;
-    let lbrace = (v.eq(u8x64::splat(left))).bitmask() & !instring;
+    let mut rbrace = (v.eq(&u8x64::splat(right))).bitmask() & !instring;
+    let lbrace = (v.eq(&u8x64::splat(left))).bitmask() & !instring;
     while rbrace != 0 {
         *rbrace_num += 1;
         *lbrace_num = last_lbrace_num + (lbrace & (rbrace - 1)).count_ones() as usize;
@@ -805,9 +804,9 @@ where
             buf.reserve(LANS);
             let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
             let block = StringBlock {
-                bs_bits: (v.eq(u8x32::splat(b'\\'))).bitmask(),
-                quote_bits: (v.eq(u8x32::splat(b'"'))).bitmask(),
-                unescaped_bits: (v.le(u8x32::splat(0x1f))).bitmask(),
+                bs_bits: (v.eq(&u8x32::splat(b'\\'))).bitmask(),
+                quote_bits: (v.eq(&u8x32::splat(b'"'))).bitmask(),
+                unescaped_bits: (v.le(&u8x32::splat(0x1f))).bitmask(),
             };
 
             if block.has_unescaped() {
@@ -877,9 +876,9 @@ where
         while let Some(chunk) = self.read.peek_n(LANS) {
             let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
             let block = StringBlock {
-                bs_bits: (v.eq(u8x32::splat(b'\\'))).bitmask(),
-                quote_bits: (v.eq(u8x32::splat(b'"'))).bitmask(),
-                unescaped_bits: (v.le(u8x32::splat(0x1f))).bitmask(),
+                bs_bits: (v.eq(&u8x32::splat(b'\\'))).bitmask(),
+                quote_bits: (v.eq(&u8x32::splat(b'"'))).bitmask(),
+                unescaped_bits: (v.le(&u8x32::splat(0x1f))).bitmask(),
             };
 
             if block.has_quote_first() {
@@ -941,7 +940,7 @@ where
             let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
             let mut vor = m8x32::splat(false);
             for t in tokens.iter().take(N) {
-                vor |= v.eq(u8x32::splat(*t));
+                vor |= v.eq(&u8x32::splat(*t));
             }
             let next = vor.bitmask();
             if next != 0 {
@@ -978,8 +977,8 @@ where
 
         while let Some(chunk) = r.peek_n(LANS) {
             let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
-            let bs_bits = (v.eq(u8x32::splat(b'\\'))).bitmask();
-            quote_bits = (v.eq(u8x32::splat(b'"'))).bitmask();
+            let bs_bits = (v.eq(&u8x32::splat(b'\\'))).bitmask();
+            quote_bits = (v.eq(&u8x32::splat(b'"'))).bitmask();
             // maybe has escaped quotes
             if ((quote_bits.wrapping_sub(1)) & bs_bits) != 0 || prev_escaped != 0 {
                 escaped = get_escaped_branchless_u32(&mut prev_escaped, bs_bits);
@@ -1053,9 +1052,9 @@ where
         let mut status = ParseStatus::None;
         while let Some(chunk) = self.read.peek_n(LANS) {
             let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
-            let v_bs = v.eq(u8x32::splat(b'\\'));
-            let v_quote = v.eq(u8x32::splat(b'"'));
-            let v_cc = v.lt(u8x32::splat(0x20));
+            let v_bs = v.eq(&u8x32::splat(b'\\'));
+            let v_quote = v.eq(&u8x32::splat(b'"'));
+            let v_cc = v.le(&u8x32::splat(0x1f));
             let mask = (v_bs | v_quote | v_cc).bitmask();
 
             // check the mask
@@ -1425,10 +1424,10 @@ where
 
         // SIMD path for long number
         while let Some(chunk) = self.read.peek_n(32) {
-            let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
-            let less0 = u8x32::splat(b'0' - 1);
-            let nine = u8x32::splat(b'9');
-            let nondigits = !(v.gt(less0) & v.le(nine)).bitmask();
+            let v = unsafe { i8x32::from_slice_unaligned_unchecked(chunk) };
+            let less0 = i8x32::splat(b'0' - 1);
+            let nine = i8x32::splat(b'9');
+            let nondigits = (v.le(&less0) | v.gt(&nine)).bitmask();
 
             if nondigits != 0 {
                 let cnt = nondigits.trailing_zeros() as usize;
