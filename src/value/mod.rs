@@ -10,6 +10,7 @@ mod macros;
 pub mod object;
 mod partial_eq;
 mod ser;
+mod tls_buffer;
 mod value_trait;
 pub(crate) mod visitor;
 

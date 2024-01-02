@@ -15,6 +15,7 @@ use super::{
     allocator::SyncBump,
     object::Pair,
     shared::{get_shared_or_new, Shared},
+    tls_buffer::TlsBuf,
     value_trait::{JsonContainerTrait, JsonValueMutTrait},
     visitor::JsonVisitor,
 };
@@ -403,10 +404,6 @@ impl MetaNode {
         debug_assert!(slice.len() >= Value::MEAT_NODE_COUNT);
         unsafe { &mut *(slice.as_mut_ptr() as *mut MetaNode) }
     }
-}
-
-thread_local! {
-   static NODE_BUF: std::cell::RefCell<Vec<ManuallyDrop<Value>>> = std::cell::RefCell::new(Vec::new());
 }
 
 impl super::value_trait::JsonValueTrait for Value {
@@ -1324,19 +1321,12 @@ impl Value {
         // If json is valid, the max number of value nodes should be
         // half of the valid json length + 2. like as [1,2,3,1,2,3...]
         // if the capacity is not enough, we will return a error.
-        let nodes = NODE_BUF.with(|buf| {
-            let mut nodes = buf.borrow_mut();
-            nodes.clear();
-            nodes.reserve((json.len() / 2) + 2);
-            unsafe {
-                let ptr = (&mut *nodes) as *mut Vec<ManuallyDrop<Value>>;
-                &mut *ptr
-            }
-        });
+        let max_len = (json.len() / 2) + 2;
+        let mut buf = TlsBuf::with_capacity(max_len);
 
         let mut visitor = DocumentVisitor {
             shared: unsafe { &*(self.shared() as *const Shared) },
-            nodes: nodes.into(),
+            nodes: unsafe { NonNull::new_unchecked(buf.as_vec_mut() as *mut _) },
             parent: 0,
         };
         parser.parse_value(&mut visitor)?;
@@ -1352,20 +1342,12 @@ impl Value {
         parser: &mut Parser<R>,
     ) -> Result<()> {
         let remain_len = parser.read.remain();
-        // FIXME: maybe JSON is too large, we need check length here.
-        let nodes = NODE_BUF.with(|buf| {
-            let mut nodes = buf.borrow_mut();
-            nodes.clear();
-            nodes.reserve((remain_len / 2) + 2);
-            unsafe {
-                let ptr = (&mut *nodes) as *mut Vec<ManuallyDrop<Value>>;
-                &mut *ptr
-            }
-        });
+        let max_len = (remain_len / 2) + 2;
+        let mut buf = TlsBuf::with_capacity(max_len);
 
         let mut visitor = DocumentVisitor {
             shared: unsafe { &*(self.shared() as *const Shared) },
-            nodes: nodes.into(),
+            nodes: unsafe { NonNull::new_unchecked(buf.as_vec_mut() as *mut _) },
             parent: 0,
         };
         parser.parse_value_without_padding(&mut visitor)?;
@@ -1775,6 +1757,7 @@ mod test {
             let dom = dom.unwrap();
             let sonic_out = crate::to_string(&dom)?;
             let serde_value2: serde_json::Value = serde_json::from_str(&sonic_out).unwrap();
+
             if serde_value == serde_value2 {
                 test_value_instruct(data)?;
                 Ok(())
@@ -1913,7 +1896,7 @@ mod test {
     fn test_parse_numbrs() {
         let testdata = [
             " 33.3333333043333333",
-            " 33.3333333043333333 ",
+            " 33.3333333053333333 ",
             " 33.3333333043333333--",
             &f64::MAX.to_string(),
             &f64::MIN.to_string(),

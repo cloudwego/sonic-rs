@@ -250,8 +250,6 @@ impl_slice_eq!([], Vec<U>);
 
 use super::{array::Array, object::Object};
 
-// TODO: compare value with object/array.
-
 macro_rules! impl_container_eq {
     ($($ty:ty)*) => {
         $(
