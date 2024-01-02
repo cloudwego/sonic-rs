@@ -594,7 +594,5 @@ mod test {
                         times to test the performance and correctness of the function.";
         assert_eq!(format_string(long_str, dst_ref, true), 129 + 4);
         assert_eq!(dst[..133], *b"\"this is a long string that should be \\\\\\\"quoted and escaped multiple times to test the performance and correctness of the function.\"");
-
-        // TODO: add cross page test
     }
 }
