@@ -42,7 +42,7 @@ A fast Rust JSON library based on SIMD. It has some references to other open-sou
 
 ## Requirements/Notes
 
-1. Faster in x86_64 or aarch64, other architecture is fallback and maybe slower.
+1. Faster in x86_64 or aarch64, other architecture is fallback and maybe very slower.
 
 2. ~~Requires Rust nightly version~~ Support Stable Rust now.
 

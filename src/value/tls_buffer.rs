@@ -52,7 +52,8 @@ impl TlsBuf {
 impl Drop for TlsBuf {
     fn drop(&mut self) {
         if self.need_drop {
-            unsafe { Vec::from_raw_parts(self.buf.as_ptr(), 0, self.buf.as_ref().capacity()) };
+            let boxed: Box<Vec<ManuallyDrop<Value>>> = unsafe { Box::from_raw(self.buf.as_ptr()) };
+            drop(boxed);
         }
     }
 }

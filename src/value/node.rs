@@ -186,10 +186,6 @@ impl Value {
         }
     }
 
-    pub(crate) fn unset_root(&mut self) {
-        drop(self.arc_shared());
-    }
-
     #[doc(hidden)]
     #[inline]
     pub fn mark_root(&mut self) {
@@ -326,14 +322,14 @@ pub(crate) const _: u64 = 0b0011;
 pub(crate) const FLOAT: u64 = 0b0100;
 pub(crate) const UNSIGNED: u64 = 0b0101;
 pub(crate) const SIGNED: u64 = 0b0110;
-pub(crate) const _: u64 = 0b0111;
+pub(crate) const _: u64 = 0b0111; // reserved for ROOT
 /// dynamic node
 pub(crate) const STRING: u64 = 0b1000;
 pub(crate) const _: u64 = 0b1001;
 pub(crate) const ARRAY: u64 = 0b1010;
 pub(crate) const OBJECT: u64 = 0b1011;
 pub(crate) const ROOT_STRING: u64 = 0b1100;
-pub(crate) const _: u64 = 0b1101;
+pub(crate) const _: u64 = 0b1101; // reserved for ROOT
 pub(crate) const ROOT_ARRAY: u64 = 0b1110;
 pub(crate) const ROOT_OBJECT: u64 = 0b1111;
 
@@ -1456,17 +1452,7 @@ pub(crate) enum ValueState<'a> {
     Inlined(&'a mut Value),
 }
 
-#[derive(Default, Debug)]
-pub(crate) struct OwnedValue(Value);
-
-impl From<OwnedValue> for Value {
-    #[inline]
-    fn from(v: OwnedValue) -> Self {
-        v.0
-    }
-}
-
-// Replace dst with a new `OwnedValue`, and return the old `Value` as a `OwnedValue`.
+// Replace dst with a new owned value, and return the old value as owned.
 #[inline]
 pub(crate) fn replace_value(dst: &mut Value, mut src: Value) -> Value {
     match dst.state() {
@@ -1503,7 +1489,7 @@ pub(crate) fn replace_value(dst: &mut Value, mut src: Value) -> Value {
     old
 }
 
-// Write dst with a new `OwnedValue`. The dst is a uninitialized value and should not be drop.
+// Write dst with a new owned value. The dst is a uninitialized value and should not be drop.
 // The uninitialized value is allocated in the `shared` allocator.
 #[inline]
 pub(crate) fn write_value(dst: &mut MaybeUninit<Value>, mut src: Value, shared: &Shared) {

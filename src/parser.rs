@@ -1216,7 +1216,6 @@ where
         perr!(self, EofWhileParsing)
     }
 
-    // TODO: add nospace bitmap optimize
     #[inline(always)]
     pub(crate) fn skip_space(&mut self) -> Option<u8> {
         let reader = &mut self.read;
@@ -1441,7 +1440,6 @@ where
                     // check the remaining digits
                     let nondigts = nondigits.wrapping_shr((traversed) as u32);
                     if nondigts != 0 {
-                        // TODO: optimize without bound-checking here.
                         while let Some(ch) = self.read.peek() {
                             if ch == b'e' || ch == b'E' {
                                 self.read.eat(1);
