@@ -1,9 +1,13 @@
 cfg_if::cfg_if! {
+    // TODO: more percison target demand
     if #[cfg(target_arch = "x86_64")] {
         mod x86_64;
         pub use x86_64::*;
+    } else if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
+        pub(crate) mod fallback;
+        mod aarch64;
+        pub use aarch64::*;
     } else {
-        // TODO: support aarch64 native
         mod fallback;
         pub use fallback::*;
     }

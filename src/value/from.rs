@@ -611,7 +611,6 @@ mod test {
         let a2: Value = vec![1, 2, 3].into();
         assert_eq!(a1, a2);
         let v = Value::from(vec![json!("hi")]);
-        dbg!(&v);
         assert_eq!(v, json!(["hi"]));
     }
 

@@ -27,9 +27,19 @@ impl Mask for Mask256 {
 
     #[inline(always)]
     fn bitmask(self) -> u32 {
-        let lo = self.0 .0.bitmask() as u32;
-        let hi = self.0 .1.bitmask() as u32;
-        lo | (hi << 16)
+        cfg_if::cfg_if! {
+            if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
+                use std::arch::aarch64::uint8x16_t;
+                unsafe {
+                    let v: (uint8x16_t, uint8x16_t) =  std::mem::transmute(self.0);
+                    super::neon::to_bitmask32(v)
+                }
+            } else {
+                let lo = self.0 .0.bitmask() as u32;
+                let hi = self.0 .1.bitmask() as u32;
+                lo | (hi << 16)
+            }
+        }
     }
 
     #[inline(always)]

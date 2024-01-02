@@ -912,7 +912,6 @@ mod test {
             let old_len = array.len();
             let mut new_node = Array::default();
             new_node.push(Value::new_u64(i, std::ptr::null()));
-            dbg!(&new_node.0);
             array.push(new_node.0);
             assert_eq!(array.len(), old_len + 1);
 
@@ -920,12 +919,10 @@ mod test {
             let old_len = array.len();
             let mut new_node = Array::new_in(array.0.shared_clone());
             new_node.push(Value::new_u64(i, std::ptr::null()));
-            dbg!(&new_node.0);
             array.push(new_node.0);
             assert_eq!(array.len(), old_len + 1);
         }
 
-        dbg!(&array);
         for (i, v) in array.iter_mut().enumerate() {
             *v = Value::new_u64(i as u64, std::ptr::null());
         }
