@@ -27,53 +27,47 @@ jobs:
     runs-on: [self-hosted, X64]
     steps:
     - uses: actions/checkout@v3
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@nightly
     - uses: Swatinem/rust-cache@v1
     - name: Run tests
       run: |
-        cargo test
-        ./scripts/run_examples.sh
+        ./scripts/test_all.sh
+        ./scripts/sanitize.sh
   
   test-linux-aarch64:
     runs-on: [self-hosted, arm]
     steps:
       - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
       # - uses: Swatinem/rust-cache@v1
       - name: Run tests
-        run: |
-          cargo test
-          ./scripts/run_examples.sh
+        run:  ./scripts/test_all.sh
 
   test-macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v1
       - name: Run tests
-        run: |
-          cargo test
-          ./scripts/run_examples.sh
+        run: ./scripts/test_all.sh
 
           
   test-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v1
       - name: Run tests
-        run: |
-          cargo test
-          ./scripts/run_examples.sh
+        run: ./scripts/test_all.sh
 
   clippy_lint:
     runs-on: [self-hosted, X64]
 
     steps:
     - uses: actions/checkout@v3
-    - uses: dtolnay/rust-toolchain@stable
+    - uses: dtolnay/rust-toolchain@nightly
       with:
         components: rustfmt, clippy
     - uses: actions-rs/clippy-check@v1
