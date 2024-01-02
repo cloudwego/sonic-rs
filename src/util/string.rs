@@ -42,7 +42,6 @@ impl StringBlock {
     pub fn find(ptr: *const u8) -> Self {
         let v = unsafe {
             let chunk = from_raw_parts(ptr, Self::LANS);
-            // dbg!(crate::parser::as_str(chunk));
             u8x32::from_slice_unaligned_unchecked(chunk)
         };
         let bs_bits = (v.eq(&u8x32::splat(b'\\'))).bitmask();
@@ -99,14 +98,12 @@ pub(crate) unsafe fn parse_string_inplace(
     // loop for string without escaped chars
     loop {
         block = StringBlock::find(*src);
-        // dbg!(&block);
         if block.has_quote_first() {
             let idx = block.quote_index();
             *src = src.add(idx + 1);
             return Ok(src.offset_from(sdst) as usize - 1);
         }
         if block.has_unescaped() {
-            // dbg!(ControlCharacterWhileParsingString);
             return Err(ControlCharacterWhileParsingString);
         }
         if block.has_backslash() {
@@ -147,7 +144,6 @@ pub(crate) unsafe fn parse_string_inplace(
             let v = unsafe {
                 let ptr = *src;
                 let chunk = from_raw_parts(ptr, LANS);
-                // dbg!(crate::parser::as_str(chunk));
                 u8x32::from_slice_unaligned_unchecked(chunk)
             };
             let block = StringBlock {
@@ -155,7 +151,6 @@ pub(crate) unsafe fn parse_string_inplace(
                 quote_bits: (v.eq(&u8x32::splat(b'"'))).bitmask(),
                 unescaped_bits: (v.le(&u8x32::splat(0x1f))).bitmask(),
             };
-            // dbg!(&block);
             if block.has_quote_first() {
                 while **src != b'"' {
                     *dst = **src;
@@ -467,7 +462,8 @@ fn escaped_mask(v: u8x32) -> u32 {
     let x1f = u8x32::splat(0x1f); // 0x00 ~ 0x20
     let blash = u8x32::splat(b'\\');
     let quote = u8x32::splat(b'"');
-    (v.le(&x1f) | v.eq(&blash) | v.eq(&quote)).bitmask()
+    let v = v.le(&x1f) | v.eq(&blash) | v.eq(&quote);
+    v.bitmask()
 }
 
 // only check the src length.

@@ -466,7 +466,6 @@ impl<'a> OccupiedEntry<'a> {
     /// if let Entry::Occupied(mut entry) = obj.entry(&"b") {
     ///     assert_eq!(entry.get_mut(), &true);
     /// }
-    /// dbg!(&obj);
     /// ```
     #[inline]
     pub fn get_mut(&mut self) -> &mut Value {
