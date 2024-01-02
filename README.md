@@ -13,7 +13,9 @@ English | [中文](README_ZH.md)
 
 A fast Rust JSON library based on SIMD. It has some references to other open-source libraries like [sonic_cpp](https://github.com/bytedance/sonic-cpp), [serde_json](https://github.com/serde-rs/json), [sonic](https://github.com/bytedance/sonic), [simdjson](https://github.com/simdjson/simdjson), [rust-std](https://github.com/rust-lang/rust/tree/master/library/core/src/num) and more.
 
-***For Golang user to use `sonic_rs`, please see [for_Golang_user.md](docs/for_Golang_user.md)***
+***For Golang users to use `sonic_rs`, please see [for_Golang_user.md](docs/for_Golang_user.md)***
+
+***For users to migrate from `serde_json` to `sonic_rs`, can see [serdejson_compatibility](docs/serdejson_compatibility.md)***
 
 - [sonic-rs](#sonic-rs)
     - [Requirements/Notes](#requirementsnotes)
@@ -40,11 +42,11 @@ A fast Rust JSON library based on SIMD. It has some references to other open-sou
 
 ## Requirements/Notes
 
-1. Support x86_64 or aarch64. Note that the performance in aarch64 is lower and needs optimization.
+1. Faster in x86_64 or aarch64, other architecture is fallback and maybe slower.
 
 2. ~~Requires Rust nightly version~~ Support Stable Rust now.
 
-3. please add the compile options `-C target-cpu=native`
+3. Please add the compile options `-C target-cpu=native`
 
 ## Quick to use sonic-rs
 
@@ -87,15 +89,17 @@ Benchmarks environment:
 Architecture:        x86_64
 Model name:          Intel(R) Xeon(R) Platinum 8260 CPU @ 2.40GHz
 ```
+AArch64 benchmark data can be found in [benchmark_aarch64.md](docs/benchmark_aarch64.md).
+
 Benchmarks:
 
 - Deserialize Struct: Deserialize the JSON into Rust struct. The defined struct and testdata is from [json-benchmark](https://github.com/serde-rs/json-benchmark)
 
-- Deseirlize Untyped: Deseialize the JSON into a untyped document
+- Deseirlize Untyped: Deseialize the JSON into an untyped document
 
-The serialize benchmarks work in the opposite way.
+The serialize benchmarks work oppositely.
 
-All deserialized benchmark enabled utf-8, and enabled `float_roundtrip` in `serde-json` to get sufficient precision as Rust std. 
+All deserialized benchmarks enabled UTF-8 validation and enabled `float_roundtrip` in `serde-json` to get sufficient precision as Rust std. 
 
 ### Deserialize Struct
 
@@ -146,7 +150,7 @@ canada/serde_json::from_str
 The benchmark will parse JSON into a document. Sonic-rs seems faster for several reasons:
 - There are also no temporary data structures in sonic-rs, as detailed above.
 - Sonic-rs uses a memory arena for the whole document, resulting in fewer memory allocations, better cache-friendliness, and mutability.
-- The JSON object in `sonic_rs::Value` is actually a array. Sonic-rs does not build a hashmap.
+- The JSON object in `sonic_rs::Value` is an array. Sonic-rs does not build a hashmap.
 
 `cargo bench --bench deserialize_value -- --quiet`
 
@@ -252,7 +256,7 @@ citm_catalog/serde_json::to_string
 
 `cargo bench --bench get_from -- --quiet`
 
-The benchmark is getting a specific field from the twitter JSON. 
+The benchmark is getting a specific field from the `twitter.json`. 
 
 - sonic-rs::get_unchecked_from_str: without validate
 - sonic-rs::get_from_str: with validate
@@ -397,7 +401,7 @@ fn main() {
 
 ### JSON Iterator
 
-Parse a object or array JSON into a lazy iterator.
+Parse an object or array JSON into a lazy iterator.
 
 ```rs
 use bytes::Bytes;
@@ -449,24 +453,24 @@ fn main() {
 
 ### JSON LazyValue & Number & RawNumber
 
-If we need parse a JSON value as a raw string, we can use `LazyValue`.
+If we need to parse a JSON value as a raw string, we can use `LazyValue`.
 
-If we need parse a JSON number into a untyped type, we can use `Number`.
+If we need to parse a JSON number into an untyped type, we can use `Number`.
 
-If we need parse a JSON number ***without loss of precision***, we can use `RawNumber`. It likes `encoding/json.Number` in Golang, and can also be parsed from a JSON string.
+If we need to parse a JSON number ***without loss of precision***, we can use `RawNumber`. It likes `encoding/json.Number` in Golang, and can also be parsed from a JSON string.
 
 Detailed examples can be found in [raw_value.rs](examples/raw_value.rs) and [json_number.rs](examples/json_number.rs).
 
 ### Error handle
 
-Sonic's errors is follow as `serde-json` and have a display around the error position, examples in [handle_error.rs](examples/handle_error.rs).
+Sonic's errors are followed as `serde-json` and have a display around the error position, examples in [handle_error.rs](examples/handle_error.rs).
 
 
 ## FAQs
 
 ### About UTF-8
 
-By default, sonic-rs enable the UTF-8 validation, except the `xx_unchecked` APIs.
+By default, sonic-rs enable the UTF-8 validation, except for `xx_unchecked` APIs.
 
 
 ### About floating point precision
