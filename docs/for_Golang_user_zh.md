@@ -35,11 +35,11 @@
 
 - 解析到 Golang JsonNumber:
 
-请直接使用 `sonic_rs::RawNumber`
+  请直接使用 `sonic_rs::RawNumber`
 
 - 解析到 Golang RawMessage:
 
-请直接使用 `sonic_rs::LazyValue<'a>`, 生命周期和输入的JSON绑定，会尽可能减少拷贝开销。如果不想带生命周期，可以使用 `sonic_rs::OwnedLazyValue`. 例如:  [lazyvalue.rs](../examples/lazyvalue.rs)
+  请直接使用 `sonic_rs::LazyValue<'a>`, 生命周期和输入的JSON绑定，会尽可能减少拷贝开销。如果不想带生命周期，可以使用 `sonic_rs::OwnedLazyValue`. 例如:  [lazyvalue.rs](../examples/lazyvalue.rs)
 
 
 

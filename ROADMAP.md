@@ -6,22 +6,22 @@ This document shows key roadmap of `sonic-rs` development. It may help users kno
 
 ## stability
 
-1. support utf-8 validate (Done with `utf8` feature)
+1. ~~support utf-8 validate~~
 
-2. add more fuzzing tests
+2. ~~add more fuzzing tests~~
 
 3. make unittest coverage to 90%
 
 
 ## Portability
 
-0. make sonic-rs support stable Rust (The most important now)
+0. ~~make sonic-rs support stable Rust~~
 
-1. optimize the performance in aarch64
+1. optimize the performance in aarch64 (WIP: 50%)
 
 2. runtime CPU detection
 
-3. support fallback in unsupported arch
+3. ~~support fallback in unsupported arch~~
 
 
 ## Features

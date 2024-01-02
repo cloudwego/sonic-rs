@@ -16,6 +16,8 @@ sonic-rs 是一个基于 SIMD 的高性能 JSON 库。它参考了其他开源�
 
 ***对于 Golang 用户迁移 Rust 使用 `sonic_rs`, 请参考 [for_Golang_user_zh.md](docs/for_Golang_user_zh.md)***
 
+***对于 用户从 `serde_json` 迁移 `sonic_rs`, 请参考 [serdejson_compatibility](docs/serdejson_compatibility.md)***
+
 - [sonic-rs](#sonic-rs)
     - [要求/注意事项](#要求注意事项)
     - [如何使用 sonic-rs](#如何使用-sonic-rs)
@@ -41,8 +43,10 @@ sonic-rs 是一个基于 SIMD 的高性能 JSON 库。它参考了其他开源�
 
 ## ***要求/注意事项***
 
-1. 支持 x86_64 或 aarch64，aarch64 的性能较低，需要优化。
+1. 支持 x86_64 或 aarch64。其他架构下走 fallback 逻辑，性能较差。
+
 2. ~~需要 Rust nightly 版本~~ 已经支持 Rust Stable。
+
 3. 在编译选项中开启 `-C target-cpu=native`
 
 ## 如何使用 sonic-rs
@@ -81,6 +85,7 @@ sonic-rs 的主要优化是使用 SIMD。然而，sonic-rs 没有使用来自`si
 Architecture:        x86_64
 Model name:          Intel(R) Xeon(R) Platinum 8260 CPU @ 2.40GHz
 ```
+AArch64 架构下的测试数据见 [benchmark_aarch64.md](docs/benchmark_aarch64.md)。
 
 基准测试主要有两个方面：
 
