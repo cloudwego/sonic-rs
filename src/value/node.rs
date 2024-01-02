@@ -369,7 +369,9 @@ pub(crate) union Data {
     pub(crate) uval: u64,
     pub(crate) ival: i64,
     pub(crate) fval: f64,
-    pub(crate) sval: *const u8,
+    /// For portability, we do not use a tag in the pointer to store the str length.
+    /// And this consumes one more bytes than old value design.
+    pub(crate) sval: *const str,
     pub(crate) achildren: *mut Value,
     pub(crate) ochildren: *mut Pair,
     pub(crate) parent: u64,
@@ -647,7 +649,7 @@ impl Value {
     pub fn from_static_str(val: &'static str) -> Self {
         let mut v = Value {
             meta: Meta::new(STRING, std::ptr::null()),
-            data: Data { sval: val.as_ptr() },
+            data: Data { sval: val },
         };
         v.set_str_len(val.len());
         v
@@ -760,8 +762,7 @@ impl Value {
     pub fn new_str(val: &str, share: *const Shared) -> Self {
         let mut v = Value {
             meta: Meta::new(STRING, share),
-            // TODO: optimize
-            data: Data { sval: val.as_ptr() },
+            data: Data { sval: val },
         };
         v.set_str_len(val.len());
         v
@@ -773,7 +774,7 @@ impl Value {
         let s = share.alloc.alloc_str(src);
         let mut v = Value {
             meta: Meta::new(STRING, share),
-            data: Data { sval: s.as_ptr() },
+            data: Data { sval: s },
         };
         v.set_str_len(s.len());
         v
@@ -787,7 +788,7 @@ impl Value {
         let s = shared.alloc.alloc_str(src.as_ref());
         let mut v = Value {
             meta: Meta::new(ROOT_STRING, shared),
-            data: Data { sval: s.as_ptr() },
+            data: Data { sval: s },
         };
         v.set_str_len(s.len());
         v
@@ -885,17 +886,17 @@ impl Value {
     }
 
     #[inline]
-    pub(crate) fn set_str_len(&mut self, len: usize) {
-        // check length and the exist ptr is valid
-        unsafe {
-            debug_assert!(len < crate::value::MAX_STR_SIZE);
-            debug_assert!(self.meta.val >> 48 == 0);
-            debug_assert!(self.data.uval >> 48 == 0);
-            let hi = len >> 16;
-            let lo = len & 0xFFFF;
-            self.meta.val |= (hi as u64) << 48;
-            self.data.uval |= (lo as u64) << 48;
-        }
+    pub(crate) fn set_str_len(&mut self, _len: usize) {
+        // // check length and the exist ptr is valid
+        // unsafe {
+        //     debug_assert!(len < crate::value::MAX_STR_SIZE);
+        //     debug_assert!(self.meta.val >> 48 == 0);
+        //     debug_assert!(self.data.uval >> 48 == 0);
+        //     let hi = len >> 16;
+        //     let lo = len & 0xFFFF;
+        //     self.meta.val |= (hi as u64) << 48;
+        //     self.data.uval |= (lo as u64) << 48;
+        // }
     }
 
     #[inline]
@@ -1401,11 +1402,13 @@ impl Value {
 
     pub(crate) fn str_len(&self) -> usize {
         debug_assert!(self.is_str());
-        unsafe {
-            let hi = (self.meta.val >> 48) as usize;
-            let lo = (self.data.uval >> 48) as usize;
-            hi << 16 | lo
-        }
+        let s = unsafe { &*self.data.sval };
+        s.len()
+        // unsafe {
+        //     let hi = (self.meta.val >> 48) as usize;
+        //     let lo = (self.data.uval >> 48) as usize;
+        //     hi << 16 | lo
+        // }
     }
 
     pub(crate) fn len(&self) -> usize {
