@@ -74,16 +74,15 @@ impl Clone for Value {
     /// assert_eq!(a, a.clone());
     /// ```
     fn clone(&self) -> Self {
-        match self.get_type() {
-            JsonType::Array | JsonType::Object if !self.is_empty() => {
+        match self.typ() {
+            ROOT_ARRAY | ROOT_OBJECT | ARRAY | OBJECT if !self.is_empty() => {
                 let (shared, _) = get_shared_or_new();
                 let mut v = self.clone_in(shared);
                 v.mark_root();
                 v
             }
-            JsonType::String => {
+            STRING | ROOT_STRING => {
                 let s = self.str();
-                // TODO: optimize static string
                 if s.is_empty() {
                     return Value::new_str("", std::ptr::null());
                 }
@@ -92,9 +91,9 @@ impl Clone for Value {
                 v.mark_root();
                 v
             }
-            JsonType::Array if self.is_empty() => Value::new_array(std::ptr::null(), 0),
-            JsonType::Object if self.is_empty() => Value::new_object(std::ptr::null(), 0),
-            _ => {
+            ROOT_ARRAY | ARRAY if self.is_empty() => Value::new_array(std::ptr::null(), 0),
+            ROOT_OBJECT | OBJECT if self.is_empty() => Value::new_object(std::ptr::null(), 0),
+            NULL | FALSE | TRUE | SIGNED | UNSIGNED | FLOAT | STATIC_STR => {
                 let mut v = Value {
                     meta: self.meta,
                     data: self.data,
@@ -102,6 +101,7 @@ impl Clone for Value {
                 v.mark_shared(std::ptr::null());
                 v
             }
+            _ => unreachable!("invalid value type {}", self.typ()),
         }
     }
 }
@@ -198,8 +198,8 @@ impl Value {
     }
 
     pub(crate) fn clone_in(&self, shared: &Shared) -> Self {
-        match self.get_type() {
-            JsonType::Array => {
+        match self.typ() {
+            ROOT_ARRAY | ARRAY => {
                 let len = self.len();
                 let mut arr = Value::new_array(shared, len);
                 if len > 0 {
@@ -209,7 +209,7 @@ impl Value {
                 }
                 arr
             }
-            JsonType::Object => {
+            ROOT_OBJECT | OBJECT => {
                 let len = self.len();
                 let mut obj = Value::new_object(shared, len);
                 if len > 0 {
@@ -219,15 +219,17 @@ impl Value {
                 }
                 obj
             }
-            JsonType::String => Value::copy_str(self.as_str().unwrap(), shared),
-            _ => {
+            ROOT_STRING | STRING => Value::copy_str(self.as_str().unwrap(), shared),
+            NULL | FALSE | TRUE | SIGNED | UNSIGNED | FLOAT | STATIC_STR => {
                 let mut v = Value {
                     meta: self.meta,
                     data: self.data,
                 };
+                // each children node should be marked with shared allocator
                 v.mark_shared(shared);
                 v
             }
+            _ => unreachable!("invalid value type {}", self.typ()),
         }
     }
 
@@ -322,14 +324,14 @@ pub(crate) const _: u64 = 0b0011;
 pub(crate) const FLOAT: u64 = 0b0100;
 pub(crate) const UNSIGNED: u64 = 0b0101;
 pub(crate) const SIGNED: u64 = 0b0110;
-pub(crate) const _: u64 = 0b0111; // reserved for ROOT
+pub(crate) const STATIC_STR: u64 = 0b0111;
 /// dynamic node
 pub(crate) const STRING: u64 = 0b1000;
-pub(crate) const _: u64 = 0b1001;
+pub(crate) const _: u64 = 0b1001; // reserved
 pub(crate) const ARRAY: u64 = 0b1010;
 pub(crate) const OBJECT: u64 = 0b1011;
 pub(crate) const ROOT_STRING: u64 = 0b1100;
-pub(crate) const _: u64 = 0b1101; // reserved for ROOT
+pub(crate) const _: u64 = 0b1101; // reserved
 pub(crate) const ROOT_ARRAY: u64 = 0b1110;
 pub(crate) const ROOT_OBJECT: u64 = 0b1111;
 
@@ -411,10 +413,10 @@ impl super::value_trait::JsonValueTrait for Value {
             NULL => JsonType::Null,
             FALSE | TRUE => JsonType::Boolean,
             SIGNED | UNSIGNED | FLOAT => JsonType::Number,
-            STRING | ROOT_STRING => JsonType::String,
+            STRING | ROOT_STRING | STATIC_STR => JsonType::String,
             ARRAY | ROOT_ARRAY => JsonType::Array,
             OBJECT | ROOT_OBJECT => JsonType::Object,
-            _ => unreachable!(),
+            _ => unreachable!("invalid value type {}.", self.typ()),
         }
     }
 
@@ -630,7 +632,7 @@ impl Value {
             UNSIGNED => ValueRef::Number(self.as_u64().unwrap().into()),
             SIGNED => ValueRef::Number(self.as_i64().unwrap().into()),
             FLOAT => ValueRef::Number(Number::from_f64(self.as_f64().unwrap()).unwrap()),
-            STRING | ROOT_STRING => ValueRef::String(self.as_str().unwrap()),
+            STRING | ROOT_STRING | STATIC_STR => ValueRef::String(self.as_str().unwrap()),
             ARRAY | ROOT_ARRAY => ValueRef::Array(self.as_array().unwrap()),
             OBJECT | ROOT_OBJECT => ValueRef::Object(self.as_object().unwrap()),
             _ => unreachable!(),
@@ -638,10 +640,22 @@ impl Value {
     }
 
     /// Create a new string Value from a `&'static str` with zero-copy.
+    ///
+    /// # Example
+    /// ```
+    /// use sonic_rs::{array, JsonValueTrait, Value};
+    ///
+    /// let s = "hello";
+    /// let v1 = Value::from_static_str("hello");
+    /// assert_eq!(v1.as_str().unwrap().as_ptr(), s.as_ptr());
+    ///
+    /// let v2 = v1.clone();
+    /// assert_eq!(v1.as_str().unwrap().as_ptr(), v2.as_str().unwrap().as_ptr());
+    /// ```
     #[inline]
     pub fn from_static_str(val: &'static str) -> Self {
         let mut v = Value {
-            meta: Meta::new(STRING, std::ptr::null()),
+            meta: Meta::new(STATIC_STR, std::ptr::null()),
             data: Data { sval: val },
         };
         v.set_str_len(val.len());
@@ -1682,7 +1696,7 @@ impl Serialize for Value {
             SIGNED => serializer.serialize_i64(self.i64()),
             UNSIGNED => serializer.serialize_u64(self.u64()),
             FLOAT => serializer.serialize_f64(self.f64()),
-            STRING | ROOT_STRING => serializer.serialize_str(self.str()),
+            STRING | ROOT_STRING | STATIC_STR => serializer.serialize_str(self.str()),
             ARRAY | ROOT_ARRAY => {
                 let nodes = self.array();
                 let mut seq = tri!(serializer.serialize_seq(Some(nodes.len())));
