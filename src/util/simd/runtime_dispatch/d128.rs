@@ -234,7 +234,7 @@ impl BitAnd for Mask128 {
             #[cfg(target_arch = "x86_64")]
             (Self::Sse2(lhs), Self::Sse2(rhs)) => lhs.bitand(rhs).into(),
             #[cfg(target_arch = "aarch64")]
-            (Self::Neon(lhs), Self::Sse(rhs)) => lhs.bitand(rhs).into(),
+            (Self::Neon(lhs), Self::Neon(rhs)) => lhs.bitand(rhs).into(),
             (Self::Fallback(lhs), Self::Fallback(rhs)) => lhs.bitand(rhs).into(),
             _ => unreachable!(),
         }
@@ -249,7 +249,7 @@ impl BitOr for Mask128 {
             #[cfg(target_arch = "x86_64")]
             (Self::Sse2(lhs), Self::Sse2(rhs)) => lhs.bitor(rhs).into(),
             #[cfg(target_arch = "aarch64")]
-            (Self::Neon(lhs), Self::Sse(rhs)) => lhs.bitor(rhs).into(),
+            (Self::Neon(lhs), Self::Neon(rhs)) => lhs.bitor(rhs).into(),
             (Self::Fallback(lhs), Self::Fallback(rhs)) => lhs.bitor(rhs).into(),
             _ => unreachable!(),
         }
@@ -262,7 +262,7 @@ impl BitOrAssign for Mask128 {
             #[cfg(target_arch = "x86_64")]
             (Self::Sse2(lhs), Self::Sse2(rhs)) => lhs.bitor_assign(rhs),
             #[cfg(target_arch = "aarch64")]
-            (Self::Neon(lhs), Self::Sse(rhs)) => lhs.bitor_assign(rhs),
+            (Self::Neon(lhs), Self::Neon(rhs)) => lhs.bitor_assign(rhs),
             (Self::Fallback(lhs), Self::Fallback(rhs)) => lhs.bitor_assign(rhs),
             _ => unreachable!(),
         };
