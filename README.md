@@ -46,11 +46,11 @@ A fast Rust JSON library based on SIMD. It has some references to other open-sou
 
 2. ~~Requires Rust nightly version~~ Support Stable Rust now.
 
-3. Please add the compile options `-C target-cpu=native`
+3. Please add the compile options `-C target-cpu=native` (unless you enable the `runtime-dispatch` feature).
 
 ## Quick to use sonic-rs
 
-To ensure that SIMD instruction is used in sonic-rs, you need to add rustflags `-C target-cpu=native` and compile on the host machine. For example, Rust flags can be configured in Cargo [config](.cargo/config).
+~~To ensure that SIMD instruction is used in sonic-rs, you need to add rustflags `-C target-cpu=native` and compile on the host machine. For example, Rust flags can be configured in Cargo [config](.cargo/config).~~
 
 Add sonic-rs in `Cargo.toml`
 
