@@ -35,7 +35,7 @@ cfg_if::cfg_if! {
         cfg_if::cfg_if! {
             if #[cfg(target_feature = "sse2")] {
                 use self::sse2::*;
-            } else if #[cfg(target_arch="aarch64")] {
+            } else if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
                 use self::neon::*;
             } else {
                 // TODO: support wasm

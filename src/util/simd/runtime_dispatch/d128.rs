@@ -28,7 +28,9 @@ impl Simd for Simd128i {
         }
 
         #[cfg(target_arch = "aarch64")]
-        return Self::Neon(Simd::loadu(ptr));
+        if is_aarch64_feature_detected!("neon") {
+            return Self::Neon(Simd::loadu(ptr));
+        }
 
         Self::Fallback(Simd::loadu(ptr))
     }
@@ -64,7 +66,9 @@ impl Simd for Simd128i {
         }
 
         #[cfg(target_arch = "aarch64")]
-        return Self::Neon(Simd::splat(ch));
+        if is_aarch64_feature_detected!("neon") {
+            return Self::Neon(Simd::splat(ch));
+        }
 
         Self::Fallback(Simd::splat(ch))
     }
@@ -115,7 +119,9 @@ impl Simd for Simd128u {
         }
 
         #[cfg(target_arch = "aarch64")]
-        return Self::Neon(Simd::loadu(ptr));
+        if is_aarch64_feature_detected!("neon") {
+            return Self::Neon(Simd::loadu(ptr));
+        }
 
         Self::Fallback(Simd::loadu(ptr))
     }
@@ -151,7 +157,9 @@ impl Simd for Simd128u {
         }
 
         #[cfg(target_arch = "aarch64")]
-        return Self::Neon(Simd::splat(ch));
+        if is_aarch64_feature_detected!("neon") {
+            return Self::Neon(Simd::splat(ch));
+        }
 
         Self::Fallback(Simd::splat(ch))
     }
@@ -210,7 +218,9 @@ impl Mask for Mask128 {
         }
 
         #[cfg(target_arch = "aarch64")]
-        return Self::Neon(Mask::splat(b));
+        if is_aarch64_feature_detected!("neon") {
+            return Self::Neon(Mask::splat(b));
+        }
 
         Self::Fallback(Mask::splat(b))
     }
