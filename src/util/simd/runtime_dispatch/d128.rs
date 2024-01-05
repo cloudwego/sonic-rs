@@ -23,12 +23,12 @@ impl Simd for Simd128i {
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
         #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("sse2") {
+        if std::arch::is_x86_feature_detected!("sse2") {
             return Self::Sse2(Simd::loadu(ptr));
         }
 
         #[cfg(target_arch = "aarch64")]
-        if is_aarch64_feature_detected!("neon") {
+        if std::arch::is_aarch64_feature_detected!("neon") {
             return Self::Neon(Simd::loadu(ptr));
         }
 
@@ -61,12 +61,12 @@ impl Simd for Simd128i {
     #[inline(always)]
     fn splat(ch: u8) -> Self {
         #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("sse2") {
+        if std::arch::is_x86_feature_detected!("sse2") {
             return Self::Sse2(Simd::splat(ch));
         }
 
         #[cfg(target_arch = "aarch64")]
-        if is_aarch64_feature_detected!("neon") {
+        if std::arch::is_aarch64_feature_detected!("neon") {
             return Self::Neon(Simd::splat(ch));
         }
 
@@ -114,12 +114,12 @@ impl Simd for Simd128u {
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
         #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("sse2") {
+        if std::arch::is_x86_feature_detected!("sse2") {
             return Self::Sse2(Simd::loadu(ptr));
         }
 
         #[cfg(target_arch = "aarch64")]
-        if is_aarch64_feature_detected!("neon") {
+        if std::arch::is_aarch64_feature_detected!("neon") {
             return Self::Neon(Simd::loadu(ptr));
         }
 
@@ -152,12 +152,12 @@ impl Simd for Simd128u {
     #[inline(always)]
     fn splat(ch: u8) -> Self {
         #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("sse2") {
+        if std::arch::is_x86_feature_detected!("sse2") {
             return Self::Sse2(Simd::splat(ch));
         }
 
         #[cfg(target_arch = "aarch64")]
-        if is_aarch64_feature_detected!("neon") {
+        if std::arch::is_aarch64_feature_detected!("neon") {
             return Self::Neon(Simd::splat(ch));
         }
 
@@ -213,12 +213,12 @@ impl Mask for Mask128 {
 
     fn splat(b: bool) -> Self {
         #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("sse2") {
+        if std::arch::is_x86_feature_detected!("sse2") {
             return Self::Sse2(Mask::splat(b));
         }
 
         #[cfg(target_arch = "aarch64")]
-        if is_aarch64_feature_detected!("neon") {
+        if std::arch::is_aarch64_feature_detected!("neon") {
             return Self::Neon(Mask::splat(b));
         }
 

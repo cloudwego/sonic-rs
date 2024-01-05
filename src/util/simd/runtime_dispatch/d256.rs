@@ -21,7 +21,7 @@ impl Simd for Simd256i {
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
         #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("avx2") {
+        if std::arch::is_x86_feature_detected!("avx2") {
             return Self::Avx2(Simd::loadu(ptr));
         }
 
@@ -50,7 +50,7 @@ impl Simd for Simd256i {
     #[inline(always)]
     fn splat(ch: u8) -> Self {
         #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("avx2") {
+        if std::arch::is_x86_feature_detected!("avx2") {
             return Self::Avx2(Simd::splat(ch));
         }
 
@@ -92,7 +92,7 @@ impl Simd for Simd256u {
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
         #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("avx2") {
+        if std::arch::is_x86_feature_detected!("avx2") {
             return Self::Avx2(Simd::loadu(ptr));
         }
 
@@ -121,7 +121,7 @@ impl Simd for Simd256u {
     #[inline(always)]
     fn splat(ch: u8) -> Self {
         #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("avx2") {
+        if std::arch::is_x86_feature_detected!("avx2") {
             return Self::Avx2(Simd::splat(ch));
         }
 
@@ -169,7 +169,7 @@ impl Mask for Mask256 {
 
     fn splat(b: bool) -> Self {
         #[cfg(target_arch = "x86_64")]
-        if is_x86_feature_detected!("avx2") {
+        if std::arch::is_x86_feature_detected!("avx2") {
             return Self::Avx2(Mask::splat(b));
         }
 
