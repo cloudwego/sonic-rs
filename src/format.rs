@@ -1,3 +1,5 @@
+//! Formtter for JSON serialization.
+
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
 
 use std::io::{self, Write};

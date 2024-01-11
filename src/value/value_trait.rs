@@ -37,6 +37,7 @@ impl From<u8> for JsonType {
 }
 
 /// A trait for all JSON values. Used by `Value` and `LazyValue`.
+///
 /// The `Option<V: JsonValueTrait>` and `Result<V: JsonValueTrait, E>` also implement this trait.
 /// The `Option::None` or `Result::Err(_)` will be viewed as a null value.
 pub trait JsonValueTrait {

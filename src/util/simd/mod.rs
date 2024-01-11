@@ -1,5 +1,6 @@
 mod traits;
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! impl_lanes {
     ($simd: ty, $lane: expr) => {

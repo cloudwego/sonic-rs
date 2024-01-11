@@ -1,3 +1,4 @@
+//! Represents a parsed JSON object.
 use std::marker::PhantomData;
 
 use super::{

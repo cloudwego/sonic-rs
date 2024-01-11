@@ -1,4 +1,11 @@
-use std::{borrow::Cow, hash::Hash, str::from_utf8_unchecked, sync::Arc};
+use std::{
+    borrow::Cow,
+    fmt,
+    fmt::{Debug, Display},
+    hash::Hash,
+    str::from_utf8_unchecked,
+    sync::Arc,
+};
 
 use faststr::FastStr;
 
@@ -59,7 +66,6 @@ use crate::{
 /// let data: TestLazyValue = sonic_rs::from_str(input).unwrap();
 /// assert_eq!(data.borrowed_lv.as_raw_str(), "\"hello\"");
 /// ```
-#[derive(Debug)]
 pub struct LazyValue<'a> {
     // the raw slice from origin json
     pub(crate) raw: JsonSlice<'a>,
@@ -72,6 +78,21 @@ impl Default for LazyValue<'_> {
             raw: JsonSlice::Raw(&b"null"[..]),
             unescape: None,
         }
+    }
+}
+
+impl<'a> Debug for LazyValue<'a> {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter
+            .debug_tuple("LazyValue")
+            .field(&format_args!("{}", &self.as_raw_str()))
+            .finish()
+    }
+}
+
+impl<'a> Display for LazyValue<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.as_raw_str())
     }
 }
 

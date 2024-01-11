@@ -1,8 +1,11 @@
+//! A dynamic type to representing any valid JSON value.
+
 mod allocator;
 pub mod array;
 pub(crate) mod de;
 mod from;
 pub(crate) mod node;
+#[doc(hidden)]
 pub mod shared;
 mod tryfrom;
 #[macro_use]
@@ -23,7 +26,9 @@ pub use self::node::{Value, ValueRef};
 #[doc(inline)]
 pub use self::object::Object;
 #[doc(inline)]
-pub use self::ser::{to_value, to_value_in};
+pub use self::ser::to_value;
+#[doc(hidden)]
+pub use self::ser::to_value_in;
 #[doc(inline)]
 pub use self::value_trait::{JsonContainerTrait, JsonType, JsonValueMutTrait, JsonValueTrait};
 

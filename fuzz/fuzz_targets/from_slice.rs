@@ -103,6 +103,8 @@ fuzz_target!(|data: &[u8]| {
     test_struct!(Enum, data);
     test_struct!(String, data);
     test_struct!(f64, data);
+    test_struct!(u64, data);
+    test_struct!(i64, data);
 });
 
 fn compare_lazyvalue(jv: &JValue, sv: &sonic_rs::LazyValue) {

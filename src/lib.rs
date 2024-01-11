@@ -3,6 +3,7 @@
 #![doc(test(attr(warn(unused))))]
 
 mod error;
+mod index;
 mod input;
 mod parser;
 mod pointer;
@@ -10,7 +11,6 @@ mod reader;
 mod util;
 
 pub mod format;
-pub mod index;
 pub mod lazyvalue;
 pub mod serde;
 pub mod value;

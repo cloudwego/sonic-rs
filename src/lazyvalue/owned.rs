@@ -1,4 +1,10 @@
-use std::{hash::Hash, str::from_utf8_unchecked, sync::Arc};
+use std::{
+    fmt,
+    fmt::{Debug, Display},
+    hash::Hash,
+    str::from_utf8_unchecked,
+    sync::Arc,
+};
 
 use faststr::FastStr;
 
@@ -10,6 +16,8 @@ use crate::{
 /// OwnedLazyValue wrappers a unparsed raw JSON text. It is owned.
 ///
 /// It can be converted from [`LazyValue`](crate::lazyvalue::LazyValue). It can be used for serde.
+///
+/// Default value is a raw JSON text `null`.
 ///
 /// # Examples
 ///
@@ -58,46 +66,10 @@ use crate::{
 /// assert_eq!(data.borrowed_lv.as_raw_str(), "\"hello\"");
 /// assert_eq!(data.owned_lv.as_raw_str(), "\"world\"");
 /// ```
-#[derive(Debug)]
 pub struct OwnedLazyValue {
     // the raw slice from origin json
     pub(crate) raw: FastStr,
     unescape: Option<Arc<str>>,
-}
-
-impl PartialEq for OwnedLazyValue {
-    fn eq(&self, other: &Self) -> bool {
-        self.raw == other.raw
-    }
-}
-
-impl Clone for OwnedLazyValue {
-    fn clone(&self) -> Self {
-        Self {
-            raw: self.raw.clone(),
-            unescape: self.unescape.clone(),
-        }
-    }
-}
-
-impl PartialOrd for OwnedLazyValue {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for OwnedLazyValue {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.raw.cmp(&other.raw)
-    }
-}
-
-impl Eq for OwnedLazyValue {}
-
-impl Hash for OwnedLazyValue {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.raw.hash(state)
-    }
 }
 
 impl JsonValueTrait for OwnedLazyValue {
@@ -245,5 +217,64 @@ impl<'de> From<LazyValue<'de>> for OwnedLazyValue {
             raw,
             unescape: lv.unescape,
         }
+    }
+}
+
+impl Debug for OwnedLazyValue {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter
+            .debug_tuple("OwnedLazyValue")
+            .field(&format_args!("{}", &self.as_raw_str()))
+            .finish()
+    }
+}
+
+impl Display for OwnedLazyValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.as_raw_str())
+    }
+}
+
+impl Default for OwnedLazyValue {
+    fn default() -> Self {
+        Self {
+            raw: FastStr::new("null"),
+            unescape: None,
+        }
+    }
+}
+
+impl PartialEq for OwnedLazyValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.raw == other.raw
+    }
+}
+
+impl Clone for OwnedLazyValue {
+    fn clone(&self) -> Self {
+        Self {
+            raw: self.raw.clone(),
+            unescape: self.unescape.clone(),
+        }
+    }
+}
+
+impl PartialOrd for OwnedLazyValue {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for OwnedLazyValue {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.raw.cmp(&other.raw)
+    }
+}
+
+impl Eq for OwnedLazyValue {}
+
+impl Hash for OwnedLazyValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.raw.hash(state)
     }
 }
