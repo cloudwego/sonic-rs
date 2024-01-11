@@ -40,3 +40,5 @@ pub use crate::value::{
     from_value, to_value, Array, JsonContainerTrait, JsonType, JsonValueMutTrait, JsonValueTrait,
     Object, Value, ValueRef,
 };
+
+pub mod prelude;
