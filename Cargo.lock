@@ -859,7 +859,7 @@ checksum = "942b4a808e05215192e39f4ab80813e599068285906cc91aa64f923db842bd5a"
 
 [[package]]
 name = "sonic-rs"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "arrayref",
  "bumpalo",
