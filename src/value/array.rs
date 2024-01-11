@@ -1,3 +1,4 @@
+//! Represents a parsed JSON array. Its APIs are likes `Vec<Value>`.
 use std::{
     fmt::Debug,
     iter::FusedIterator,

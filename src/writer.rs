@@ -1,4 +1,6 @@
-use std::{io, io::BufWriter, mem::MaybeUninit, slice::from_raw_parts_mut};
+//! Extend trait from io::Write for JSON serializing.
+
+use std::{io, io::BufWriter as IoBufWriter, mem::MaybeUninit, slice::from_raw_parts_mut};
 
 use bytes::{buf::Writer, BytesMut};
 
@@ -56,7 +58,7 @@ impl WriteExt for Writer<BytesMut> {
     }
 }
 
-impl<W: WriteExt> WriteExt for BufWriter<W> {
+impl<W: WriteExt + ?Sized> WriteExt for IoBufWriter<W> {
     fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
         self.get_mut().reserve_with(additional)
     }

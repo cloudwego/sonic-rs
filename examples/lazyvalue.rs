@@ -1,15 +1,30 @@
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use sonic_rs::{LazyValue, OwnedLazyValue};
 
 fn main() {
-    #[derive(Debug, Deserialize, Serialize, PartialEq)]
+    let input = r#"{ "borrowed": "hello", "owned": "world" }"#;
+
+    // use sonic_rs
+    #[derive(Debug, Deserialize, Serialize)]
     struct TestLazyValue<'a> {
         #[serde(borrow)]
-        borrowed_lv: LazyValue<'a>,
-        owned_lv: OwnedLazyValue,
+        borrowed: LazyValue<'a>,
+        owned: OwnedLazyValue,
     }
-    let input = r#"{ "borrowed_lv": "hello", "owned_lv": "world" }"#;
     let data: TestLazyValue = sonic_rs::from_str(input).unwrap();
-    assert_eq!(data.borrowed_lv.as_raw_str(), "\"hello\"");
-    assert_eq!(data.owned_lv.as_raw_str(), "\"world\"");
+    assert_eq!(data.borrowed.as_raw_str(), "\"hello\"");
+    assert_eq!(data.owned.as_raw_str(), "\"world\"");
+
+    // use serde_json
+    #[derive(Debug, Deserialize, Serialize)]
+    struct TestRawValue<'a> {
+        #[serde(borrow)]
+        borrowed: &'a RawValue,
+        owned: Box<RawValue>,
+    }
+
+    let data: TestRawValue = serde_json::from_str(input).unwrap();
+    assert_eq!(data.borrowed.get(), "\"hello\"");
+    assert_eq!(data.owned.get(), "\"world\"");
 }

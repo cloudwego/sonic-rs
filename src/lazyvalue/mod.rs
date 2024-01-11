@@ -1,3 +1,5 @@
+//! A lazy type to representing a unparsed raw JSON text for lazy operators.
+
 mod get;
 mod iterator;
 mod owned;
