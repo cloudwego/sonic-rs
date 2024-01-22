@@ -54,6 +54,11 @@ use crate::{
 ///
 /// assert_eq!(v1["a"], 123);
 /// ```
+///
+/// # Notes
+///
+/// Actually the lookup in `Value` is O(n), not O(1). If you want to use `Value` as a map, recommend
+/// to use `serde_json::Value`.
 pub struct Value {
     pub(crate) meta: Meta,
     pub(crate) data: Data,
