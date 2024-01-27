@@ -117,8 +117,8 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         };
 
         let value = match peek {
-            b'-' => tri!(self.parser.parse_number(true, true)).visit(visitor),
-            b'0'..=b'9' => tri!(self.parser.parse_number(false, true)).visit(visitor),
+            b'-' => tri!(self.parser.parse_number(true, true)).1.visit(visitor),
+            b'0'..=b'9' => tri!(self.parser.parse_number(false, true)).1.visit(visitor),
             _ => Err(self.peek_invalid_type(peek, &visitor)),
         };
 
@@ -289,8 +289,8 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 tri!(self.parser.parse_literal("alse"));
                 visitor.visit_bool(false)
             }
-            b'-' => tri!(self.parser.parse_number(true, true)).visit(visitor),
-            b'0'..=b'9' => tri!(self.parser.parse_number(false, true)).visit(visitor),
+            b'-' => tri!(self.parser.parse_number(true, true)).1.visit(visitor),
+            b'0'..=b'9' => tri!(self.parser.parse_number(false, true)).1.visit(visitor),
             b'"' => {
                 self.scratch.clear();
                 match tri!(self.parser.parse_str_impl(&mut self.scratch)) {

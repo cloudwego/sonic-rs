@@ -1667,24 +1667,12 @@ impl<'de, 'a: 'de> JsonVisitor<'de> for DocumentVisitor<'a> {
     // this api should never used for parsing with padding buffer
     #[inline(always)]
     fn visit_str(&mut self, value: &str) -> bool {
-        let alloc = unsafe { &*self.shared.alloc.0.data_ptr() };
-        let value = alloc.alloc_str(value);
-        self.push_node(Value::new_str(value, self.shared as *const _))
-    }
-
-    #[inline(always)]
-    fn visit_borrowed_str(&mut self, value: &'de str) -> bool {
         self.push_node(Value::new_str(value, self.shared as *const _))
     }
 
     #[inline(always)]
     fn visit_key(&mut self, key: &str) -> bool {
         self.visit_str(key)
-    }
-
-    #[inline(always)]
-    fn visit_borrowed_key(&mut self, key: &'de str) -> bool {
-        self.visit_borrowed_str(key)
     }
 }
 
@@ -1724,136 +1712,130 @@ impl Serialize for Value {
 }
 
 #[cfg(test)]
+#[allow(unused_unsafe)]
+#[allow(non_snake_case)]
 mod test {
     use std::path::Path;
 
+    use paste::paste;
+    use serde_json::Value as SerdeValue;
+
     use super::*;
-    use crate::{
-        error::{make_error, Result},
-        from_slice, from_str, pointer,
-    };
+    use crate::{error::Result, from_slice, pointer};
 
     #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
     struct ValueInStruct {
         val: Value,
     }
 
-    fn test_value_instruct(data: &str) -> Result<()> {
-        if let Ok(val) = from_str::<Value>(data) {
-            let valin = ValueInStruct { val: val.clone() };
-            let out = crate::to_string(&valin)?;
-            let valin2: ValueInStruct = from_str(&out).unwrap();
-            if valin2.val != val {
-                diff_json(data);
-                return Err(make_error(format!(
-                    "invalid result when test parse valid json to ValueInStruct {}",
-                    data
-                )));
+    macro_rules! test_value {
+        ($parse:ident, $serialize:ident, $value:ty) => {
+            paste! {
+                fn [<test_value_ $value>]  (data: &str, msg: &str) {
+                    let ret: Result<$value> = unsafe { $parse(data.as_bytes()) };
+                    if let Ok(expect) = serde_json::from_str(data) {
+                        // parse JSON should be ok
+                        let value = ret.unwrap();
+                        let sonic_out = $serialize(&value)
+                            .expect(&format!("failed to serialize {} {msg}", stringify!($value)));
+                        let got = serde_json::from_str(&sonic_out).unwrap();
+                        if got != expect {
+                            diff_json(got, expect);
+                            panic!("invalid result {} for valid json {msg}", stringify!($value));
+                        }
+                    } else {
+                        // parse JSON should be error
+                        assert!(
+                            ret.is_err(),
+                            "invalid result {} for invalid json {msg}",
+                            stringify!($value)
+                        );
+                    }
+                }
             }
-        }
-        Ok(())
+        };
     }
 
-    fn test_value(data: &str) -> Result<()> {
-        let serde_value: serde_json::Result<serde_json::Value> = serde_json::from_str(data);
-        let dom: Result<Value> = from_slice(data.as_bytes());
+    use crate::{to_string, Value};
+    test_value!(from_slice, to_string, Value);
 
-        if let Ok(serde_value) = serde_value {
-            let dom = dom.unwrap();
-            let sonic_out = crate::to_string(&dom)?;
-            let serde_value2: serde_json::Value = serde_json::from_str(&sonic_out).unwrap();
+    use crate::value::private::{
+        dom_from_slice as flat_dom_from_slice, dom_to_string as flat_dom_to_string,
+        Document as FlatDocument,
+    };
+    test_value!(flat_dom_from_slice, flat_dom_to_string, FlatDocument);
 
-            if serde_value == serde_value2 {
-                test_value_instruct(data)?;
-                Ok(())
-            } else {
-                diff_json(data);
-                Err(make_error(format!(
-                    "invalid result for valid json {}",
-                    data
-                )))
-            }
-        } else {
-            if dom.is_err() {
-                return Ok(());
-            }
-            let dom = dom.unwrap();
-            Err(make_error(format!(
-                "invalid result for invalid json {}, got {}",
-                data,
-                crate::to_string(&dom).unwrap(),
-            )))
+    fn diff_json(got: SerdeValue, expect: SerdeValue) {
+        if got == expect {
+            return;
         }
-    }
 
-    fn diff_json(data: &str) {
-        let serde_value: serde_json::Value = serde_json::from_str(data).unwrap();
-        let dom: Value = from_slice(data.as_bytes()).unwrap();
-        let sonic_out = crate::to_string(&dom).unwrap();
-        let serde_value2: serde_json::Value = serde_json::from_str(&sonic_out).unwrap();
-        let expect = serde_json::to_string_pretty(&serde_value).unwrap();
-        let got = serde_json::to_string_pretty(&serde_value2).unwrap();
-
-        fn write_to(file: &str, data: &str) -> std::io::Result<()> {
+        fn write_to(file: &str, data: &str) {
             use std::io::Write;
-            let mut file = std::fs::File::create(file)?;
-            file.write_all(data.as_bytes())?;
-            Ok(())
+            let mut file = std::fs::File::create(file).expect("create file failed");
+            file.write_all(data.as_bytes()).expect("write file failed");
         }
 
-        if serde_value != serde_value2 {
-            write_to("got.json", &got).unwrap();
-            write_to("expect.json", &expect).unwrap();
-        }
+        let expect = serde_json::to_string_pretty(&expect).unwrap();
+        let got = serde_json::to_string_pretty(&got).unwrap();
+        write_to("got.json", &got);
+        write_to("expect.json", &expect);
+    }
+
+    fn test_value(json: &str) {
+        test_value_Value(json, json);
+        test_value_FlatDocument(json, json);
     }
 
     fn test_value_file(path: &Path) {
         let data = std::fs::read_to_string(path).unwrap();
-        assert!(test_value(&data).is_ok(), "failed json is  {:?}", path);
+        let msg = &format!("file: {:?}", path);
+        test_value_Value(&data, msg);
+        test_value_FlatDocument(&data, msg);
     }
 
     #[test]
     fn test_node_basic() {
-        // // Valid JSON object
-        // let data = r#"{"name": "John", "age": 30}"#;
-        // assert!(test_value(data).is_ok(), "failed json is {}", data);
+        let cases = [
+            "1",
+            "-0",
+            "0",
+            "0.0",
+            "1.0",
+            r#"{"name": "John", "age": 30}"#,
+            r#"[1, 2, 3]"#,
+            r#"{
+                    "name": "John",
+                    "age": 30,
+                    "cars": [
+                        { "name": "Ford", "models": ["Fiesta", "Focus", "Mustang"] },
+                        { "name": "BMW", "models": ["320", "X3", "X5"] },
+                        { "name": "Fiat", "models": ["500", "Panda"] }
+                    ],
+                    "address": {
+                        "street": "Main Street",
+                        "city": "New York",
+                        "state": "NY",
+                        "zip": "10001"
+                    }
+                }"#,
+            r#"{
+                    "name": "John",
+                    "age": 30,
+                    "description": "He said, \"I'm coming home.\""
+                }"#,
+        ];
 
-        // // Valid JSON array
-        // let data = r#"[1, 2, 3]"#;
-        // assert!(test_value(data).is_ok(), "failed json is {}", data);
-
-        // Valid JSON data with nested objects and arrays
-        let data = r#"{
-            "name": "John",
-            "age": 30,
-            "cars": [
-                { "name": "Ford", "models": ["Fiesta", "Focus", "Mustang"] },
-                { "name": "BMW", "models": ["320", "X3", "X5"] },
-                { "name": "Fiat", "models": ["500", "Panda"] }
-            ],
-            "address": {
-                "street": "Main Street",
-                "city": "New York",
-                "state": "NY",
-                "zip": "10001"
-            }
-        }"#;
-        assert!(test_value(data).is_ok(), "failed json is {}", data);
-
-        // // Valid JSON data with escape characters
-        // let data = r#"{
-        //     "name": "John",
-        //     "age": 30,
-        //     "description": "He said, \"I'm coming home.\""
-        // }"#;
-        // assert!(test_value(data).is_ok(), "failed json is {}", data);
+        for data in cases.iter() {
+            test_value(data);
+        }
     }
 
     #[test]
-    fn test_node_from_files3() {
+    fn test_node_from_files() {
         use std::fs::DirEntry;
         let path = env!("CARGO_MANIFEST_DIR").to_string() + "/benches/testdata/";
-        println!("dir is {}", path);
+        eprintln!("dir is {}", path);
 
         let mut files: Vec<DirEntry> = std::fs::read_dir(path)
             .unwrap()
@@ -1870,14 +1852,12 @@ mod test {
 
         for file in files {
             let path = file.path();
-            if path.extension().unwrap_or_default() == "json" && !path.ends_with("canada.json") {
-                println!(
-                    "test json file: {:?},  {} bytes",
-                    path,
-                    file.metadata().unwrap().len()
-                );
-                test_value_file(&path)
-            }
+            eprintln!(
+                "test json file: {:?},  {} bytes",
+                path,
+                file.metadata().unwrap().len()
+            );
+            test_value_file(&path)
         }
     }
 
@@ -1892,8 +1872,7 @@ mod test {
         ];
 
         for data in testdata {
-            let ret: Result<Value> = from_slice(data.as_bytes());
-            assert!(ret.is_err(), "failed json is {}", data);
+            test_value(data);
         }
     }
 
@@ -1901,7 +1880,7 @@ mod test {
     fn test_parse_numbrs() {
         let testdata = [
             " 33.3333333043333333",
-            " 33.3333333053333333 ",
+            " 33.3333333043333333 ",
             " 33.3333333043333333--",
             &f64::MAX.to_string(),
             &f64::MIN.to_string(),
@@ -1911,7 +1890,7 @@ mod test {
             &i64::MAX.to_string(),
         ];
         for data in testdata {
-            test_value(data).unwrap();
+            test_value(data);
         }
     }
 
@@ -1922,9 +1901,10 @@ mod test {
             r#"{"\t:0000000006427[{\t:003E:[[{0.77":96}"#,
         ];
         for data in testdata {
-            test_value(data).unwrap();
+            test_value(data);
         }
     }
+
     const TEST_JSON: &str = r#"{
         "bool": true,
         "int": -1,

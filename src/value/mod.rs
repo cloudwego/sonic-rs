@@ -31,6 +31,8 @@ pub use self::ser::to_value;
 pub use self::ser::to_value_in;
 #[doc(inline)]
 pub use self::value_trait::{JsonContainerTrait, JsonType, JsonValueMutTrait, JsonValueTrait};
+#[doc(hidden)]
+pub mod private;
 
 const MAX_STR_SIZE: usize = u32::MAX as usize;
 const PTR_BITS: usize = 48;

@@ -202,15 +202,20 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn parse_number(&mut self, negative: bool, bound: bool) -> Result<ParserNumber> {
+    pub(crate) fn parse_number(
+        &mut self,
+        negative: bool,
+        bound: bool,
+    ) -> Result<(usize, ParserNumber)> {
         let reader = &mut self.read;
         let mut now = reader.index() - ((!negative) as usize);
+        let pos = now;
         let data = reader.as_u8_slice();
         let ret = parse_number(data, &mut now, negative, bound);
         reader.set_index(now);
         match ret {
             Err(code) => perr!(self, code),
-            Ok(num) => Ok(num),
+            Ok(num) => Ok((pos, num)),
         }
     }
 
@@ -252,11 +257,34 @@ where
         unsafe {
             let mut src = self.read.cur_ptr();
             let start = self.read.cur_ptr();
-            let (cnt, _) = parse_string_inplace(&mut src).map_err(|e| self.error(e))?;
+            let (cnt, status) = parse_string_inplace(&mut src).map_err(|e| self.error(e))?;
             self.read.set_ptr(src);
             let slice = from_raw_parts(start, cnt);
             let s = from_utf8_unchecked(slice);
-            check_visit!(self, visitor.visit_borrowed_str(s));
+            check_visit!(
+                self,
+                visitor.visit_str_status(s, status == ParseStatus::HasEscaped)
+            );
+        }
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn parse_key_inplace<V>(&mut self, visitor: &mut V) -> Result<()>
+    where
+        V: JsonVisitor<'de>,
+    {
+        unsafe {
+            let mut src = self.read.cur_ptr();
+            let start = self.read.cur_ptr();
+            let (cnt, status) = parse_string_inplace(&mut src).map_err(|e| self.error(e))?;
+            self.read.set_ptr(src);
+            let slice = from_raw_parts(start, cnt);
+            let s = from_utf8_unchecked(slice);
+            check_visit!(
+                self,
+                visitor.visit_key_status(s, status == ParseStatus::HasEscaped)
+            );
         }
         Ok(())
     }
@@ -266,10 +294,11 @@ where
     where
         V: JsonVisitor<'de>,
     {
-        let ok = match self.parse_number(negative, bound)? {
-            ParserNumber::Float(f) => visitor.visit_f64(f),
-            ParserNumber::Unsigned(f) => visitor.visit_u64(f),
-            ParserNumber::Signed(f) => visitor.visit_i64(f),
+        let (pos, num) = self.parse_number(negative, bound)?;
+        let ok = match num {
+            ParserNumber::Float(f) => visitor.visit_f64_pos(f, pos),
+            ParserNumber::Unsigned(f) => visitor.visit_u64_pos(f, pos),
+            ParserNumber::Signed(f) => visitor.visit_i64_pos(f, pos),
         };
         check_visit!(self, ok);
         Ok(())
@@ -281,7 +310,10 @@ where
         V: JsonVisitor<'de>,
     {
         // parsing empty array
-        check_visit!(self, visitor.visit_array_start(0));
+        check_visit!(
+            self,
+            visitor.visit_array_start_pos(0, self.read.index() - 1)
+        );
 
         let mut first = match self.skip_space() {
             Some(b']') => {
@@ -315,26 +347,16 @@ where
     }
 
     #[inline(always)]
-    fn parse_key<V>(&mut self, visitor: &mut V, strbuf: &mut Vec<u8>) -> Result<()>
-    where
-        V: JsonVisitor<'de>,
-    {
-        let ok = match self.parse_str_impl(strbuf)? {
-            Reference::Borrowed(s) => visitor.visit_borrowed_key(s),
-            Reference::Copied(s) => visitor.visit_key(s),
-        };
-        check_visit!(self, ok);
-        Ok(())
-    }
-
-    #[inline(always)]
     fn parse_object<V>(&mut self, visitor: &mut V) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
         // parsing empty object
         let mut count: usize = 0;
-        check_visit!(self, visitor.visit_object_start(0));
+        check_visit!(
+            self,
+            visitor.visit_object_start_pos(0, self.read.index() - 1)
+        );
         match self.skip_space() {
             Some(b'}') => {
                 check_visit!(self, visitor.visit_object_end(0));
@@ -348,7 +370,7 @@ where
 
         // loop for each object key and value
         loop {
-            self.parse_string_inplace(visitor)?;
+            self.parse_key_inplace(visitor)?;
             self.parse_object_clo()?;
             self.parse_value(visitor)?;
             count += 1;
@@ -2119,11 +2141,11 @@ where
                 de::Error::invalid_type(Unexpected::Bool(false), exp)
             }
             b'-' => match self.parse_number(true, true) {
-                Ok(n) => n.invalid_type(exp),
+                Ok((_, n)) => n.invalid_type(exp),
                 Err(err) => return err,
             },
             b'0'..=b'9' => match self.parse_number(false, true) {
-                Ok(n) => n.invalid_type(exp),
+                Ok((_, n)) => n.invalid_type(exp),
                 Err(err) => return err,
             },
             b'"' => {

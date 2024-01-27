@@ -33,6 +33,10 @@ fn sonic_rs_from_slice_unchecked(data: &[u8]) {
     let _: sonic_rs::Value = unsafe { sonic_rs::from_slice_unchecked(data).unwrap() };
 }
 
+fn sonic_rs_flat_from_slice_unchecked(data: &[u8]) {
+    let _ = unsafe { sonic_rs::value::private::dom_from_slice_unchecked(data).unwrap() };
+}
+
 // fn sonic_rs_skip_one(data: &[u8]) {
 //     unsafe {
 //         let data = from_utf8_unchecked(data);
@@ -59,13 +63,20 @@ macro_rules! bench_file {
                 .read_to_end(&mut vec)
                 .unwrap();
 
-            // verify sonic-rs parse
             let serde_out: serde_json::Value = serde_json::from_slice(&vec).unwrap();
 
+            // verify parsing into sonic_rs::Value
             let value: sonic_rs::Value = sonic_rs::from_slice(&vec).unwrap();
             let out = sonic_rs::to_string(&value).unwrap();
             let rs_out1: serde_json::Value = serde_json::from_str(&out).unwrap();
             assert_eq!(rs_out1, serde_out);
+
+            // verify parsing into sonic_rs::value::private::Document
+            let value: sonic_rs::value::private::Document =
+                unsafe { sonic_rs::value::private::dom_from_slice_unchecked(&vec).unwrap() };
+            let out = sonic_rs::value::private::dom_to_string(&value).unwrap();
+            let rs_out2: serde_json::Value = serde_json::from_str(&out).unwrap();
+            assert_eq!(rs_out2, serde_out);
 
             let mut group = c.benchmark_group(stringify!($name));
             group.sampling_mode(SamplingMode::Flat);
@@ -82,6 +93,14 @@ macro_rules! bench_file {
                 b.iter_batched(
                     || data,
                     |bytes| sonic_rs_from_slice_unchecked(&bytes),
+                    BatchSize::SmallInput,
+                )
+            });
+
+            group.bench_with_input("sonic_rs_flat::from_slice_unchecked", &vec, |b, data| {
+                b.iter_batched(
+                    || data,
+                    |bytes| sonic_rs_flat_from_slice_unchecked(&bytes),
                     BatchSize::SmallInput,
                 )
             });
