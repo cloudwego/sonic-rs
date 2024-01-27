@@ -5,9 +5,9 @@ use std::{
     str::from_utf8_unchecked,
 };
 
-use ::serde::de::{Expected, Unexpected};
 use arrayref::array_ref;
 use faststr::FastStr;
+use serde::de::{Expected, Unexpected};
 use smallvec::SmallVec;
 
 use super::reader::{Reader, Reference};
@@ -202,11 +202,11 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn parse_number(&mut self, negative: bool) -> Result<ParserNumber> {
+    pub(crate) fn parse_number(&mut self, negative: bool, bound: bool) -> Result<ParserNumber> {
         let reader = &mut self.read;
         let mut now = reader.index() - ((!negative) as usize);
         let data = reader.as_u8_slice();
-        let ret = parse_number(data, &mut now, negative);
+        let ret = parse_number(data, &mut now, negative, bound);
         reader.set_index(now);
         match ret {
             Err(code) => perr!(self, code),
@@ -252,7 +252,7 @@ where
         unsafe {
             let mut src = self.read.cur_ptr();
             let start = self.read.cur_ptr();
-            let cnt = parse_string_inplace(&mut src).map_err(|e| self.error(e))?;
+            let (cnt, _) = parse_string_inplace(&mut src).map_err(|e| self.error(e))?;
             self.read.set_ptr(src);
             let slice = from_raw_parts(start, cnt);
             let s = from_utf8_unchecked(slice);
@@ -262,11 +262,11 @@ where
     }
 
     #[inline(always)]
-    fn parse_number_visit<V>(&mut self, negative: bool, visitor: &mut V) -> Result<()>
+    fn parse_number_visit<V>(&mut self, negative: bool, visitor: &mut V, bound: bool) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
-        let ok = match self.parse_number(negative)? {
+        let ok = match self.parse_number(negative, bound)? {
             ParserNumber::Float(f) => visitor.visit_f64(f),
             ParserNumber::Unsigned(f) => visitor.visit_u64(f),
             ParserNumber::Signed(f) => visitor.visit_i64(f),
@@ -294,8 +294,8 @@ where
         let mut count = 0;
         loop {
             match first {
-                Some(b'-') => self.parse_number_visit(true, visitor),
-                Some(b'0'..=b'9') => self.parse_number_visit(false, visitor),
+                Some(b'-') => self.parse_number_visit(true, visitor, false),
+                Some(b'0'..=b'9') => self.parse_number_visit(false, visitor, false),
                 Some(b'"') => self.parse_string_inplace(visitor),
                 Some(b'{') => self.parse_object(visitor),
                 Some(b'[') => self.parse_array(visitor),
@@ -483,8 +483,8 @@ where
         V: JsonVisitor<'de>,
     {
         match self.skip_space() {
-            Some(b'-') => self.parse_number_visit(true, visitor),
-            Some(b'0'..=b'9') => self.parse_number_visit(false, visitor),
+            Some(b'-') => self.parse_number_visit(true, visitor, false),
+            Some(b'0'..=b'9') => self.parse_number_visit(false, visitor, false),
             Some(b'"') => self.parse_string_inplace(visitor),
             Some(b'{') => self.parse_object(visitor),
             Some(b'[') => self.parse_array(visitor),
@@ -534,8 +534,8 @@ where
                     state = Fsm::ObjKey;
                 }
             }
-            b'-' => return self.parse_number_visit(true, visitor),
-            b'0'..=b'9' => return self.parse_number_visit(false, visitor),
+            b'-' => return self.parse_number_visit(true, visitor, true),
+            b'0'..=b'9' => return self.parse_number_visit(false, visitor, true),
             b'"' => return self.parse_string_owned(visitor, &mut strbuf),
             0 => return perr!(self, EofWhileParsing),
             first => return self.parse_literal_visit(first, visitor),
@@ -570,8 +570,8 @@ where
 
                                 continue 'arr_val;
                             }
-                            b'0'..=b'9' => self.parse_number_visit(false, visitor)?,
-                            b'-' => self.parse_number_visit(true, visitor)?,
+                            b'0'..=b'9' => self.parse_number_visit(false, visitor, true)?,
+                            b'-' => self.parse_number_visit(true, visitor, true)?,
                             b'"' => self.parse_string_owned(visitor, &mut strbuf)?,
                             first => self.parse_literal_visit(first, visitor)?,
                         }
@@ -628,8 +628,8 @@ where
                                 }
                                 break 'obj_key;
                             }
-                            b'0'..=b'9' => self.parse_number_visit(false, visitor)?,
-                            b'-' => self.parse_number_visit(true, visitor)?,
+                            b'0'..=b'9' => self.parse_number_visit(false, visitor, true)?,
+                            b'-' => self.parse_number_visit(true, visitor, true)?,
                             b'"' => self.parse_string_owned(visitor, &mut strbuf)?,
                             first => self.parse_literal_visit(first, visitor)?,
                         }
@@ -2098,7 +2098,7 @@ where
 
     #[cold]
     pub(crate) fn peek_invalid_type(&mut self, peek: u8, exp: &dyn Expected) -> Error {
-        use ::serde::de;
+        use serde::de;
         let err = match peek {
             b'n' => {
                 if let Err(err) = self.parse_literal("ull") {
@@ -2118,11 +2118,11 @@ where
                 }
                 de::Error::invalid_type(Unexpected::Bool(false), exp)
             }
-            b'-' => match self.parse_number(true) {
+            b'-' => match self.parse_number(true, true) {
                 Ok(n) => n.invalid_type(exp),
                 Err(err) => return err,
             },
-            b'0'..=b'9' => match self.parse_number(false) {
+            b'0'..=b'9' => match self.parse_number(false, true) {
                 Ok(n) => n.invalid_type(exp),
                 Err(err) => return err,
             },

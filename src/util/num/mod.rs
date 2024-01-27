@@ -26,27 +26,37 @@ pub(crate) enum ParserNumber {
     Float(f64),
 }
 
+macro_rules! at {
+    ($data:expr, $i:expr) => {
+        unsafe { $data.get_unchecked($i) }
+    };
+}
+
 macro_rules! match_digit {
     ($data:expr, $i:expr, $pattern:pat) => {
-        $i < $data.len() && matches!($data[$i], $pattern)
+        matches!(at!($data, $i), $pattern)
     };
 }
 
 macro_rules! is_digit {
-    ($data:expr, $i:expr) => {
-        $i < $data.len() && $data[$i].is_ascii_digit()
+    ($data:expr, $i:expr, $bound:expr) => {
+        if $bound {
+            $i < $data.len() && at!($data, $i).is_ascii_digit()
+        } else {
+            at!($data, $i).is_ascii_digit()
+        }
     };
 }
 
 macro_rules! digit {
     ($data:expr, $i:expr) => {
-        ($data[$i] - b'0') as u64
+        (at!($data, $i) - b'0') as u64
     };
 }
 
 macro_rules! check_digit {
-    ($data:expr, $i:expr) => {
-        if !($i < $data.len() && $data[$i].is_ascii_digit()) {
+    ($data:expr, $i:expr, $bound:expr) => {
+        if !is_digit!($data, $i, $bound) {
             return Err(ErrorCode::InvalidNumber);
         }
     };
@@ -55,7 +65,7 @@ macro_rules! check_digit {
 const DEFAULT_U8: u8 = 0_u8;
 
 #[inline(always)]
-fn parse_exponent(data: &[u8], index: &mut usize) -> Result<i32, ErrorCode> {
+fn parse_exponent(data: &[u8], index: &mut usize, bound: bool) -> Result<i32, ErrorCode> {
     let mut exponent: i32 = 0;
     let mut negative = false;
 
@@ -72,12 +82,12 @@ fn parse_exponent(data: &[u8], index: &mut usize) -> Result<i32, ErrorCode> {
         _ => {}
     }
 
-    check_digit!(data, *index);
-    while exponent < 1000 && is_digit!(data, *index) {
+    check_digit!(data, *index, bound);
+    while exponent < 1000 && is_digit!(data, *index, bound) {
         exponent = digit!(data, *index) as i32 + exponent * 10;
         *index += 1;
     }
-    while is_digit!(data, *index) {
+    while is_digit!(data, *index, bound) {
         *index += 1;
     }
     if negative {
@@ -118,6 +128,7 @@ fn parse_number_fraction(
     exponent: &mut i32,
     mut need: isize,
     dot_pos: usize,
+    bound: bool,
 ) -> Result<bool, ErrorCode> {
     debug_assert!(need < FLOATING_LONGEST_DIGITS as isize);
 
@@ -133,7 +144,7 @@ fn parse_number_fraction(
             *significant = *significant * POW10_UINT[ndigits] + frac;
             *index += ndigits;
         } else {
-            while need > 0 && is_digit!(data, *index) {
+            while need > 0 && is_digit!(data, *index, bound) {
                 *significant = *significant * 10 + digit!(data, *index);
                 *index += 1;
                 need -= 1;
@@ -143,14 +154,14 @@ fn parse_number_fraction(
 
     *exponent -= *index as i32 - dot_pos as i32;
     let mut trunc = false;
-    while is_digit!(data, *index) {
+    while is_digit!(data, *index, bound) {
         trunc = true;
         *index += 1;
     }
 
     if match_digit!(data, *index, b'e' | b'E') {
         *index += 1;
-        *exponent += parse_exponent(data, &mut *index)?;
+        *exponent += parse_exponent(data, &mut *index, bound)?;
     }
     Ok(trunc)
 }
@@ -160,98 +171,41 @@ pub(crate) fn parse_number(
     data: &[u8],
     index: &mut usize,
     negative: bool,
+    bound: bool,
 ) -> Result<ParserNumber, ErrorCode> {
     let mut significant: u64 = 0;
     let mut exponent: i32 = 0;
     let mut trunc = false;
     let raw_num = &data[*index..];
 
-    if match_digit!(data, *index, b'0') {
-        *index += 1;
-
-        if *index >= data.len() || !matches!(data[*index], b'.' | b'e' | b'E') {
-            // view -0 as float number
-            if negative {
-                return Ok(ParserNumber::Float(0.0));
-            }
-            return Ok(ParserNumber::Unsigned(0));
-        }
-
-        // deal with 0e123 or 0.000e123
-        match data[*index] {
-            b'.' => {
-                *index += 1;
-                let dot_pos = *index;
-                check_digit!(data, *index);
-                while match_digit!(data, *index, b'0') {
-                    *index += 1;
-                }
-                // special case: 0.000e123
-                if match_digit!(data, *index, b'e' | b'E') {
-                    *index += 1;
-                    if match_digit!(data, *index, b'-' | b'+') {
-                        *index += 1;
-                    }
-                    check_digit!(data, *index);
-                    while is_digit!(data, *index) {
-                        *index += 1;
-                    }
-                    return Ok(ParserNumber::Float(0.0));
-                }
-
-                // we calculate the first digit here for two reasons:
-                // 1. fastpath for small float number
-                // 2. we only need parse at most 16 digits in parse_number_fraction
-                // and it is friendly for simd
-                if !is_digit!(data, *index) {
-                    return Ok(ParserNumber::Float(0.0));
-                }
-
-                significant = digit!(data, *index);
-                *index += 1;
-
-                if is_digit!(data, *index) {
-                    let need = FLOATING_LONGEST_DIGITS as isize - 1;
-                    trunc = parse_number_fraction(
-                        data,
-                        index,
-                        &mut significant,
-                        &mut exponent,
-                        need,
-                        dot_pos,
-                    )?;
-                } else {
-                    exponent -= *index as i32 - dot_pos as i32;
-                    if match_digit!(data, *index, b'e' | b'E') {
-                        *index += 1;
-                        exponent += parse_exponent(data, &mut *index)?;
-                    }
-                }
-            }
-            b'e' | b'E' => {
-                *index += 1;
-                if match_digit!(data, *index, b'-' | b'+') {
-                    *index += 1;
-                }
-                check_digit!(data, *index);
-                while is_digit!(data, *index) {
-                    *index += 1;
-                }
-                return Ok(ParserNumber::Float(0.0));
-            }
-            _ => unreachable!("unreachable branch in parse_number_unchecked"),
-        }
-    } else {
+    if !match_digit!(data, *index, b'0') {
         // parse significant digits
         let digit_start = *index;
-        while is_digit!(data, *index) {
+
+        loop {
+            if bound && *index >= data.len() {
+                break;
+            }
+
+            let d: u8 = at!(data, *index).wrapping_sub(b'0');
+            if d > 9 {
+                break;
+            }
             // assume most number is not overflow here. When it overflow, we will check digits count
             // and fallback into the slow path.
-            significant = significant
-                .wrapping_mul(10)
-                .wrapping_add(digit!(data, *index));
+            significant = significant.wrapping_mul(10).wrapping_add(d as u64);
             *index += 1;
         }
+
+        // while is_digit!(data, *index) {
+        //     // assume most number is not overflow here. When it overflow, we will check digits
+        // count     // and fallback into the slow path.
+        //     significant = significant
+        //         .wrapping_mul(10)
+        //         .wrapping_add(digit!(data, *index));
+        //     *index += 1;
+        // }
+
         let mut digits_cnt = *index - digit_start;
         if digits_cnt == 0 {
             return Err(ErrorCode::InvalidNumber);
@@ -262,12 +216,12 @@ pub(crate) fn parse_number(
             *index = digit_start;
             significant = 0;
             digits_cnt = 0;
-            while is_digit!(data, *index) && digits_cnt < 19 {
+            while is_digit!(data, *index, bound) && digits_cnt < 19 {
                 significant = significant * 10 + digit!(data, *index);
                 digits_cnt += 1;
                 *index += 1;
             }
-            while is_digit!(data, *index) {
+            while is_digit!(data, *index, bound) {
                 exponent += 1;
                 *index += 1;
             }
@@ -275,20 +229,23 @@ pub(crate) fn parse_number(
 
         // TODO: fix special case like `43332000001000000003888e-4`.
         // it should parse as `4.3332000001000003e18`.
-        if match_digit!(data, *index, b'e' | b'E') {
-            // parse exponent
+        if match_digit!(data, *index, b'.') {
             *index += 1;
-            exponent += parse_exponent(data, index)?;
-        } else if match_digit!(data, *index, b'.') {
-            *index += 1;
-            check_digit!(data, *index);
+            check_digit!(data, *index, bound);
             let dot_pos = *index;
 
             // parse fraction
             let need = FLOATING_LONGEST_DIGITS as isize - digits_cnt as isize;
-            trunc =
-                parse_number_fraction(data, index, &mut significant, &mut exponent, need, dot_pos)?;
-        } else {
+            trunc = parse_number_fraction(
+                data,
+                index,
+                &mut significant,
+                &mut exponent,
+                need,
+                dot_pos,
+                bound,
+            )?;
+        } else if !match_digit!(data, *index, b'e' | b'E') {
             // parse integer, all parse has finished.
             if exponent == 0 {
                 if negative {
@@ -318,6 +275,88 @@ pub(crate) fn parse_number(
                 }
             }
             trunc = true;
+        } else {
+            // parse exponent
+            *index += 1;
+            exponent += parse_exponent(data, index, bound)?;
+        }
+    } else {
+        /* deal with leading zero */
+
+        *index += 1;
+
+        if *index >= data.len() || !matches!(data[*index], b'.' | b'e' | b'E') {
+            // view -0 as float number
+            if negative {
+                return Ok(ParserNumber::Float(0.0));
+            }
+            return Ok(ParserNumber::Unsigned(0));
+        }
+
+        // deal with 0e123 or 0.000e123
+        match data[*index] {
+            b'.' => {
+                *index += 1;
+                let dot_pos = *index;
+                check_digit!(data, *index, bound);
+                while match_digit!(data, *index, b'0') {
+                    *index += 1;
+                }
+                // special case: 0.000e123
+                if match_digit!(data, *index, b'e' | b'E') {
+                    *index += 1;
+                    if match_digit!(data, *index, b'-' | b'+') {
+                        *index += 1;
+                    }
+                    check_digit!(data, *index, bound);
+                    while is_digit!(data, *index, bound) {
+                        *index += 1;
+                    }
+                    return Ok(ParserNumber::Float(0.0));
+                }
+
+                // we calculate the first digit here for two reasons:
+                // 1. fastpath for small float number
+                // 2. we only need parse at most 16 digits in parse_number_fraction
+                // and it is friendly for simd
+                if !is_digit!(data, *index, bound) {
+                    return Ok(ParserNumber::Float(0.0));
+                }
+
+                significant = digit!(data, *index);
+                *index += 1;
+
+                if is_digit!(data, *index, bound) {
+                    let need = FLOATING_LONGEST_DIGITS as isize - 1;
+                    trunc = parse_number_fraction(
+                        data,
+                        index,
+                        &mut significant,
+                        &mut exponent,
+                        need,
+                        dot_pos,
+                        bound,
+                    )?;
+                } else {
+                    exponent -= *index as i32 - dot_pos as i32;
+                    if match_digit!(data, *index, b'e' | b'E') {
+                        *index += 1;
+                        exponent += parse_exponent(data, &mut *index, bound)?;
+                    }
+                }
+            }
+            b'e' | b'E' => {
+                *index += 1;
+                if match_digit!(data, *index, b'-' | b'+') {
+                    *index += 1;
+                }
+                check_digit!(data, *index, bound);
+                while is_digit!(data, *index, bound) {
+                    *index += 1;
+                }
+                return Ok(ParserNumber::Float(0.0));
+            }
+            _ => unreachable!("unreachable branch in parse_number_unchecked"),
         }
     }
 
@@ -462,10 +501,10 @@ fn parse_float_fast(exp10: i32, significant: u64) -> Option<f64> {
 }
 
 const POW10_FLOAT: [f64; 23] = [
-    /* <= the connvertion to double is not exact when less than 1 => */ 1e-000, 1e+001,
-    1e+002, 1e+003, 1e+004, 1e+005, 1e+006, 1e+007, 1e+008, 1e+009, 1e+010, 1e+011, 1e+012, 1e+013,
-    1e+014, 1e+015, 1e+016, 1e+017, 1e+018, 1e+019, 1e+020, 1e+021,
-    1e+022, /* <= the connvertion to double is not exact when larger,  => */
+    /* <= the convert to double is not exact when less than 1 => */ 1e-000, 1e+001, 1e+002,
+    1e+003, 1e+004, 1e+005, 1e+006, 1e+007, 1e+008, 1e+009, 1e+010, 1e+011, 1e+012, 1e+013, 1e+014,
+    1e+015, 1e+016, 1e+017, 1e+018, 1e+019, 1e+020, 1e+021,
+    1e+022, /* <= the convert to double is not exact when larger  => */
 ];
 
 #[cfg(test)]
@@ -477,7 +516,7 @@ mod test {
         let mut data = input.as_bytes().to_vec();
         data.push(b' ');
         let mut index = 0;
-        let num = parse_number(&data, &mut index, false).unwrap();
+        let num = parse_number(&data, &mut index, false, true).unwrap();
         assert!(
             matches!(num, ParserNumber::Float(f) if f == expect),
             "parsed is {:?} failed num is {}",

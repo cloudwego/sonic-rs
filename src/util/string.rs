@@ -8,6 +8,7 @@ use crate::{
     error::ErrorCode::{
         self, ControlCharacterWhileParsingString, InvalidEscape, InvalidUnicodeCodePoint,
     },
+    parser::ParseStatus,
     util::{
         arch::page_size,
         simd::{Mask, Simd},
@@ -85,23 +86,45 @@ impl StringBlock {
     }
 }
 
-// return the size of the actual parsed string
+macro_rules! loop_unrooll {
+    (0, $expr:tt) => {};
+    (1, $expr:tt) => {{
+        $expr
+    }};
+    (2, $expr:tt) => {{
+        loop_unrooll!(1, $expr);
+        loop_unrooll!(1, $expr);
+    }};
+    (4, $expr:tt) => {{
+        loop_unrooll!(2, $expr);
+        loop_unrooll!(2, $expr);
+    }};
+    (8, $expr:tt) => {{
+        loop_unrooll!(4, $expr);
+        loop_unrooll!(4, $expr);
+    }};
+    (16, $expr:tt) => {{
+        loop_unrooll!(8, $expr);
+        loop_unrooll!(8, $expr);
+    }};
+}
+
 #[inline(always)]
 pub(crate) unsafe fn parse_string_inplace(
     src: &mut *mut u8,
-) -> std::result::Result<usize, ErrorCode> {
+) -> std::result::Result<(usize, ParseStatus), ErrorCode> {
     const LANS: usize = 32;
     let sdst = *src;
     let src: &mut *const u8 = std::mem::transmute(src);
     let mut block;
 
-    // loop for string without escaped chars
+    // loop for string parts without escaped chars
     loop {
         block = StringBlock::find(*src);
         if block.has_quote_first() {
             let idx = block.quote_index();
             *src = src.add(idx + 1);
-            return Ok(src.offset_from(sdst) as usize - 1);
+            return Ok((src.offset_from(sdst) as usize - 1, ParseStatus::None));
         }
         if block.has_unescaped() {
             return Err(ControlCharacterWhileParsingString);
@@ -116,21 +139,19 @@ pub(crate) unsafe fn parse_string_inplace(
     *src = src.add(bs_dist);
     let mut dst = sdst.add((*src as usize) - sdst as usize);
 
-    // loop for string with escaped chars
+    // loop for string parts with escaped chars
     loop {
         'escape: loop {
             let escaped_char: u8 = *src.add(1);
-            if escaped_char == b'u' {
-                if !handle_unicode_codepoint_mut(src, &mut dst) {
-                    return Err(InvalidUnicodeCodePoint);
-                }
-            } else {
+            if escaped_char != b'u' {
                 *dst = ESCAPED_TAB[escaped_char as usize];
                 if *dst == 0 {
                     return Err(InvalidEscape);
                 }
                 *src = src.add(2);
                 dst = dst.add(1);
+            } else if !handle_unicode_codepoint_mut(src, &mut dst) {
+                return Err(InvalidUnicodeCodePoint);
             }
 
             // fast path for continuous escaped chars
@@ -142,8 +163,7 @@ pub(crate) unsafe fn parse_string_inplace(
 
         'find_and_move: loop {
             let v = unsafe {
-                let ptr = *src;
-                let chunk = from_raw_parts(ptr, LANS);
+                let chunk = from_raw_parts(*src, LANS);
                 u8x32::from_slice_unaligned_unchecked(chunk)
             };
             let block = StringBlock {
@@ -151,14 +171,26 @@ pub(crate) unsafe fn parse_string_inplace(
                 quote_bits: (v.eq(&u8x32::splat(b'"'))).bitmask(),
                 unescaped_bits: (v.le(&u8x32::splat(0x1f))).bitmask(),
             };
+
             if block.has_quote_first() {
-                while **src != b'"' {
-                    *dst = **src;
-                    dst = dst.add(1);
-                    *src = src.add(1);
+                // while **src != b'"' {
+                //     *dst = **src;
+                //     dst = dst.add(1);
+                //     *src = src.add(1);
+                // }
+                loop {
+                    loop_unrooll!(8, {
+                        if **src != b'"' {
+                            *dst = **src;
+                            dst = dst.add(1);
+                            *src = src.add(1);
+                        } else {
+                            break;
+                        }
+                    });
                 }
                 *src = src.add(1); // skip ending quote
-                return Ok(dst.offset_from(sdst) as usize);
+                return Ok((dst.offset_from(sdst) as usize, ParseStatus::HasEscaped));
             }
             if block.has_unescaped() {
                 return Err(ControlCharacterWhileParsingString);
@@ -170,11 +202,21 @@ pub(crate) unsafe fn parse_string_inplace(
                 dst = dst.add(LANS);
                 continue 'find_and_move;
             }
-            // TODO: loop unrooling here
-            while **src != b'\\' {
-                *dst = **src;
-                dst = dst.add(1);
-                *src = src.add(1);
+            // while **src != b'\\' {
+            //     *dst = **src;
+            //     dst = dst.add(1);
+            //     *src = src.add(1);
+            // }
+            loop {
+                loop_unrooll!(8, {
+                    if **src != b'\\' {
+                        *dst = **src;
+                        dst = dst.add(1);
+                        *src = src.add(1);
+                    } else {
+                        break;
+                    }
+                });
             }
             break 'find_and_move;
         }
