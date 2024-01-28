@@ -1,6 +1,40 @@
 //! Not Public API. A simple flatten DOM from JSON.
 
+use super::config::Config;
 use crate::{parser::Parser, reader::PaddedSliceRead, value::visitor::JsonVisitor, Result};
+
+pub fn dom_from_slice_config(json: &[u8], config: Config) -> Result<Document> {
+    use crate::util::utf8::from_utf8_lossy;
+
+    let cow = if config.validate_string {
+        Some(from_utf8_lossy(json))
+    } else {
+        None
+    };
+
+    let json = cow.as_ref().map_or(json, |c| c.as_bytes());
+    let mut doc = Document::default();
+    doc.parse_bytes_impl(json, config)?;
+    Ok(doc)
+}
+
+pub fn dom_from_slice(json: &[u8]) -> Result<Document> {
+    use crate::util::utf8::from_utf8;
+    let json = {
+        let json = from_utf8(json)?;
+        json.as_bytes()
+    };
+
+    let mut doc = Document::default();
+    doc.parse_bytes_impl(json, Config::default())?;
+    Ok(doc)
+}
+
+pub unsafe fn dom_from_slice_unchecked(json: &[u8]) -> Result<Document> {
+    let mut doc = Document::default();
+    doc.parse_bytes_impl(json, Config::default())?;
+    Ok(doc)
+}
 
 // JSON Value Type
 const NULL: u64 = 0;
@@ -11,6 +45,7 @@ const NUMBER: u64 = 3;
 const UINT: u64 = NUMBER;
 const SINT: u64 = (1 << 3) | NUMBER;
 const REAL: u64 = (2 << 3) | NUMBER;
+const RAWNUMBER: u64 = (3 << 3) | NUMBER;
 const STRING: u64 = 4;
 const STRING_COMMON: u64 = STRING;
 const STRING_HASESCAPED: u64 = (1 << 3) | STRING;
@@ -22,14 +57,13 @@ const POS_MASK: u64 = (!0) << 32;
 const POS_BITS: u64 = 32;
 const TYPE_MASK: u64 = 0xFF;
 const TYPE_BITS: u64 = 8;
-const LEN_MASK: u64 = (u32::MAX as u64) & (!TYPE_MASK);
-const LEN_BITS: u64 = 24;
 
 /// Value
 /// Layout:
 /// (low)
-/// | type (8 bits) | reserved (24 bits) | pos (32 bits) |
-/// |   number, string ptr, object/array ptr (64 bits)   |
+/// | type (8 bits) | reserved (24 bits) | pos (32 bits)     |
+/// | type (8 bits) |                    | str len (32 bits) |
+/// |   number val, rawnumber ptr, string ptr, object/array ptr (64 bits)   |
 #[repr(C)]
 #[derive(Debug, Default)]
 pub struct Value {
@@ -69,6 +103,13 @@ impl Value {
         }
     }
 
+    pub fn new_number(val: &str) -> Self {
+        Self {
+            typ: RAWNUMBER | ((val.len() as u64) << POS_BITS),
+            val: val.as_ptr() as u64,
+        }
+    }
+
     pub unsafe fn new_f64_unchecked(val: f64, pos: usize) -> Self {
         Self {
             typ: REAL | ((pos as u64) << POS_BITS),
@@ -83,7 +124,7 @@ impl Value {
             STRING_HASESCAPED
         };
         Self {
-            typ: t | ((val.len() as u64) << TYPE_BITS),
+            typ: t | ((val.len() as u64) << POS_BITS),
             val: val.as_ptr() as u64,
         }
     }
@@ -105,7 +146,15 @@ impl Value {
     fn str(&self) -> &str {
         unsafe {
             let ptr = self.val as *const u8;
-            let len = (self.typ >> TYPE_BITS) as usize;
+            let len = (self.typ >> POS_BITS) as usize;
+            std::str::from_utf8_unchecked(std::slice::from_raw_parts(ptr, len))
+        }
+    }
+
+    fn number(&self) -> &str {
+        unsafe {
+            let ptr = self.val as *const u8;
+            let len = (self.typ >> POS_BITS) as usize;
             std::str::from_utf8_unchecked(std::slice::from_raw_parts(ptr, len))
         }
     }
@@ -125,6 +174,7 @@ impl Value {
             UINT => f.write_u64(w, self.val)?,
             SINT => f.write_i64(w, self.val as i64)?,
             REAL => f.write_f64(w, f64::from_bits(self.val))?,
+            RAWNUMBER => f.write_raw_value(w, self.number())?,
             STRING_COMMON | STRING_HASESCAPED => f.write_string_fast(w, self.str(), true)?,
             ARRAY => {
                 f.begin_array(w)?;
@@ -164,24 +214,6 @@ impl Value {
     }
 }
 
-pub fn dom_from_slice(json: &[u8]) -> Result<Document> {
-    use crate::util::utf8::from_utf8;
-    let json = {
-        let json = from_utf8(json)?;
-        json.as_bytes()
-    };
-
-    let mut doc = Document::default();
-    doc.parse_bytes_impl(json)?;
-    Ok(doc)
-}
-
-pub unsafe fn dom_from_slice_unchecked(json: &[u8]) -> Result<Document> {
-    let mut doc = Document::default();
-    doc.parse_bytes_impl(json)?;
-    Ok(doc)
-}
-
 pub fn dom_to_string(value: &Document) -> Result<String> {
     let mut next = value.root() as *const Value;
     let mut buf = Vec::new();
@@ -195,7 +227,6 @@ pub fn dom_to_string(value: &Document) -> Result<String> {
     Ok(unsafe { String::from_utf8_unchecked(buf) })
 }
 
-#[repr(C)]
 #[derive(Debug, Default)]
 pub struct Document {
     /// A continous flatten buffer for all JSON values
@@ -217,7 +248,7 @@ impl Document {
         &self.node_buffer[0]
     }
 
-    fn parse_bytes_impl(&mut self, json: &[u8]) -> Result<()> {
+    fn allocate_json_buf(json: &[u8]) -> Vec<u8> {
         let len = json.len();
         // allocate the padding buffer for the input json
         let real_size = len + Self::PADDING_SIZE;
@@ -225,9 +256,13 @@ impl Document {
         json_buf.extend_from_slice(json);
         json_buf.extend_from_slice(&[b'x', b'"', b'x']);
         json_buf.extend_from_slice(&[61; 61]);
+        json_buf
+    }
 
+    fn parse_bytes_impl(&mut self, json: &[u8], config: Config) -> Result<()> {
+        let mut json_buf = Self::allocate_json_buf(json);
         let slice = PaddedSliceRead::new(json_buf.as_mut_slice());
-        let mut parser = Parser::new(slice);
+        let mut parser = Parser::new_with(slice, config);
 
         // a simple wrapper for visitor
         #[derive(Debug)]
@@ -279,6 +314,12 @@ impl Document {
             #[inline(always)]
             fn visit_u64_pos(&mut self, val: u64, pos: usize) -> bool {
                 self.push_node(Value::new_u64(val, pos))
+            }
+
+            #[inline(always)]
+            fn visit_number(&mut self, val: &str) -> bool {
+                dbg!(val);
+                self.push_node(Value::new_number(val))
             }
 
             #[inline(always)]
@@ -380,5 +421,26 @@ mod test {
         let json = r#"{123}"#;
         let error = unsafe { dom_from_slice_unchecked(json.as_bytes()).unwrap_err() };
         println!("{error}");
+    }
+
+    #[test]
+    fn test_parse_usenumber() {
+        let json = r#"{"num": 123}"#;
+        let config = Config::new().use_number(true);
+        let doc = dom_from_slice_config(json.as_bytes(), config).unwrap();
+        let out = dom_to_string(&doc).unwrap();
+        println!("{out}");
+    }
+
+    #[test]
+    fn test_parse_utf8_lossy() {
+        let json = b"\"Hello \xF0\x90\x80World\"";
+        let err = dom_from_slice(json).unwrap_err();
+        println!("{err}");
+
+        let config = Config::new().validate_string(true);
+        let doc = dom_from_slice_config(json, config).unwrap();
+        let out = dom_to_string(&doc).unwrap();
+        println!("{out}");
     }
 }

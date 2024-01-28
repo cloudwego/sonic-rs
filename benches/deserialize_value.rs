@@ -34,7 +34,7 @@ fn sonic_rs_from_slice_unchecked(data: &[u8]) {
 }
 
 fn sonic_rs_flat_from_slice_unchecked(data: &[u8]) {
-    let _ = unsafe { sonic_rs::value::private::dom_from_slice_unchecked(data).unwrap() };
+    let _ = unsafe { sonic_rs::private::flat::dom_from_slice_unchecked(data).unwrap() };
 }
 
 // fn sonic_rs_skip_one(data: &[u8]) {
@@ -72,9 +72,9 @@ macro_rules! bench_file {
             assert_eq!(rs_out1, serde_out);
 
             // verify parsing into sonic_rs::value::private::Document
-            let value: sonic_rs::value::private::Document =
-                unsafe { sonic_rs::value::private::dom_from_slice_unchecked(&vec).unwrap() };
-            let out = sonic_rs::value::private::dom_to_string(&value).unwrap();
+            use sonic_rs::private::flat;
+            let value: flat::Document = unsafe { flat::dom_from_slice_unchecked(&vec).unwrap() };
+            let out = flat::dom_to_string(&value).unwrap();
             let rs_out2: serde_json::Value = serde_json::from_str(&out).unwrap();
             assert_eq!(rs_out2, serde_out);
 

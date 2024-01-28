@@ -22,6 +22,7 @@ use crate::{
         tree::{MultiIndex, MultiKey, PointerTreeInner, PointerTreeNode},
         JsonPointer, PointerTree,
     },
+    private::config::Config,
     util::{
         arc::Arc,
         arch::{get_nonspace_bits, prefix_xor},
@@ -147,6 +148,7 @@ pub(crate) struct Parser<R> {
     nospace_bits: u64,                      // SIMD marked nospace bitmap
     nospace_start: isize,                   // the start position of nospace_bits
     pub(crate) shared: Option<Arc<Shared>>, // the shared allocator for `Value`
+    config: Config,
 }
 
 /// Records the parse status
@@ -167,6 +169,18 @@ where
             nospace_bits: 0,
             nospace_start: -128,
             shared: None,
+            config: Config::default(),
+        }
+    }
+
+    pub fn new_with(read: R, config: Config) -> Self {
+        Self {
+            read,
+            error_index: usize::MAX,
+            nospace_bits: 0,
+            nospace_start: -128,
+            shared: None,
+            config,
         }
     }
 
@@ -295,10 +309,15 @@ where
         V: JsonVisitor<'de>,
     {
         let (pos, num) = self.parse_number(negative, bound)?;
-        let ok = match num {
-            ParserNumber::Float(f) => visitor.visit_f64_pos(f, pos),
-            ParserNumber::Unsigned(f) => visitor.visit_u64_pos(f, pos),
-            ParserNumber::Signed(f) => visitor.visit_i64_pos(f, pos),
+        let ok = if !self.config.use_number {
+            match num {
+                ParserNumber::Float(f) => visitor.visit_f64_pos(f, pos),
+                ParserNumber::Unsigned(f) => visitor.visit_u64_pos(f, pos),
+                ParserNumber::Signed(f) => visitor.visit_i64_pos(f, pos),
+            }
+        } else {
+            let num = as_str(self.read.as_u8_slice()[pos..self.read.index()].as_ref());
+            visitor.visit_number(num)
         };
         check_visit!(self, ok);
         Ok(())

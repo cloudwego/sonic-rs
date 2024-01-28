@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::error::{Error, ErrorCode, Result};
 
 #[inline(always)]
@@ -21,5 +23,12 @@ fn from_utf8_compat(data: &[u8]) -> Result<&str> {
             data,
             err.valid_up_to(),
         )),
+    }
+}
+
+pub(crate) fn from_utf8_lossy(data: &[u8]) -> Cow<'_, str> {
+    match simdutf8::basic::from_utf8(data) {
+        Ok(ret) => Cow::Borrowed(ret),
+        Err(_) => std::string::String::from_utf8_lossy(data),
     }
 }

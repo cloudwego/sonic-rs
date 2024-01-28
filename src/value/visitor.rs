@@ -23,6 +23,11 @@ pub(crate) trait JsonVisitor<'de> {
         false
     }
 
+    fn visit_number(&mut self, value: &str) -> bool {
+        let _ = value;
+        false
+    }
+
     fn visit_str(&mut self, value: &str) -> bool {
         let _ = value;
         false

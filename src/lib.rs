@@ -42,3 +42,6 @@ pub use crate::value::{
 };
 
 pub mod prelude;
+
+#[doc(hidden)]
+pub mod private;
