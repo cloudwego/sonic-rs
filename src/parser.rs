@@ -271,7 +271,13 @@ where
         unsafe {
             let mut src = self.read.cur_ptr();
             let start = self.read.cur_ptr();
-            let (cnt, status) = parse_string_inplace(&mut src).map_err(|e| self.error(e))?;
+            let (cnt, status) =
+                parse_string_inplace(&mut src, self.config.disable_surrogates_error).map_err(
+                    |e| {
+                        self.read.set_ptr(src);
+                        self.error(e)
+                    },
+                )?;
             self.read.set_ptr(src);
             let slice = from_raw_parts(start, cnt);
             let s = from_utf8_unchecked(slice);
@@ -291,7 +297,13 @@ where
         unsafe {
             let mut src = self.read.cur_ptr();
             let start = self.read.cur_ptr();
-            let (cnt, status) = parse_string_inplace(&mut src).map_err(|e| self.error(e))?;
+            let (cnt, status) =
+                parse_string_inplace(&mut src, self.config.disable_surrogates_error).map_err(
+                    |e| {
+                        self.read.set_ptr(src);
+                        self.error(e)
+                    },
+                )?;
             self.read.set_ptr(src);
             let slice = from_raw_parts(start, cnt);
             let s = from_utf8_unchecked(slice);
@@ -427,9 +439,9 @@ where
                 perr!(self, InvalidLiteral)
             } else {
                 let ok = match first {
-                    b't' => visitor.visit_bool(true),
-                    b'f' => visitor.visit_bool(false),
-                    b'n' => visitor.visit_null(),
+                    b't' => visitor.visit_bool_pos(true, reader.index() - 4),
+                    b'f' => visitor.visit_bool_pos(false, reader.index() - 5),
+                    b'n' => visitor.visit_null_pos(reader.index() - 4),
                     _ => unreachable!(),
                 };
                 check_visit!(self, ok);

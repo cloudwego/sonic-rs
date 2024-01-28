@@ -185,7 +185,25 @@ pub(crate) unsafe fn codepoint_to_utf8(cp: u32, c: *mut u8) -> usize {
     }
 }
 
-pub unsafe fn handle_unicode_codepoint_mut(src_ptr: &mut *const u8, dst_ptr: &mut *mut u8) -> bool {
+/// # Safety
+/// not checking dst buffer bound, because "|ufffd" is 3 bytes and always smaller if parsing in
+/// place
+unsafe fn repr_invalid_surrogate(c: &mut *mut u8) {
+    let cp: u32 = 0xFFFD;
+    unsafe {
+        **c = (((cp >> 12) + 224) & 0xFF) as u8;
+        *((*c).offset(1)) = (((cp >> 6) & 63) + 128) as u8;
+        *((*c).offset(2)) = ((cp & 63) + 128) as u8;
+    }
+    *c = c.add(3);
+}
+
+#[inline(always)]
+pub unsafe fn handle_unicode_codepoint_mut(
+    src_ptr: &mut *const u8,
+    dst_ptr: &mut *mut u8,
+    disable_surrogates_error: bool,
+) -> bool {
     // hex_to_u32_nocheck fills high 16 bits of the return value
     // with 1s if the conversion isn't valid
     let mut code_point = hex_to_u32_nocheck(&*(src_ptr.add(2) as *const [u8; 4]));
@@ -194,23 +212,40 @@ pub unsafe fn handle_unicode_codepoint_mut(src_ptr: &mut *const u8, dst_ptr: &mu
 
     // check for low surrogate for characters outside the Basic
     // Multilingual Plane.
-    if (0xD800..0xDC00).contains(&code_point) {
-        if **src_ptr != b'\\' || *src_ptr.add(1) != b'u' {
-            return false;
+    let check = if (0xD800..0xDC00).contains(&code_point) {
+        if **src_ptr == b'\\' || *src_ptr.add(1) == b'u' {
+            let code_point_2 = hex_to_u32_nocheck(&*(src_ptr.add(2) as *const [u8; 4]));
+            let low_bit = code_point_2.wrapping_sub(0xdc00);
+            if (low_bit >> 10) == 0 {
+                code_point = (((code_point - 0xd800) << 10) | low_bit).wrapping_add(0x10000);
+                *src_ptr = src_ptr.add(6);
+                true
+            } else {
+                // invalid surrogate
+                if disable_surrogates_error {
+                    repr_invalid_surrogate(dst_ptr);
+                }
+                false
+            }
+        } else {
+            if disable_surrogates_error {
+                repr_invalid_surrogate(dst_ptr);
+            }
+            false
         }
-        let code_point_2 = hex_to_u32_nocheck(&*(src_ptr.add(2) as *const [u8; 4]));
-
-        let low_bit = code_point_2.wrapping_sub(0xdc00);
-        if (low_bit >> 10) != 0 {
-            // invalid surrogate
-            return false;
-        }
-
-        code_point = (((code_point - 0xd800) << 10) | low_bit).wrapping_add(0x10000);
-        *src_ptr = src_ptr.add(6);
     } else if (0xDC00..0xE000).contains(&code_point) {
         // invalid surrogate
-        return false;
+        if disable_surrogates_error {
+            repr_invalid_surrogate(dst_ptr);
+        }
+        false
+    } else {
+        true
+    };
+
+    // check errors
+    if !check {
+        return disable_surrogates_error;
     }
 
     // also checking invalid utf8 here

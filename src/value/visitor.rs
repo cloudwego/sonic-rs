@@ -77,6 +77,16 @@ pub(crate) trait JsonVisitor<'de> {
     /// has_escaped: the JSON string has escaped characters
     ///////////////////////////////////////////////////////////////////////////
 
+    fn visit_null_pos(&mut self, pos: usize) -> bool {
+        let _ = pos;
+        self.visit_null()
+    }
+
+    fn visit_bool_pos(&mut self, value: bool, pos: usize) -> bool {
+        let _ = pos;
+        self.visit_bool(value)
+    }
+
     fn visit_u64_pos(&mut self, value: u64, pos: usize) -> bool {
         let _ = pos;
         self.visit_u64(value)

@@ -112,6 +112,7 @@ macro_rules! loop_unrooll {
 #[inline(always)]
 pub(crate) unsafe fn parse_string_inplace(
     src: &mut *mut u8,
+    disable_surrogates_error: bool,
 ) -> std::result::Result<(usize, ParseStatus), ErrorCode> {
     const LANS: usize = 32;
     let sdst = *src;
@@ -127,6 +128,7 @@ pub(crate) unsafe fn parse_string_inplace(
             return Ok((src.offset_from(sdst) as usize - 1, ParseStatus::None));
         }
         if block.has_unescaped() {
+            *src = src.add(block.unescaped_index() + 1);
             return Err(ControlCharacterWhileParsingString);
         }
         if block.has_backslash() {
@@ -144,13 +146,13 @@ pub(crate) unsafe fn parse_string_inplace(
         'escape: loop {
             let escaped_char: u8 = *src.add(1);
             if escaped_char != b'u' {
+                *src = src.add(2);
                 *dst = ESCAPED_TAB[escaped_char as usize];
                 if *dst == 0 {
                     return Err(InvalidEscape);
                 }
-                *src = src.add(2);
                 dst = dst.add(1);
-            } else if !handle_unicode_codepoint_mut(src, &mut dst) {
+            } else if !handle_unicode_codepoint_mut(src, &mut dst, disable_surrogates_error) {
                 return Err(InvalidUnicodeCodePoint);
             }
 
@@ -193,6 +195,7 @@ pub(crate) unsafe fn parse_string_inplace(
                 return Ok((dst.offset_from(sdst) as usize, ParseStatus::HasEscaped));
             }
             if block.has_unescaped() {
+                *src = src.add(block.unescaped_index() + 1);
                 return Err(ControlCharacterWhileParsingString);
             }
             if !block.has_backslash() {

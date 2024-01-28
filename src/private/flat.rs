@@ -39,16 +39,16 @@ pub unsafe fn dom_from_slice_unchecked(json: &[u8]) -> Result<Document> {
 // JSON Value Type
 const NULL: u64 = 0;
 const BOOL: u64 = 2;
-const FALSE: u64 = BOOL;
-const TRUE: u64 = (1 << 3) | BOOL;
+const FALSE: u64 = BOOL; // 2
+const TRUE: u64 = (1 << 3) | BOOL; // 10
 const NUMBER: u64 = 3;
-const UINT: u64 = NUMBER;
-const SINT: u64 = (1 << 3) | NUMBER;
-const REAL: u64 = (2 << 3) | NUMBER;
-const RAWNUMBER: u64 = (3 << 3) | NUMBER;
+const UINT: u64 = NUMBER; // 3
+const SINT: u64 = (1 << 3) | NUMBER; // 11
+const REAL: u64 = (2 << 3) | NUMBER; // 19
+const RAWNUMBER: u64 = (3 << 3) | NUMBER; // 27
 const STRING: u64 = 4;
-const STRING_COMMON: u64 = STRING;
-const STRING_HASESCAPED: u64 = (1 << 3) | STRING;
+const STRING_COMMON: u64 = STRING; // 4
+const STRING_HASESCAPED: u64 = (1 << 3) | STRING; // 12
 const OBJECT: u64 = 6;
 const ARRAY: u64 = 7;
 
@@ -57,17 +57,19 @@ const POS_MASK: u64 = (!0) << 32;
 const POS_BITS: u64 = 32;
 const TYPE_MASK: u64 = 0xFF;
 const TYPE_BITS: u64 = 8;
+const CON_LEN_MASK: u64 = (!0u64) >> 32;
+const CON_LEN_BITS: u64 = 32;
 
-/// Value
-/// Layout:
-/// (low)
-/// | type (8 bits) | reserved (24 bits) | pos (32 bits)     |
-/// | type (8 bits) |                    | str len (32 bits) |
-/// |   number val, rawnumber ptr, string ptr, object/array ptr (64 bits)   |
 #[repr(C)]
 #[derive(Debug, Default)]
 pub struct Value {
+    /// (low)
+    /// | type (8 bits) | reserved (24 bits) | pos (32 bits)     |
+    /// | type (8 bits) |                    | str len (32 bits) |
     typ: u64,
+    ///
+    /// |   number val, rawnumber ptr, string ptr, object/array ptr (64 bits)   |
+    /// |   next offset (32 bits) | object/array len (32 bits)   |
     val: u64,
 }
 
@@ -89,6 +91,21 @@ impl From<()> for Value {
 }
 
 impl Value {
+    pub fn new_bool(val: bool, pos: usize) -> Self {
+        let typ = if val { TRUE } else { FALSE };
+        Self {
+            typ: typ | ((pos as u64) << POS_BITS),
+            val: val as u64,
+        }
+    }
+
+    pub fn new_null(pos: usize) -> Self {
+        Self {
+            typ: NULL | ((pos as u64) << POS_BITS),
+            val: 0,
+        }
+    }
+
     pub fn new_i64(val: i64, pos: usize) -> Self {
         Self {
             typ: SINT | ((pos as u64) << POS_BITS),
@@ -151,6 +168,27 @@ impl Value {
         }
     }
 
+    fn typ(&self) -> u64 {
+        self.typ & TYPE_MASK
+    }
+
+    fn next(&self) -> &Self {
+        if self.typ() == OBJECT || self.typ() == ARRAY {
+            let offset = self.val >> CON_LEN_BITS;
+            unsafe { &*(self as *const Value).offset(offset as isize) }
+        } else {
+            unsafe { &*(self as *const Value).offset(1) }
+        }
+    }
+
+    fn children(&self) -> &Self {
+        if self.typ() == OBJECT || self.typ() == ARRAY {
+            unsafe { &*(self as *const Value).offset(1) }
+        } else {
+            unreachable!("not a container")
+        }
+    }
+
     fn number(&self) -> &str {
         unsafe {
             let ptr = self.val as *const u8;
@@ -159,13 +197,15 @@ impl Value {
         }
     }
 
+    fn len(&self) -> usize {
+        (self.val & CON_LEN_MASK) as usize
+    }
+
     fn serialize<W: crate::writer::WriteExt, F: crate::format::Formatter>(
         &self,
         w: &mut W,
         f: &mut F,
-        next: &mut *const Self,
     ) -> std::io::Result<()> {
-        *next = unsafe { &*(*next).offset(1) };
         let typ = self.typ & TYPE_MASK;
         match typ {
             NULL => f.write_null(w)?,
@@ -178,31 +218,34 @@ impl Value {
             STRING_COMMON | STRING_HASESCAPED => f.write_string_fast(w, self.str(), true)?,
             ARRAY => {
                 f.begin_array(w)?;
-                let len = self.val as usize;
+                let len = self.len();
                 let mut i = 0;
+                let mut next = self.children();
                 while i < len {
                     f.begin_array_value(w, i == 0)?;
-                    let node = unsafe { &**next };
-                    node.serialize(w, f, next)?;
+                    next.serialize(w, f)?;
                     f.end_array_value(w)?;
                     i += 1;
+                    next = next.next();
                 }
                 f.end_array(w)?;
             }
             OBJECT => {
                 f.begin_object(w)?;
-                let len = self.val as usize;
+                let len = self.len();
                 let mut i = 0;
+                let mut next = self.children();
                 while i < len {
-                    let key = unsafe { &**next }.str();
+                    let key = next;
                     f.begin_object_key(w, i == 0)?;
-                    f.write_string_fast(w, key, true)?;
+                    f.write_string_fast(w, key.str(), true)?;
                     f.end_object_key(w)?;
-                    *next = unsafe { &*(*next).offset(1) };
-                    let val = unsafe { &**next };
+
                     f.begin_object_value(w)?;
-                    val.serialize(w, f, next)?;
+                    let val = key.next();
+                    val.serialize(w, f)?;
                     f.end_object_value(w)?;
+                    next = val.next();
                     i += 1;
                 }
                 f.end_object(w)?;
@@ -215,14 +258,12 @@ impl Value {
 }
 
 pub fn dom_to_string(value: &Document) -> Result<String> {
-    let mut next = value.root() as *const Value;
     let mut buf = Vec::new();
     let mut format = crate::format::CompactFormatter;
-    unsafe {
-        (*next)
-            .serialize(&mut buf, &mut format, &mut next)
-            .map_err(crate::Error::io)?;
-    }
+    value
+        .root()
+        .serialize(&mut buf, &mut format)
+        .map_err(crate::Error::io)?;
 
     Ok(unsafe { String::from_utf8_unchecked(buf) })
 }
@@ -278,7 +319,8 @@ impl Document {
                 let parent = visitor.parent;
                 let old = visitor.nodes[parent].val as usize;
                 visitor.parent = old;
-                visitor.nodes[parent].val = len as u64;
+                let next = visitor.nodes.len() - parent;
+                visitor.nodes[parent].val = (len as u64) | (next as u64) << CON_LEN_BITS;
                 true
             }
 
@@ -294,8 +336,8 @@ impl Document {
 
         impl<'de, 'a: 'de> JsonVisitor<'de> for DocumentVisitor<'a> {
             #[inline(always)]
-            fn visit_bool(&mut self, val: bool) -> bool {
-                self.push_node(Value::from(val))
+            fn visit_bool_pos(&mut self, val: bool, pos: usize) -> bool {
+                self.push_node(Value::new_bool(val, pos))
             }
 
             #[inline(always)]
@@ -352,8 +394,8 @@ impl Document {
             }
 
             #[inline(always)]
-            fn visit_null(&mut self) -> bool {
-                self.push_node(Value::from(()))
+            fn visit_null_pos(&mut self, pos: usize) -> bool {
+                self.push_node(Value::new_null(pos))
             }
 
             #[inline(always)]
@@ -442,5 +484,26 @@ mod test {
         let doc = dom_from_slice_config(json, config).unwrap();
         let out = dom_to_string(&doc).unwrap();
         println!("{out}");
+    }
+
+    #[test]
+    fn test_parse_utf16_lossy() {
+        fn test_json(json: &str) {
+            let _ = dom_from_slice(json.as_bytes()).map_err(|err| println!("{err}"));
+            let config = Config::new().disable_surrogates_error(true);
+            let doc = dom_from_slice_config(json.as_bytes(), config).unwrap();
+            let out = dom_to_string(&doc).unwrap();
+            println!("{out}");
+        }
+
+        let cases = [
+            r#""hello \ud800 world""#,
+            r#""hello \ud800\udc00 world""#,
+            r#""hello \ud800\ud800 world""#,
+            r#""hello \udc00 world""#,
+        ];
+        for case in cases {
+            test_json(case);
+        }
     }
 }
