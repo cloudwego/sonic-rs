@@ -1759,7 +1759,7 @@ mod test {
     use crate::{to_string, Value};
     test_value!(from_slice, to_string, Value);
 
-    use crate::value::private::{
+    use crate::private::flat::{
         dom_from_slice as flat_dom_from_slice, dom_to_string as flat_dom_to_string,
         Document as FlatDocument,
     };
@@ -1961,7 +1961,7 @@ mod test {
         let ret: Result<Value> = from_slice(&data);
         assert_eq!(
             ret.err().unwrap().to_string(),
-            "Invalid UTF-8 characters in json at line 1 column 1\n\n\t\"��\"\n\t.^..\n"
+            "Invalid UTF-8 characters in json at offset 1 in line 1 column 1\n\n\t\"��\"\n\t.^..\n"
         );
 
         let dom: Result<Value> = unsafe { from_slice_unchecked(&data) };
@@ -1971,14 +1971,14 @@ mod test {
         let dom: Result<Value> = from_slice(&data);
         assert_eq!(
             dom.err().unwrap().to_string(),
-            "Invalid UTF-8 characters in json at line 1 column 2\n\n\t\"\"�\n\t..^\n"
+            "Invalid UTF-8 characters in json at offset 2 in line 1 column 2\n\n\t\"\"�\n\t..^\n"
         );
 
         let data = [0x80, b'"', b'"'];
         let dom: Result<Value> = unsafe { from_slice_unchecked(&data) };
         assert_eq!(
             dom.err().unwrap().to_string(),
-            "Invalid JSON value at line 1 column 0\n\n\t�\"\"\n\t^..\n"
+            "Invalid JSON value at offset 0 in line 1 column 0\n\n\t�\"\"\n\t^..\n"
         );
     }
 

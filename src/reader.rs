@@ -12,6 +12,7 @@ where
 }
 
 pub(crate) struct Position {
+    pub offset: usize,
     pub line: usize,
     pub column: usize,
 }
@@ -20,7 +21,11 @@ impl Position {
     pub(crate) fn from_index(mut i: usize, data: &[u8]) -> Self {
         // i must not exceed the length of data
         i = i.min(data.len());
-        let mut position = Position { line: 1, column: 0 };
+        let mut position = Position {
+            offset: i,
+            line: 1,
+            column: 0,
+        };
         for ch in &data[..i] {
             match *ch {
                 b'\n' => {

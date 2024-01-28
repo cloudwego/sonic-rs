@@ -9,7 +9,6 @@ use core::{
 use std::{
     borrow::Cow,
     error,
-    str::FromStr,
     string::{String, ToString},
 };
 
@@ -49,6 +48,11 @@ impl Error {
     /// character.
     pub fn column(&self) -> usize {
         self.err.column
+    }
+
+    /// The offset in the input at which the error was detected.
+    pub fn offset(&self) -> usize {
+        self.err.offset
     }
 
     /// The kind reported by the underlying standard library I/O error, if this
@@ -188,6 +192,7 @@ pub enum Category {
 
 struct ErrorImpl {
     code: ErrorCode,
+    offset: usize,
     line: usize,
     column: usize,
     // the descript of the error position
@@ -323,6 +328,7 @@ impl Error {
             err: Box::new(ErrorImpl {
                 code,
                 line: position.line,
+                offset: position.offset,
                 column: position.column,
                 descript: Some(descript),
             }),
@@ -334,6 +340,7 @@ impl Error {
         Error {
             err: Box::new(ErrorImpl {
                 code: ErrorCode::Io(error),
+                offset: 0,
                 line: 0,
                 column: 0,
                 descript: None,
@@ -347,9 +354,10 @@ impl Error {
     }
 
     #[cold]
-    pub(crate) fn new(code: ErrorCode, line: usize, column: usize) -> Self {
+    pub(crate) fn new(code: ErrorCode, offset: usize, line: usize, column: usize) -> Self {
         Error {
             err: Box::new(ErrorImpl {
+                offset,
                 code,
                 line,
                 column,
@@ -379,8 +387,9 @@ impl Display for ErrorImpl {
         if self.line != 0 {
             write!(
                 f,
-                "{} at line {} column {}{}",
+                "{} at offset {} in line {} column {}{}",
                 self.code,
+                self.offset,
                 self.line,
                 self.column,
                 self.descript.as_ref().unwrap_or(&"".to_string())
@@ -397,8 +406,9 @@ impl Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Error({}, line: {}, column: {}){}",
+            "Error({}, offset: {} line: {}, column: {}){}",
             self.err.code,
+            self.err.offset,
             self.err.line,
             self.err.column,
             self.err.descript.as_ref().unwrap_or(&"".to_string())
@@ -432,64 +442,15 @@ impl ser::Error for Error {
 // Parse our own error message that looks like "{} at line {} column {}" to work
 // around erased-serde round-tripping the error through de::Error::custom.
 #[cold]
-pub fn make_error(mut msg: String) -> Error {
-    let (line, column) = parse_line_col(&mut msg).unwrap_or((0, 0));
+pub fn make_error(msg: String) -> Error {
     Error {
         err: Box::new(ErrorImpl {
             code: ErrorCode::Message(msg.into()),
-            line,
-            column,
+            offset: 0,
+            line: 0,
+            column: 0,
             descript: None,
         }),
-    }
-}
-
-fn parse_line_col(msg: &mut String) -> Option<(usize, usize)> {
-    let start_of_suffix = match msg.rfind(" at line ") {
-        Some(index) => index,
-        None => return None,
-    };
-
-    // Find start and end of line number.
-    let start_of_line = start_of_suffix + " at line ".len();
-    let mut end_of_line = start_of_line;
-    while starts_with_digit(&msg[end_of_line..]) {
-        end_of_line += 1;
-    }
-
-    if !msg[end_of_line..].starts_with(" column ") {
-        return None;
-    }
-
-    // Find start and end of column number.
-    let start_of_column = end_of_line + " column ".len();
-    let mut end_of_column = start_of_column;
-    while starts_with_digit(&msg[end_of_column..]) {
-        end_of_column += 1;
-    }
-
-    if end_of_column < msg.len() {
-        return None;
-    }
-
-    // Parse numbers.
-    let line = match usize::from_str(&msg[start_of_line..end_of_line]) {
-        Ok(line) => line,
-        Err(_) => return None,
-    };
-    let column = match usize::from_str(&msg[start_of_column..end_of_column]) {
-        Ok(column) => column,
-        Err(_) => return None,
-    };
-
-    msg.truncate(start_of_suffix);
-    Some((line, column))
-}
-
-fn starts_with_digit(slice: &str) -> bool {
-    match slice.as_bytes().first() {
-        None => false,
-        Some(&byte) => byte.is_ascii_digit(),
     }
 }
 
@@ -508,73 +469,74 @@ mod test {
         let err = from_str::<Foo>("{ \"b\":[]}").unwrap_err();
         assert_eq!(
             format!("{}", err),
-            "missing field `a` at line 1 column 8\n\n\t{ \"b\":[]}\n\t........^\n"
+            "missing field `a` at offset 8 in line 1 column 8\n\n\t{ \"b\":[]}\n\t........^\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [1, 2x, 3, 4, 5]}").unwrap_err();
         println!("{}", err);
         assert_eq!(
             format!("{}", err),
-            "Expected this character to be either a ',' or a ']' while parsing at line 1 column \
-             11\n\n\t\": [1, 2x, 3, 4,\n\t........^.......\n"
+            "Expected this character to be either a ',' or a ']' while parsing at offset 11 in \
+             line 1 column 11\n\n\t\": [1, 2x, 3, 4,\n\t........^.......\n"
         );
 
         let err = from_str::<Foo>("{\"a\": null}").unwrap_err();
         assert_eq!(
             format!("{}", err),
-            "invalid type: null, expected a sequence at line 1 column 9\n\n\t\"a\": \
+            "invalid type: null, expected a sequence at offset 9 in line 1 column 9\n\n\t\"a\": \
              null}\n\t........^.\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [1,2,3  }").unwrap_err();
         assert_eq!(
             format!("{}", err),
-            "Expected this character to be either a ',' or a ']' while parsing at line 1 column \
-             14\n\n\t[1,2,3  }\n\t........^\n"
+            "Expected this character to be either a ',' or a ']' while parsing at offset 14 in \
+             line 1 column 14\n\n\t[1,2,3  }\n\t........^\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [\"123\"]}").unwrap_err();
         assert_eq!(
             format!("{}", err),
-            "invalid type: string \"123\", expected i32 at line 1 column 11\n\n\t\": \
+            "invalid type: string \"123\", expected i32 at offset 11 in line 1 column 11\n\n\t\": \
              [\"123\"]}\n\t........^..\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [").unwrap_err();
         assert_eq!(
             format!("{}", err),
-            "EOF while parsing at line 1 column 6\n\n\t{\"a\": [\n\t......^\n"
+            "EOF while parsing at offset 6 in line 1 column 6\n\n\t{\"a\": [\n\t......^\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [000]}").unwrap_err();
         assert_eq!(
             format!("{}", err),
-            "Expected this character to be either a ',' or a ']' while parsing at line 1 column \
-             8\n\n\t{\"a\": [000]}\n\t........^...\n"
+            "Expected this character to be either a ',' or a ']' while parsing at offset 8 in \
+             line 1 column 8\n\n\t{\"a\": [000]}\n\t........^...\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [-]}").unwrap_err();
         assert_eq!(
             format!("{}", err),
-            "Invalid number at line 1 column 7\n\n\t{\"a\": [-]}\n\t.......^..\n"
+            "Invalid number at offset 7 in line 1 column 7\n\n\t{\"a\": [-]}\n\t.......^..\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [-1.23e]}").unwrap_err();
         assert_eq!(
             format!("{}", err),
-            "Invalid number at line 1 column 12\n\n\t: [-1.23e]}\n\t........^..\n"
+            "Invalid number at offset 12 in line 1 column 12\n\n\t: [-1.23e]}\n\t........^..\n"
         );
 
         let err = from_str::<Foo>("{\"c\": \"哈哈哈哈哈哈}").unwrap_err();
         assert_eq!(
             format!("{}", err),
-            "EOF while parsing at line 1 column 25\n\n\t哈哈哈}\n\t.........^\n"
+            "EOF while parsing at offset 25 in line 1 column 25\n\n\t哈哈哈}\n\t.........^\n"
         );
 
         let err = from_slice::<Foo>(b"{\"b\":\"\x80\"}").unwrap_err();
         assert_eq!(
             format!("{}", err),
-            "Invalid UTF-8 characters in json at line 1 column 6\n\n\t{\"b\":\"�\"}\n\t......^..\n"
+            "Invalid UTF-8 characters in json at offset 6 in line 1 column \
+             6\n\n\t{\"b\":\"�\"}\n\t......^..\n"
         );
     }
 

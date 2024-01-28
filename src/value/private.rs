@@ -1,4 +1,4 @@
-//! Not Public API. A flatten DOM from JSON.
+//! Not Public API. A simple flatten DOM from JSON.
 
 use crate::{parser::Parser, reader::PaddedSliceRead, value::visitor::JsonVisitor, Result};
 
@@ -29,6 +29,8 @@ const LEN_BITS: u64 = 24;
 /// Layout:
 /// (low)
 /// | type (8 bits) | reserved (24 bits) | pos (32 bits) |
+/// |   number, string ptr, object/array ptr (64 bits)   |
+#[repr(C)]
 #[derive(Debug, Default)]
 pub struct Value {
     typ: u64,
@@ -193,13 +195,15 @@ pub fn dom_to_string(value: &Document) -> Result<String> {
     Ok(unsafe { String::from_utf8_unchecked(buf) })
 }
 
+#[repr(C)]
 #[derive(Debug, Default)]
 pub struct Document {
-    // A continous flatten buffer for all JSON values
-    node_buffer: Vec<Value>,
-    json_buffer: Vec<u8>,
-    error_code: u64,
-    error_pos: u64,
+    /// A continous flatten buffer for all JSON values
+    pub node_buffer: Vec<Value>,
+    /// clone from input json
+    pub json_buffer: Vec<u8>,
+    pub error_msg: String,
+    pub error_pos: usize,
 }
 
 impl Document {
@@ -369,5 +373,12 @@ mod test {
         let doc = unsafe { dom_from_slice_unchecked(json.as_bytes()).unwrap() };
         let out = dom_to_string(&doc).unwrap();
         println!("{out}");
+    }
+
+    #[test]
+    fn test_parse_error() {
+        let json = r#"{123}"#;
+        let error = unsafe { dom_from_slice_unchecked(json.as_bytes()).unwrap_err() };
+        println!("{error}");
     }
 }
