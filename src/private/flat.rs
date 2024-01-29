@@ -1,5 +1,7 @@
 //! Not Public API. A simple flatten DOM from JSON.
 
+use std::{borrow::Cow, str::from_utf8_unchecked};
+
 use super::config::Config;
 use crate::{parser::Parser, reader::PaddedSliceRead, value::visitor::JsonVisitor, Result};
 
@@ -7,13 +9,16 @@ pub fn dom_from_slice_config(json: &[u8], config: Config) -> Result<Document> {
     use crate::util::utf8::from_utf8_lossy;
 
     let cow = if config.validate_string {
-        Some(from_utf8_lossy(json))
+        from_utf8_lossy(json)
     } else {
-        None
+        Cow::Borrowed(unsafe { from_utf8_unchecked(json) })
     };
 
-    let json = cow.as_ref().map_or(json, |c| c.as_bytes());
-    let mut doc = Document::default();
+    let json = cow.as_bytes();
+    let mut doc = Document {
+        has_utf8_lossy: matches!(cow, std::borrow::Cow::Owned(_)),
+        ..Default::default()
+    };
     doc.parse_bytes_impl(json, config)?;
     Ok(doc)
 }
@@ -276,6 +281,9 @@ pub struct Document {
     pub json_buffer: Vec<u8>,
     pub error_msg: String,
     pub error_pos: usize,
+    /// if the input json has invalid utf8, we will use utf8_lossy and replace old string with new
+    /// buffer
+    pub has_utf8_lossy: bool,
 }
 
 impl Document {
