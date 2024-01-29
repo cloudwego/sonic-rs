@@ -360,7 +360,6 @@ impl Document {
 
             #[inline(always)]
             fn visit_number(&mut self, val: &str) -> bool {
-                dbg!(val);
                 self.push_node(Value::new_number(val))
             }
 
@@ -467,10 +466,11 @@ mod test {
 
     #[test]
     fn test_parse_usenumber() {
-        let json = r#"{"num": 123}"#;
+        let json = r#"{"num1":123,"num2":[1,-3.14,0.0,-0]}"#;
         let config = Config::new().use_number(true);
         let doc = dom_from_slice_config(json.as_bytes(), config).unwrap();
         let out = dom_to_string(&doc).unwrap();
+        assert_eq!(json, out);
         println!("{out}");
     }
 

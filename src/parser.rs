@@ -222,8 +222,8 @@ where
         bound: bool,
     ) -> Result<(usize, ParserNumber)> {
         let reader = &mut self.read;
+        let pos = reader.index() - 1;
         let mut now = reader.index() - ((!negative) as usize);
-        let pos = now;
         let data = reader.as_u8_slice();
         let ret = parse_number(data, &mut now, negative, bound);
         reader.set_index(now);
