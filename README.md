@@ -56,7 +56,7 @@ Add sonic-rs in `Cargo.toml`
 
 ```
 [dependencies]
-sonic-rs = 0.3
+sonic-rs = "0.3"
 ```
 
 ## Features
