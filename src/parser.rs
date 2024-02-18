@@ -1424,8 +1424,8 @@ where
         // SIMD path for long number
         while let Some(chunk) = self.read.peek_n(32) {
             let v = unsafe { i8x32::from_slice_unaligned_unchecked(chunk) };
-            let less0 = i8x32::splat(b'0' - 1);
-            let nine = i8x32::splat(b'9');
+            let less0 = i8x32::splat((b'0' - 1) as i8);
+            let nine = i8x32::splat(b'9' as i8);
             let nondigits = (v.le(&less0) | v.gt(&nine)).bitmask();
 
             if nondigits != 0 {

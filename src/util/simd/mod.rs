@@ -1,3 +1,4 @@
+mod bits;
 mod traits;
 
 #[doc(hidden)]

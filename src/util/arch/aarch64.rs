@@ -68,32 +68,12 @@ pub unsafe fn get_nonspace_bits(data: &[u8; 64]) -> u64 {
         vtstq_u8(v, white_mask)
     }
 
-    let input = (
+    !crate::util::simd::neon::to_bitmask64(
         chunk_nonspace_bits(vld1q_u8(data.as_ptr())),
         chunk_nonspace_bits(vld1q_u8(data.as_ptr().offset(16))),
         chunk_nonspace_bits(vld1q_u8(data.as_ptr().offset(32))),
         chunk_nonspace_bits(vld1q_u8(data.as_ptr().offset(48))),
-    );
-
-    let mask64 = crate::util::simd::neon::to_bitmask64(input);
-    !mask64
-
-    // Equal C++ code as:
-    // const simd8<uint8_t> table1(16, 0, 0, 0, 0, 0, 0, 0, 0, 8, 12, 1, 2, 9, 0, 0);
-    // const simd8<uint8_t> table2(8, 0, 18, 4, 0, 1, 0, 1, 0, 0, 0, 3, 2, 1, 0, 0);
-    // simd8x64<uint8_t> v(
-    //    (in.chunks[0] & 0xf).lookup_16(table1) & (in.chunks[0].shr<4>()).lookup_16(table2),
-    //    (in.chunks[1] & 0xf).lookup_16(table1) & (in.chunks[1].shr<4>()).lookup_16(table2),
-    //    (in.chunks[2] & 0xf).lookup_16(table1) & (in.chunks[2].shr<4>()).lookup_16(table2),
-    //    (in.chunks[3] & 0xf).lookup_16(table1) & (in.chunks[3].shr<4>()).lookup_16(table2)
-    // );
-    //     uint64_t whitespace = simd8x64<bool>(
-    //         v.chunks[0].any_bits_set(0x18),
-    //         v.chunks[1].any_bits_set(0x18),
-    //         v.chunks[2].any_bits_set(0x18),
-    //         v.chunks[3].any_bits_set(0x18)
-    //   ).to_bitmask();
-    //   return { whitespace, op };
+    )
 }
 
 #[inline(always)]

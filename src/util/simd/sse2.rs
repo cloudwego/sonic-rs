@@ -3,10 +3,8 @@ use std::{
     ops::{BitAnd, BitOr, BitOrAssign},
 };
 
-use crate::{
-    impl_lanes,
-    util::simd::{Mask, Simd},
-};
+use super::{Mask, Simd};
+use crate::impl_lanes;
 
 #[derive(Debug)]
 #[repr(transparent)]
@@ -19,6 +17,7 @@ pub struct Simd128u(__m128i);
 impl Simd for Simd128i {
     const LANES: usize = 16;
     type Mask = Mask128;
+    type Element = i8;
 
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
@@ -31,24 +30,24 @@ impl Simd for Simd128i {
     }
 
     #[inline(always)]
-    fn eq(&self, lhs: &Self) -> Self::Mask {
-        let eq = unsafe { _mm_cmpeq_epi8(self.0, lhs.0) };
+    fn eq(&self, rhs: &Self) -> Self::Mask {
+        let eq = unsafe { _mm_cmpeq_epi8(self.0, rhs.0) };
         Mask128(eq)
     }
 
     #[inline(always)]
-    fn splat(ch: u8) -> Self {
-        unsafe { Self(_mm_set1_epi8(ch as i8)) }
+    fn splat(elem: i8) -> Self {
+        unsafe { Self(_mm_set1_epi8(elem)) }
     }
 
     #[inline(always)]
-    fn le(&self, lhs: &Self) -> Self::Mask {
-        unsafe { Mask128(_mm_cmpgt_epi8(lhs.0, self.0)) }
+    fn le(&self, rhs: &Self) -> Self::Mask {
+        unsafe { Mask128(_mm_cmpgt_epi8(rhs.0, self.0)) }
     }
 
     #[inline(always)]
-    fn gt(&self, lhs: &Self) -> Self::Mask {
-        unsafe { Mask128(_mm_cmpgt_epi8(self.0, lhs.0)) }
+    fn gt(&self, rhs: &Self) -> Self::Mask {
+        unsafe { Mask128(_mm_cmpgt_epi8(self.0, rhs.0)) }
     }
 }
 
@@ -61,10 +60,11 @@ impl_lanes!(Simd128u, 16);
 impl_lanes!(Mask128, 16);
 
 impl Mask for Mask128 {
-    type BitMap = u16;
+    type Bitmap = u16;
+    type Element = u8;
 
     #[inline(always)]
-    fn bitmask(self) -> Self::BitMap {
+    fn bitmask(self) -> Self::Bitmap {
         unsafe { _mm_movemask_epi8(self.0) as u16 }
     }
 
@@ -103,6 +103,7 @@ impl BitOrAssign<Mask128> for Mask128 {
 impl Simd for Simd128u {
     const LANES: usize = 16;
     type Mask = Mask128;
+    type Element = u8;
 
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
@@ -115,8 +116,8 @@ impl Simd for Simd128u {
     }
 
     #[inline(always)]
-    fn eq(&self, lhs: &Self) -> Self::Mask {
-        let eq = unsafe { _mm_cmpeq_epi8(self.0, lhs.0) };
+    fn eq(&self, rhs: &Self) -> Self::Mask {
+        let eq = unsafe { _mm_cmpeq_epi8(self.0, rhs.0) };
         Mask128(eq)
     }
 
@@ -126,16 +127,16 @@ impl Simd for Simd128u {
     }
 
     #[inline(always)]
-    fn le(&self, lhs: &Self) -> Self::Mask {
+    fn le(&self, rhs: &Self) -> Self::Mask {
         unsafe {
-            let max = _mm_max_epu8(self.0, lhs.0);
-            let eq = _mm_cmpeq_epi8(max, lhs.0);
+            let max = _mm_max_epu8(self.0, rhs.0);
+            let eq = _mm_cmpeq_epi8(max, rhs.0);
             Mask128(eq)
         }
     }
 
     #[inline(always)]
-    fn gt(&self, _lhs: &Self) -> Self::Mask {
+    fn gt(&self, _rhs: &Self) -> Self::Mask {
         todo!()
     }
 }
