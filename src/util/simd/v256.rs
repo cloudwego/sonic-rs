@@ -1,10 +1,7 @@
 use std::ops::{BitAnd, BitOr, BitOrAssign};
 
-use super::{Mask128, Simd128i, Simd128u};
-use crate::{
-    impl_lanes,
-    util::simd::{Mask, Simd},
-};
+use super::{bits::combine_u16, Mask, Mask128, Simd, Simd128i, Simd128u};
+use crate::impl_lanes;
 
 impl_lanes!(Simd256u, 32);
 
@@ -23,11 +20,11 @@ pub struct Simd256i((Simd128i, Simd128i));
 pub struct Mask256(pub(crate) (Mask128, Mask128));
 
 impl Mask for Mask256 {
-    type Bitmap = u32;
+    type BitMask = u32;
     type Element = u8;
 
     #[inline(always)]
-    fn bitmask(self) -> Self::Bitmap {
+    fn bitmask(self) -> Self::BitMask {
         cfg_if::cfg_if! {
             if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
                 use std::arch::aarch64::uint8x16_t;

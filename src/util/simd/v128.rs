@@ -105,10 +105,10 @@ impl Simd for Simd128u {
 }
 
 impl Mask for Mask128 {
-    type Bitmap = u16;
+    type BitMask = u16;
     type Element = u8;
 
-    fn bitmask(self) -> Self::BitMap {
+    fn bitmask(self) -> Self::BitMask {
         #[cfg(target_endian = "little")]
         {
             self.0

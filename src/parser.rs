@@ -12,7 +12,7 @@ use smallvec::SmallVec;
 
 use super::reader::{Reader, Reference};
 #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
-use crate::util::simd::{bits::NeonBits, u8x16};
+use crate::util::simd::bits::NeonBits;
 use crate::{
     error::{
         Error,
