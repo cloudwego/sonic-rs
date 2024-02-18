@@ -3,13 +3,17 @@ use std::{
     slice::{from_raw_parts, from_raw_parts_mut},
 };
 
+#[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
+use crate::util::simd::u8x32;
+#[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
+use crate::util::simd::{bits::NeonBits, u8x16};
 use crate::{
     error::ErrorCode::{
         self, ControlCharacterWhileParsingString, InvalidEscape, InvalidUnicodeCodePoint,
     },
     util::{
         arch::page_size,
-        simd::{bits::NeonBits, u8x16, BitMask, Mask, Simd},
+        simd::{BitMask, Mask, Simd},
         unicode::handle_unicode_codepoint_mut,
     },
 };
@@ -36,7 +40,7 @@ pub(crate) struct StringBlock<B: BitMask> {
 
 #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
 impl StringBlock<u32> {
-    const LANES: usize = 32;
+    pub(crate) const LANES: usize = 32;
 
     #[inline]
     pub fn new(v: &u8x32) -> Self {

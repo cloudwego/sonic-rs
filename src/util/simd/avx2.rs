@@ -40,13 +40,12 @@ impl Simd for Simd256i {
         unsafe { Self(_mm256_set1_epi8(elem)) }
     }
 
-    // less or equal
     #[inline(always)]
     fn le(&self, rhs: &Self) -> Self::Mask {
-        unsafe { Mask256(_mm256_cmpgt_epi8(rhs.0, self.0)) }
+        // self <= rhs equal as rhs >= self
+        rhs.gt(self) | rhs.eq(self)
     }
 
-    // greater than
     #[inline(always)]
     fn gt(&self, rhs: &Self) -> Self::Mask {
         unsafe { Mask256(_mm256_cmpgt_epi8(self.0, rhs.0)) }
@@ -130,7 +129,6 @@ impl Simd for Simd256u {
         unsafe { Simd256u(_mm256_set1_epi8(ch as i8)) }
     }
 
-    // less or equal
     #[inline(always)]
     fn le(&self, rhs: &Self) -> Self::Mask {
         unsafe {
@@ -140,7 +138,6 @@ impl Simd for Simd256u {
         }
     }
 
-    // greater than
     #[inline(always)]
     fn gt(&self, _rhs: &Self) -> Self::Mask {
         todo!()

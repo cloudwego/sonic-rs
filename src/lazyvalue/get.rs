@@ -487,9 +487,9 @@ mod test {
         }
 
         test_get_ok(
-            r#"1230(xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"#,
+            r#"1230/(xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"#,
             &pointer![],
-            r#"1230("#,
+            r#"1230"#,
         );
 
         test_get_ok(
