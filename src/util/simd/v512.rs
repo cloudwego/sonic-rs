@@ -20,11 +20,11 @@ pub struct Simd512i((Simd256i, Simd256i));
 pub struct Mask512((Mask256, Mask256));
 
 impl Mask for Mask512 {
-    type Bitmap = u64;
+    type BitMask = u64;
     type Element = u8;
 
     #[inline(always)]
-    fn bitmask(self) -> Self::Bitmap {
+    fn bitmask(self) -> Self::BitMask {
         cfg_if::cfg_if! {
             if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
                 use std::arch::aarch64::uint8x16_t;

@@ -1243,12 +1243,11 @@ impl Value {
         let children = self.children_mut_unchecked::<(MaybeUninit<Value>, MaybeUninit<Value>)>();
         let len = children.len();
 
-        let end_key = unsafe { &mut (*children.as_mut_ptr().add(len)).0 };
-        let end_value = unsafe { &mut (*children.as_mut_ptr().add(len)).1 };
-        write_value(end_key, pair.0, self.shared());
-        write_value(end_value, pair.1, self.shared());
+        let end_pair = unsafe { &mut *children.as_mut_ptr().add(len) };
+        write_value(&mut end_pair.0, pair.0, self.shared());
+        write_value(&mut end_pair.1, pair.1, self.shared());
         self.add_len(1);
-        unsafe { &mut *(end_key as *mut _ as *mut Pair) }
+        unsafe { &mut *(end_pair as *mut _ as *mut Pair) }
     }
 
     fn add_len(&mut self, additional: isize) {

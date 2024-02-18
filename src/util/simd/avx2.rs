@@ -61,11 +61,11 @@ impl_lanes!(Simd256u, 32);
 impl_lanes!(Mask256, 32);
 
 impl Mask for Mask256 {
-    type Bitmap = u32;
+    type BitMask = u32;
     type Element = u8;
 
     #[inline(always)]
-    fn bitmask(self) -> Self::Bitmap {
+    fn bitmask(self) -> Self::BitMask {
         unsafe { _mm256_movemask_epi8(self.0) as u32 }
     }
 

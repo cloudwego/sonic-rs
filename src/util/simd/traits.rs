@@ -35,25 +35,25 @@ pub trait Simd: Sized {
 /// Portbal SIMD mask traits
 pub trait Mask: Sized + BitOr<Self> + BitOrAssign + BitAnd<Self> {
     type Element;
-    type Bitmap: BitMask;
+    type BitMask: BitMask;
 
-    fn bitmask(self) -> Self::Bitmap;
+    fn bitmask(self) -> Self::BitMask;
 
     fn splat(b: bool) -> Self;
 }
 
-/// Trait for Bitmap.
+/// Trait for the bitmask of a vector Mask.
 pub trait BitMask {
-    /// Total bits in the bitmap.
+    /// Total bits in the bitmask.
     const LEN: usize;
 
     /// get the offset of the first `1` bit.
     fn first_offset(&self) -> usize;
 
-    /// check if this bitmap is before the other bitmap.
+    /// check if this bitmask is before the other bitmask.
     fn before(&self, rhs: &Self) -> bool;
 
-    /// convert bitmap as little endian
+    /// convert bitmask as little endian
     fn as_little_endian(&self) -> Self;
 
     /// whether all bits are zero.

@@ -8,7 +8,7 @@ use super::node::Value;
 // use const make thread local access faster
 
 thread_local! {
-   static NODE_BUF: std::cell::RefCell<Vec<ManuallyDrop<Value>>> = std::cell::RefCell::new(Vec::new());
+   static NODE_BUF: std::cell::RefCell<Vec<ManuallyDrop<Value>>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// A thread-local buffer for temporary nodes. Avoid allocating temporary memory multiple times.

@@ -98,13 +98,13 @@ pub(crate) const BIT_MASK_TAB: [u8; 16] = [
 pub struct Mask128(pub(crate) uint8x16_t);
 
 impl Mask for Mask128 {
-    type Bitmap = NeonBits;
+    type BitMask = NeonBits;
     type Element = u8;
 
     /// Convert Mask Vector 0x00-ff-ff to Bits 0b0000-1111-1111
     /// Reference: https://community.arm.com/arm-community-blogs/b/infrastructure-solutions-blog/posts/porting-x86-vector-bitmask-optimizations-to-arm-neon
     #[inline(always)]
-    fn bitmask(self) -> Self::Bitmap {
+    fn bitmask(self) -> Self::BitMask {
         unsafe {
             let v16 = vreinterpretq_u16_u8(self.0);
             let sr4 = vshrn_n_u16(v16, 4);

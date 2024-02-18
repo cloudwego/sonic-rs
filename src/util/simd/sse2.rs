@@ -61,11 +61,11 @@ impl_lanes!(Simd128u, 16);
 impl_lanes!(Mask128, 16);
 
 impl Mask for Mask128 {
-    type Bitmap = u16;
+    type BitMask = u16;
     type Element = u8;
 
     #[inline(always)]
-    fn bitmask(self) -> Self::Bitmap {
+    fn bitmask(self) -> Self::BitMask {
         unsafe { _mm_movemask_epi8(self.0) as u16 }
     }
 
