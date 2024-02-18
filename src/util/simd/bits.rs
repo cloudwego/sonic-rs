@@ -1,3 +1,5 @@
+use serde::de;
+
 use super::traits::BitMask;
 
 macro_rules! impl_bits {
@@ -28,6 +30,17 @@ macro_rules! impl_bits {
                         self.swap_bytes()
                     }
                 }
+
+                #[inline]
+                fn all_zero(&self) -> bool {
+                    *self == 0
+                }
+
+                #[inline]
+                fn clear_high_bits(&self, n: usize) -> Self {
+                    debug_assert!(n <= Self::LEN);
+                    *self & ((u64::MAX as $ty) >> n)
+                }
             }
         )*
     };
@@ -35,6 +48,15 @@ macro_rules! impl_bits {
 
 impl_bits!(u16 u32 u64);
 
+/// Use u64 representation the bitmask of Neon vector.
+///         (low)
+/// Vector: 00-ff-ff-ff-ff-00-00-00
+/// Mask  : 0000-1111-1111-1111-1111-0000-0000-0000
+///
+/// first_offset() = 1
+/// clear_high_bits(4) = Mask(0000-1111-1111-1111-[0000]-0000-0000-0000)
+///
+/// reference: https://community.arm.com/arm-community-blogs/b/infrastructure-solutions-blog/posts/porting-x86-vector-bitmask-optimizations-to-arm-neon
 pub struct NeonBits(u64);
 
 impl NeonBits {
@@ -45,9 +67,8 @@ impl NeonBits {
 }
 
 impl BitMask for NeonBits {
-    const LEN: usize = 8;
+    const LEN: usize = 16;
 
-    /// reference: https://community.arm.com/arm-community-blogs/b/infrastructure-solutions-blog/posts/porting-x86-vector-bitmask-optimizations-to-arm-neon
     #[inline]
     fn first_offset(&self) -> usize {
         (self.as_little_endian().0.trailing_zeros() as usize) >> 2
@@ -68,6 +89,17 @@ impl BitMask for NeonBits {
         {
             Self::new(self.0.swap_bytes())
         }
+    }
+
+    #[inline]
+    fn all_zero(&self) -> bool {
+        self.0 == 0
+    }
+
+    #[inline]
+    fn clear_high_bits(&self, n: usize) -> Self {
+        debug_assert!(n <= Self::LEN);
+        Self(self.0 & u64::MAX >> (n * 4))
     }
 }
 

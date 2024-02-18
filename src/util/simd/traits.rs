@@ -5,7 +5,7 @@ pub trait Simd: Sized {
     const LANES: usize;
 
     type Element;
-    type Mask;
+    type Mask: Mask;
 
     unsafe fn from_slice_unaligned_unchecked(slice: &[u8]) -> Self {
         debug_assert!(slice.len() >= Self::LANES);
@@ -35,7 +35,7 @@ pub trait Simd: Sized {
 /// Portbal SIMD mask traits
 pub trait Mask: Sized + BitOr<Self> + BitOrAssign + BitAnd<Self> {
     type Element;
-    type Bitmap;
+    type Bitmap: BitMask;
 
     fn bitmask(self) -> Self::Bitmap;
 
@@ -55,4 +55,10 @@ pub trait BitMask {
 
     /// convert bitmap as little endian
     fn as_little_endian(&self) -> Self;
+
+    /// whether all bits are zero.
+    fn all_zero(&self) -> bool;
+
+    /// clear high n bits.
+    fn clear_high_bits(&self, n: usize) -> Self;
 }

@@ -9,7 +9,7 @@ use crate::{
     },
     util::{
         arch::page_size,
-        simd::{bits::NeonBits, u8x16, u8x32, BitMask, Mask, Simd},
+        simd::{bits::NeonBits, u8x16, BitMask, Mask, Simd},
         unicode::handle_unicode_codepoint_mut,
     },
 };
@@ -467,15 +467,6 @@ const NEED_ESCAPED: [u8; 256] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-#[inline]
-fn escaped_mask(v: u8x32) -> u32 {
-    let x1f = u8x32::splat(0x1f); // 0x00 ~ 0x20
-    let blash = u8x32::splat(b'\\');
-    let quote = u8x32::splat(b'"');
-    let v = v.le(&x1f) | v.eq(&blash) | v.eq(&quote);
-    v.bitmask()
-}
-
 // only check the src length.
 #[inline(always)]
 unsafe fn escape_unchecked(src: &mut *const u8, nb: &mut usize, dst: &mut *mut u8) {
@@ -509,7 +500,37 @@ fn cross_page(ptr: *const u8, step: usize) -> bool {
 #[inline(always)]
 pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool) -> usize {
     assert!(dst.len() >= value.len() * 6 + 32 + 3);
-    const LANS: usize = 32;
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    let mut v: u8x16;
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    let mut v: u8x32;
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    const LANES: usize = 16;
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    const LANES: usize = 32;
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[inline]
+    fn escaped_mask(v: u8x16) -> NeonBits {
+        let x1f = u8x16::splat(0x1f); // 0x00 ~ 0x20
+        let blash = u8x16::splat(b'\\');
+        let quote = u8x16::splat(b'"');
+        let v = v.le(&x1f) | v.eq(&blash) | v.eq(&quote);
+        v.bitmask()
+    }
+
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    #[inline]
+    fn escaped_mask(v: u8x32) -> u32 {
+        let x1f = u8x32::splat(0x1f); // 0x00 ~ 0x20
+        let blash = u8x32::splat(b'\\');
+        let quote = u8x32::splat(b'"');
+        let v = v.le(&x1f) | v.eq(&blash) | v.eq(&quote);
+        v.bitmask()
+    }
+
     unsafe {
         let slice = value.as_bytes();
         let mut sptr = slice.as_ptr();
@@ -521,19 +542,16 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
             *dptr = b'"';
             dptr = dptr.add(1);
         }
-        while nb >= LANS {
-            let v = {
-                let raw = std::slice::from_raw_parts(sptr, LANS);
-                u8x32::from_slice_unaligned_unchecked(raw)
-            };
-            v.write_to_slice_unaligned_unchecked(std::slice::from_raw_parts_mut(dptr, LANS));
+        while nb >= LANES {
+            v = load(sptr);
+            v.write_to_slice_unaligned_unchecked(std::slice::from_raw_parts_mut(dptr, LANES));
             let mask = escaped_mask(v);
-            if mask == 0 {
-                nb -= LANS;
-                dptr = dptr.add(LANS);
-                sptr = sptr.add(LANS);
+            if mask.all_zero() {
+                nb -= LANES;
+                dptr = dptr.add(LANES);
+                sptr = sptr.add(LANES);
             } else {
-                let cn = mask.trailing_zeros() as usize;
+                let cn = mask.first_offset();
                 nb -= cn;
                 dptr = dptr.add(cn);
                 sptr = sptr.add(cn);
@@ -541,32 +559,31 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
             }
         }
 
-        let mut temp: [u8; LANS] = [0u8; LANS];
+        let mut temp: [u8; LANES] = [0u8; LANES];
         while nb > 0 {
-            let v = if cross_page(sptr, LANS) {
+            v = if cross_page(sptr, LANES) {
                 std::ptr::copy_nonoverlapping(sptr, temp[..].as_mut_ptr(), nb);
-                u8x32::from_slice_unaligned_unchecked(&temp[..])
+                load(temp[..].as_ptr())
             } else {
                 #[cfg(not(debug_assertions))]
                 {
                     // disable memory sanitizer here
-                    let raw = std::slice::from_raw_parts(sptr, LANS);
-                    u8x32::from_slice_unaligned_unchecked(raw)
+                    load(sptr)
                 }
                 #[cfg(debug_assertions)]
                 {
                     std::ptr::copy_nonoverlapping(sptr, temp[..].as_mut_ptr(), nb);
-                    u8x32::from_slice_unaligned_unchecked(&temp[..])
+                    load(temp[..].as_ptr())
                 }
             };
-            v.write_to_slice_unaligned_unchecked(std::slice::from_raw_parts_mut(dptr, LANS));
+            v.write_to_slice_unaligned_unchecked(std::slice::from_raw_parts_mut(dptr, LANES));
 
-            let mask = escaped_mask(v) & (0xFFFFFFFFu32 >> (LANS - nb));
-            if mask == 0 {
+            let mask = escaped_mask(v).clear_high_bits(LANES - nb);
+            if mask.all_zero() {
                 dptr = dptr.add(nb);
                 break;
             } else {
-                let cn = mask.trailing_zeros() as usize;
+                let cn = mask.first_offset();
                 nb -= cn;
                 dptr = dptr.add(cn);
                 sptr = sptr.add(cn);
