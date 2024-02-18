@@ -26,7 +26,7 @@ use crate::{
         arc::Arc,
         arch::{get_nonspace_bits, prefix_xor},
         num::{parse_number, ParserNumber},
-        simd::{i8x32, m8x32, u8x32, u8x64, Mask, Simd},
+        simd::{bits::NeonBits, i8x32, m8x32, u8x32, u8x64, Mask, Simd},
         string::*,
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
@@ -34,7 +34,6 @@ use crate::{
     JsonType, LazyValue,
 };
 pub(crate) const DEFAULT_KEY_BUF_CAPACITY: usize = 128;
-
 pub(crate) fn as_str(data: &[u8]) -> &str {
     unsafe { from_utf8_unchecked(data) }
 }
@@ -796,18 +795,17 @@ where
         &mut self,
         buf: &'own mut Vec<u8>,
     ) -> Result<Reference<'de, 'own, [u8]>> {
-        const LANS: usize = 32;
+        #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
+        let mut block: StringBlock<NeonBits>;
+        #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
+        let mut block: StringBlock<u32>;
 
         self.parse_escaped_char(buf)?;
 
-        while let Some(chunk) = self.read.peek_n(LANS) {
-            buf.reserve(LANS);
-            let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
-            let block = StringBlock {
-                bs_bits: (v.eq(&u8x32::splat(b'\\'))).bitmask(),
-                quote_bits: (v.eq(&u8x32::splat(b'"'))).bitmask(),
-                unescaped_bits: (v.le(&u8x32::splat(0x1f))).bitmask(),
-            };
+        while let Some(chunk) = self.read.peek_n(StringBlock::LANES) {
+            buf.reserve(StringBlock::LANES);
+            let v = unsafe { load(chunk.as_ptr()) };
+            block = StringBlock::new(&v);
 
             if block.has_unescaped() {
                 self.read.eat(block.unescaped_index());
@@ -815,7 +813,7 @@ where
             }
 
             // write the chunk to buf, we will set new_len later
-            let chunk = from_raw_parts_mut(buf.as_mut_ptr().add(buf.len()), LANS);
+            let chunk = from_raw_parts_mut(buf.as_mut_ptr().add(buf.len()), StringBlock::LANES);
             v.write_to_slice_unaligned_unchecked(chunk);
 
             if block.has_quote_first() {
@@ -835,8 +833,8 @@ where
                 buf.set_len(buf.len() + cnt);
                 self.parse_escaped_char(buf)?;
             } else {
-                buf.set_len(buf.len() + LANS);
-                self.read.eat(LANS);
+                buf.set_len(buf.len() + StringBlock::LANES);
+                self.read.eat(StringBlock::LANES);
             }
         }
 
@@ -871,15 +869,14 @@ where
     ) -> Result<Reference<'de, 'own, [u8]>> {
         // now reader is start after `"`, so we can directly skipstring
         let start = self.read.index();
-        const LANS: usize = u8x32::lanes();
+        #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
+        let mut block: StringBlock<NeonBits>;
+        #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
+        let mut block: StringBlock<u32>;
 
-        while let Some(chunk) = self.read.peek_n(LANS) {
-            let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
-            let block = StringBlock {
-                bs_bits: (v.eq(&u8x32::splat(b'\\'))).bitmask(),
-                quote_bits: (v.eq(&u8x32::splat(b'"'))).bitmask(),
-                unescaped_bits: (v.le(&u8x32::splat(0x1f))).bitmask(),
-            };
+        while let Some(chunk) = self.read.peek_n(StringBlock::LANES) {
+            let v = unsafe { load(chunk.as_ptr()) };
+            block = StringBlock::new(&v);
 
             if block.has_quote_first() {
                 let cnt = block.quote_index();
@@ -906,7 +903,7 @@ where
                 return unsafe { self.parse_string_escaped(buf) };
             }
 
-            self.read.eat(LANS);
+            self.read.eat(StringBlock::LANES);
             continue;
         }
 

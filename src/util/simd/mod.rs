@@ -1,4 +1,4 @@
-mod bits;
+pub mod bits;
 mod traits;
 
 #[doc(hidden)]
@@ -39,13 +39,13 @@ cfg_if::cfg_if! {
     }
 }
 
-pub use self::traits::{Mask, Simd};
+pub use self::traits::{BitMask, Mask, Simd};
 // pick v512 simd
 // TODO: support avx512?
 mod v512;
 use self::v512::*;
 
-pub type u8x16 = Simd128i;
+pub type u8x16 = Simd128u;
 pub type u8x32 = Simd256u;
 pub type u8x64 = Simd512u;
 
