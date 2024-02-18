@@ -1,10 +1,7 @@
 use std::ops::{BitAnd, BitOr, BitOrAssign};
 
-use super::{Mask256, Simd256i, Simd256u};
-use crate::{
-    impl_lanes,
-    util::simd::{Mask, Simd},
-};
+use super::{bits::combine_u32, Mask, Mask256, Simd, Simd256i, Simd256u};
+use crate::impl_lanes;
 
 impl_lanes!(Simd512u, 64);
 
@@ -23,21 +20,23 @@ pub struct Simd512i((Simd256i, Simd256i));
 pub struct Mask512((Mask256, Mask256));
 
 impl Mask for Mask512 {
-    type BitMap = u64;
+    type Bitmap = u64;
+    type Element = u8;
 
     #[inline(always)]
-    fn bitmask(self) -> u64 {
+    fn bitmask(self) -> Self::Bitmap {
         cfg_if::cfg_if! {
             if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
                 use std::arch::aarch64::uint8x16_t;
-                unsafe {
-                    let v: (uint8x16_t, uint8x16_t, uint8x16_t, uint8x16_t) =  std::mem::transmute(self.0);
-                    super::neon::to_bitmask64(v)
-                }
+                let (v0, v1) = self.0;
+                let (m0, m1) = v0.0;
+                let (m2, m3) = v1.0;
+                let b64 = unsafe {
+                    super::neon::to_bitmask64(m0.0, m1.0, m2.0, m3.0)
+                };
+                b64.into()
             } else {
-                let lo = self.0 .0.bitmask() as u64;
-                let hi = self.0 .1.bitmask() as u64;
-                lo | (hi << 32)
+                combine_u32(self.0 .0.bitmask(), self.0 .1.bitmask())
             }
         }
     }
@@ -80,7 +79,7 @@ impl BitAnd<Mask512> for Mask512 {
 
 impl Simd for Simd512u {
     const LANES: usize = 64;
-
+    type Element = u8;
     type Mask = Mask512;
 
     #[inline(always)]
@@ -97,9 +96,9 @@ impl Simd for Simd512u {
     }
 
     #[inline(always)]
-    fn eq(&self, lhs: &Self) -> Self::Mask {
-        let lo = self.0 .0.eq(&lhs.0 .0);
-        let hi = self.0 .1.eq(&lhs.0 .1);
+    fn eq(&self, rhs: &Self) -> Self::Mask {
+        let lo = self.0 .0.eq(&rhs.0 .0);
+        let hi = self.0 .1.eq(&rhs.0 .1);
         Mask512((lo, hi))
     }
 
@@ -109,22 +108,23 @@ impl Simd for Simd512u {
     }
 
     #[inline(always)]
-    fn le(&self, lhs: &Self) -> Self::Mask {
-        let lo = self.0 .0.le(&lhs.0 .0);
-        let hi = self.0 .1.le(&lhs.0 .1);
+    fn le(&self, rhs: &Self) -> Self::Mask {
+        let lo = self.0 .0.le(&rhs.0 .0);
+        let hi = self.0 .1.le(&rhs.0 .1);
         Mask512((lo, hi))
     }
 
     #[inline(always)]
-    fn gt(&self, lhs: &Self) -> Self::Mask {
-        let lo = self.0 .0.gt(&lhs.0 .0);
-        let hi = self.0 .1.gt(&lhs.0 .1);
+    fn gt(&self, rhs: &Self) -> Self::Mask {
+        let lo = self.0 .0.gt(&rhs.0 .0);
+        let hi = self.0 .1.gt(&rhs.0 .1);
         Mask512((lo, hi))
     }
 }
 
 impl Simd for Simd512i {
     const LANES: usize = 64;
+    type Element = i8;
 
     type Mask = Mask512;
 
@@ -142,28 +142,28 @@ impl Simd for Simd512i {
     }
 
     #[inline(always)]
-    fn eq(&self, lhs: &Self) -> Self::Mask {
-        let lo = self.0 .0.eq(&lhs.0 .0);
-        let hi = self.0 .1.eq(&lhs.0 .1);
+    fn eq(&self, rhs: &Self) -> Self::Mask {
+        let lo = self.0 .0.eq(&rhs.0 .0);
+        let hi = self.0 .1.eq(&rhs.0 .1);
         Mask512((lo, hi))
     }
 
     #[inline(always)]
-    fn splat(ch: u8) -> Self {
-        Simd512i((Simd256i::splat(ch), Simd256i::splat(ch)))
+    fn splat(elem: i8) -> Self {
+        Simd512i((Simd256i::splat(elem), Simd256i::splat(elem)))
     }
 
     #[inline(always)]
-    fn le(&self, lhs: &Self) -> Self::Mask {
-        let lo = self.0 .0.le(&lhs.0 .0);
-        let hi = self.0 .1.le(&lhs.0 .1);
+    fn le(&self, rhs: &Self) -> Self::Mask {
+        let lo = self.0 .0.le(&rhs.0 .0);
+        let hi = self.0 .1.le(&rhs.0 .1);
         Mask512((lo, hi))
     }
 
     #[inline(always)]
-    fn gt(&self, lhs: &Self) -> Self::Mask {
-        let lo = self.0 .0.gt(&lhs.0 .0);
-        let hi = self.0 .1.gt(&lhs.0 .1);
+    fn gt(&self, rhs: &Self) -> Self::Mask {
+        let lo = self.0 .0.gt(&rhs.0 .0);
+        let hi = self.0 .1.gt(&rhs.0 .1);
         Mask512((lo, hi))
     }
 }

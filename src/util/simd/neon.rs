@@ -3,7 +3,7 @@ use std::{
     ops::{BitAnd, BitOr, BitOrAssign},
 };
 
-use crate::util::simd::{Mask, Simd};
+use super::{bits::NeonBits, Mask, Simd};
 
 #[derive(Debug)]
 #[repr(transparent)]
@@ -16,6 +16,7 @@ pub struct Simd128i(int8x16_t);
 impl Simd for Simd128u {
     const LANES: usize = 16;
     type Mask = Mask128;
+    type Element = u8;
 
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
@@ -53,6 +54,7 @@ impl Simd for Simd128u {
 impl Simd for Simd128i {
     const LANES: usize = 16;
     type Mask = Mask128;
+    type Element = i8;
 
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
@@ -70,8 +72,8 @@ impl Simd for Simd128i {
     }
 
     #[inline(always)]
-    fn splat(ch: u8) -> Self {
-        unsafe { Self(vdupq_n_s8(ch as i8)) }
+    fn splat(elem: i8) -> Self {
+        unsafe { Self(vdupq_n_s8(elem as i8)) }
     }
 
     // less or equal
@@ -93,38 +95,21 @@ pub(crate) const BIT_MASK_TAB: [u8; 16] = [
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Mask128(uint8x16_t);
+pub struct Mask128(pub(crate) uint8x16_t);
 
 impl Mask for Mask128 {
-    type BitMap = u16;
+    type Bitmap = NeonBits;
+    type Element = u8;
 
+    /// Convert Mask Vector 0x00-ff-ff to Bits 0b0000-1111-1111
+    /// Reference: https://community.arm.com/arm-community-blogs/b/infrastructure-solutions-blog/posts/porting-x86-vector-bitmask-optimizations-to-arm-neon
     #[inline(always)]
-    fn bitmask(self) -> Self::BitMap {
-        // TODO: optimize bitmask like this
-        // neon doesn't have instruction same as movemask, to_bitmask uses shrn to
-        // reduce 128bits -> 64bits. If a 128bits bool vector in x86 can convert
-        // as 0101, neon shrn will convert it as 0000111100001111.
-        // unsafe {
-        //     vget_lane_u64(
-        //         vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(self.0), 4)),
-        //         0,
-        //     ) as u16
-        // }
-        //
+    fn bitmask(self) -> Self::Bitmap {
         unsafe {
-            // Bit mask transmutation
-            let bit_mask = std::mem::transmute(BIT_MASK_TAB);
-
-            // Compute mask
-            let input = vandq_u8(self.0, bit_mask);
-            let pair = vpaddq_u8(input, input);
-            let quad = vpaddq_u8(pair, pair);
-            let octa = vpaddq_u8(quad, quad);
-
-            // Extract and convert to u32
-            let mask32 = vgetq_lane_u16(vreinterpretq_u16_u8(octa), 0);
-
-            mask32 as u16
+            let v16 = vreinterpretq_u16_u8(self.0);
+            let sr4 = vshrn_n_u16(v16, 4);
+            let v64 = vreinterpret_u64_u8(sr4);
+            NeonBits::new(vget_lane_u64(v64, 0))
         }
     }
 
@@ -166,9 +151,13 @@ impl std::ops::BitOrAssign<Mask128> for Mask128 {
 }
 
 #[inline(always)]
-pub(crate) unsafe fn to_bitmask64(input: (uint8x16_t, uint8x16_t, uint8x16_t, uint8x16_t)) -> u64 {
+pub(crate) unsafe fn to_bitmask64(
+    v0: uint8x16_t,
+    v1: uint8x16_t,
+    v2: uint8x16_t,
+    v3: uint8x16_t,
+) -> u64 {
     let bit_mask = std::mem::transmute(BIT_MASK_TAB);
-    let (v0, v1, v2, v3): (uint8x16_t, uint8x16_t, uint8x16_t, uint8x16_t) = input;
 
     let t0 = vandq_u8(v0, bit_mask);
     let t1 = vandq_u8(v1, bit_mask);
@@ -184,9 +173,8 @@ pub(crate) unsafe fn to_bitmask64(input: (uint8x16_t, uint8x16_t, uint8x16_t, ui
 }
 
 #[inline(always)]
-pub(crate) unsafe fn to_bitmask32(input: (uint8x16_t, uint8x16_t)) -> u32 {
+pub(crate) unsafe fn to_bitmask32(v0: uint8x16_t, v1: uint8x16_t) -> u32 {
     let bit_mask = std::mem::transmute(BIT_MASK_TAB);
-    let (v0, v1): (uint8x16_t, uint8x16_t) = input;
 
     let t0 = vandq_u8(v0, bit_mask);
     let t1 = vandq_u8(v1, bit_mask);

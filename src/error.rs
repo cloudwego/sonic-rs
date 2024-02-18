@@ -1,4 +1,4 @@
-//! When serializing or deserializing JSON goes wrong.
+//! Errors.
 
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
 

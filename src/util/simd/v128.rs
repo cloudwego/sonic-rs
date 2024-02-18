@@ -30,10 +30,10 @@ impl Simd for Simd128i {
         std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, Self::LANES);
     }
 
-    fn eq(&self, lhs: &Self) -> Self::Mask {
+    fn eq(&self, rhs: &Self) -> Self::Mask {
         let mut mask = [0u8; 16];
         for i in 0..Self::LANES {
-            mask[i] = if self.0[i] == lhs.0[i] { 1 } else { 0 };
+            mask[i] = if self.0[i] == rhs.0[i] { 1 } else { 0 };
         }
         Mask128(mask)
     }
@@ -42,18 +42,18 @@ impl Simd for Simd128i {
         Self([value as i8; Self::LANES])
     }
 
-    fn le(&self, lhs: &Self) -> Self::Mask {
+    fn le(&self, rhs: &Self) -> Self::Mask {
         let mut mask = [0u8; 16];
         for i in 0..Self::LANES {
-            mask[i] = if self.0[i] <= lhs.0[i] { 1 } else { 0 };
+            mask[i] = if self.0[i] <= rhs.0[i] { 1 } else { 0 };
         }
         Mask128(mask)
     }
 
-    fn gt(&self, lhs: &Self) -> Self::Mask {
+    fn gt(&self, rhs: &Self) -> Self::Mask {
         let mut mask = [0u8; 16];
         for i in 0..Self::LANES {
-            mask[i] = if self.0[i] > lhs.0[i] { 1 } else { 0 };
+            mask[i] = if self.0[i] > rhs.0[i] { 1 } else { 0 };
         }
         Mask128(mask)
     }
@@ -75,10 +75,10 @@ impl Simd for Simd128u {
         std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, Self::LANES);
     }
 
-    fn eq(&self, lhs: &Self) -> Self::Mask {
+    fn eq(&self, rhs: &Self) -> Self::Mask {
         let mut mask = [0u8; 16];
         for i in 0..Self::LANES {
-            mask[i] = if self.0[i] == lhs.0[i] { 1 } else { 0 };
+            mask[i] = if self.0[i] == rhs.0[i] { 1 } else { 0 };
         }
         Mask128(mask)
     }
@@ -87,31 +87,42 @@ impl Simd for Simd128u {
         Self([value; Self::LANES])
     }
 
-    fn le(&self, lhs: &Self) -> Self::Mask {
+    fn le(&self, rhs: &Self) -> Self::Mask {
         let mut mask = [0u8; 16];
         for i in 0..Self::LANES {
-            mask[i] = if self.0[i] <= lhs.0[i] { 1 } else { 0 };
+            mask[i] = if self.0[i] <= rhs.0[i] { 1 } else { 0 };
         }
         Mask128(mask)
     }
 
-    fn gt(&self, lhs: &Self) -> Self::Mask {
+    fn gt(&self, rhs: &Self) -> Self::Mask {
         let mut mask = [0u8; 16];
         for i in 0..Self::LANES {
-            mask[i] = if self.0[i] > lhs.0[i] { 1 } else { 0 };
+            mask[i] = if self.0[i] > rhs.0[i] { 1 } else { 0 };
         }
         Mask128(mask)
     }
 }
 
 impl Mask for Mask128 {
-    type BitMap = u16;
+    type Bitmap = u16;
+    type Element = u8;
 
     fn bitmask(self) -> Self::BitMap {
-        self.0
-            .iter()
-            .enumerate()
-            .fold(0, |acc, (i, &b)| acc | ((b as u16) << i))
+        #[cfg(target_endian = "little")]
+        {
+            self.0
+                .iter()
+                .enumerate()
+                .fold(0, |acc, (i, &b)| acc | ((b as u16) << i))
+        }
+        #[cfg(target_endian = "big")]
+        {
+            self.0
+                .iter()
+                .enumerate()
+                .fold(0, |acc, (i, &b)| acc | ((b as u16) << (15 - i)))
+        }
     }
 
     fn splat(b: bool) -> Self {

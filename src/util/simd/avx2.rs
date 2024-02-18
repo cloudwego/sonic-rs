@@ -4,10 +4,8 @@ use std::{
     ops::{BitAnd, BitOr, BitOrAssign},
 };
 
-use crate::{
-    impl_lanes,
-    util::simd::{Mask, Simd},
-};
+use super::{Mask, Simd};
+use crate::impl_lanes;
 
 #[derive(Debug)]
 #[repr(transparent)]
@@ -20,6 +18,7 @@ pub struct Simd256i(__m256i);
 impl Simd for Simd256i {
     const LANES: usize = 32;
     type Mask = Mask256;
+    type Element = i8;
 
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
@@ -32,28 +31,25 @@ impl Simd for Simd256i {
     }
 
     #[inline(always)]
-    fn eq(&self, lhs: &Self) -> Self::Mask {
-        unsafe {
-            let eq = _mm256_cmpeq_epi8(self.0, lhs.0);
-            Mask256(eq)
-        }
+    fn eq(&self, rhs: &Self) -> Self::Mask {
+        unsafe { Mask256(_mm256_cmpeq_epi8(self.0, rhs.0)) }
     }
 
     #[inline(always)]
-    fn splat(ch: u8) -> Self {
-        unsafe { Self(_mm256_set1_epi8(ch as i8)) }
+    fn splat(elem: i8) -> Self {
+        unsafe { Self(_mm256_set1_epi8(elem)) }
     }
 
     // less or equal
     #[inline(always)]
-    fn le(&self, lhs: &Self) -> Self::Mask {
-        unsafe { Mask256(_mm256_cmpgt_epi8(lhs.0, self.0)) }
+    fn le(&self, rhs: &Self) -> Self::Mask {
+        unsafe { Mask256(_mm256_cmpgt_epi8(rhs.0, self.0)) }
     }
 
     // greater than
     #[inline(always)]
-    fn gt(&self, lhs: &Self) -> Self::Mask {
-        unsafe { Mask256(_mm256_cmpgt_epi8(self.0, lhs.0)) }
+    fn gt(&self, rhs: &Self) -> Self::Mask {
+        unsafe { Mask256(_mm256_cmpgt_epi8(self.0, rhs.0)) }
     }
 }
 
@@ -66,11 +62,12 @@ impl_lanes!(Simd256u, 32);
 impl_lanes!(Mask256, 32);
 
 impl Mask for Mask256 {
-    type BitMap = u32;
+    type Bitmap = u32;
+    type Element = u8;
 
     #[inline(always)]
-    fn bitmask(self) -> Self::BitMap {
-        unsafe { transmute::<i32, u32>(_mm256_movemask_epi8(self.0)) }
+    fn bitmask(self) -> Self::Bitmap {
+        unsafe { _mm256_movemask_epi8(self.0) as u32 }
     }
 
     #[inline(always)]
@@ -108,6 +105,7 @@ impl BitOrAssign<Mask256> for Mask256 {
 impl Simd for Simd256u {
     const LANES: usize = 32;
     type Mask = Mask256;
+    type Element = u8;
 
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
@@ -120,9 +118,9 @@ impl Simd for Simd256u {
     }
 
     #[inline(always)]
-    fn eq(&self, lhs: &Self) -> Self::Mask {
+    fn eq(&self, rhs: &Self) -> Self::Mask {
         unsafe {
-            let eq = _mm256_cmpeq_epi8(self.0, lhs.0);
+            let eq = _mm256_cmpeq_epi8(self.0, rhs.0);
             Mask256(eq)
         }
     }
@@ -134,17 +132,17 @@ impl Simd for Simd256u {
 
     // less or equal
     #[inline(always)]
-    fn le(&self, lhs: &Self) -> Self::Mask {
+    fn le(&self, rhs: &Self) -> Self::Mask {
         unsafe {
-            let max = _mm256_max_epu8(self.0, lhs.0);
-            let eq = _mm256_cmpeq_epi8(max, lhs.0);
+            let max = _mm256_max_epu8(self.0, rhs.0);
+            let eq = _mm256_cmpeq_epi8(max, rhs.0);
             Mask256(eq)
         }
     }
 
     // greater than
     #[inline(always)]
-    fn gt(&self, _lhs: &Self) -> Self::Mask {
+    fn gt(&self, _rhs: &Self) -> Self::Mask {
         todo!()
     }
 }

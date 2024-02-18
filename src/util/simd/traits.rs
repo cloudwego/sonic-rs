@@ -4,6 +4,7 @@ use std::ops::{BitAnd, BitOr, BitOrAssign};
 pub trait Simd: Sized {
     const LANES: usize;
 
+    type Element;
     type Mask;
 
     unsafe fn from_slice_unaligned_unchecked(slice: &[u8]) -> Self {
@@ -20,19 +21,38 @@ pub trait Simd: Sized {
 
     unsafe fn storeu(&self, ptr: *mut u8);
 
-    fn eq(&self, lhs: &Self) -> Self::Mask;
+    fn eq(&self, rhs: &Self) -> Self::Mask;
 
-    fn splat(ch: u8) -> Self;
+    fn splat(elem: Self::Element) -> Self;
 
-    fn le(&self, lhs: &Self) -> Self::Mask;
+    /// greater than
+    fn gt(&self, rhs: &Self) -> Self::Mask;
 
-    fn gt(&self, lhs: &Self) -> Self::Mask;
+    /// less or equal
+    fn le(&self, rhs: &Self) -> Self::Mask;
 }
 
+/// Portbal SIMD mask traits
 pub trait Mask: Sized + BitOr<Self> + BitOrAssign + BitAnd<Self> {
-    type BitMap;
+    type Element;
+    type Bitmap;
 
-    fn bitmask(self) -> Self::BitMap;
+    fn bitmask(self) -> Self::Bitmap;
 
     fn splat(b: bool) -> Self;
+}
+
+/// Trait for Bitmap.
+pub trait BitMask {
+    /// Total bits in the bitmap.
+    const LEN: usize;
+
+    /// get the offset of the first `1` bit.
+    fn first_offset(&self) -> usize;
+
+    /// check if this bitmap is before the other bitmap.
+    fn before(&self, rhs: &Self) -> bool;
+
+    /// convert bitmap as little endian
+    fn as_little_endian(&self) -> Self;
 }

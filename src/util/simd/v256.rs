@@ -20,24 +20,21 @@ pub struct Simd256i((Simd128i, Simd128i));
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Mask256((Mask128, Mask128));
+pub struct Mask256(pub(crate) (Mask128, Mask128));
 
 impl Mask for Mask256 {
-    type BitMap = u32;
+    type Bitmap = u32;
+    type Element = u8;
 
     #[inline(always)]
-    fn bitmask(self) -> u32 {
+    fn bitmask(self) -> Self::Bitmap {
         cfg_if::cfg_if! {
             if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
                 use std::arch::aarch64::uint8x16_t;
-                unsafe {
-                    let v: (uint8x16_t, uint8x16_t) =  std::mem::transmute(self.0);
-                    super::neon::to_bitmask32(v)
-                }
+                let(v0, v1) = self.0;
+                unsafe { super::neon::to_bitmask32(v0.0, v1.0) }
             } else {
-                let lo = self.0 .0.bitmask() as u32;
-                let hi = self.0 .1.bitmask() as u32;
-                lo | (hi << 16)
+                combine_u16(self.0 .0.bitmask(), self.0 .1.bitmask())
             }
         }
     }
@@ -82,6 +79,7 @@ impl Simd for Simd256u {
     const LANES: usize = 32;
 
     type Mask = Mask256;
+    type Element = u8;
 
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
@@ -97,28 +95,28 @@ impl Simd for Simd256u {
     }
 
     #[inline(always)]
-    fn eq(&self, lhs: &Self) -> Self::Mask {
-        let lo = self.0 .0.eq(&lhs.0 .0);
-        let hi = self.0 .1.eq(&lhs.0 .1);
+    fn eq(&self, rhs: &Self) -> Self::Mask {
+        let lo = self.0 .0.eq(&rhs.0 .0);
+        let hi = self.0 .1.eq(&rhs.0 .1);
         Mask256((lo, hi))
     }
 
     #[inline(always)]
-    fn splat(ch: u8) -> Self {
-        Simd256u((Simd128u::splat(ch), Simd128u::splat(ch)))
+    fn splat(elem: u8) -> Self {
+        Simd256u((Simd128u::splat(elem), Simd128u::splat(elem)))
     }
 
     #[inline(always)]
-    fn le(&self, lhs: &Self) -> Self::Mask {
-        let lo = self.0 .0.le(&lhs.0 .0);
-        let hi = self.0 .1.le(&lhs.0 .1);
+    fn le(&self, rhs: &Self) -> Self::Mask {
+        let lo = self.0 .0.le(&rhs.0 .0);
+        let hi = self.0 .1.le(&rhs.0 .1);
         Mask256((lo, hi))
     }
 
     #[inline(always)]
-    fn gt(&self, lhs: &Self) -> Self::Mask {
-        let lo = self.0 .0.gt(&lhs.0 .0);
-        let hi = self.0 .1.gt(&lhs.0 .1);
+    fn gt(&self, rhs: &Self) -> Self::Mask {
+        let lo = self.0 .0.gt(&rhs.0 .0);
+        let hi = self.0 .1.gt(&rhs.0 .1);
         Mask256((lo, hi))
     }
 }
@@ -127,6 +125,7 @@ impl Simd for Simd256i {
     const LANES: usize = 32;
 
     type Mask = Mask256;
+    type Element = i8;
 
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
@@ -142,28 +141,28 @@ impl Simd for Simd256i {
     }
 
     #[inline(always)]
-    fn eq(&self, lhs: &Self) -> Self::Mask {
-        let lo = self.0 .0.eq(&lhs.0 .0);
-        let hi = self.0 .1.eq(&lhs.0 .1);
+    fn eq(&self, rhs: &Self) -> Self::Mask {
+        let lo = self.0 .0.eq(&rhs.0 .0);
+        let hi = self.0 .1.eq(&rhs.0 .1);
         Mask256((lo, hi))
     }
 
     #[inline(always)]
-    fn splat(ch: u8) -> Self {
-        Simd256i((Simd128i::splat(ch), Simd128i::splat(ch)))
+    fn splat(elem: i8) -> Self {
+        Simd256i((Simd128i::splat(elem), Simd128i::splat(elem)))
     }
 
     #[inline(always)]
-    fn le(&self, lhs: &Self) -> Self::Mask {
-        let lo = self.0 .0.le(&lhs.0 .0);
-        let hi = self.0 .1.le(&lhs.0 .1);
+    fn le(&self, rhs: &Self) -> Self::Mask {
+        let lo = self.0 .0.le(&rhs.0 .0);
+        let hi = self.0 .1.le(&rhs.0 .1);
         Mask256((lo, hi))
     }
 
     #[inline(always)]
-    fn gt(&self, lhs: &Self) -> Self::Mask {
-        let lo = self.0 .0.gt(&lhs.0 .0);
-        let hi = self.0 .1.gt(&lhs.0 .1);
+    fn gt(&self, rhs: &Self) -> Self::Mask {
+        let lo = self.0 .0.gt(&rhs.0 .0);
+        let hi = self.0 .1.gt(&rhs.0 .1);
         Mask256((lo, hi))
     }
 }

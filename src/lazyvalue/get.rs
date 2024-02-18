@@ -487,6 +487,12 @@ mod test {
         }
 
         test_get_ok(
+            r#"1230(xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"#,
+            &pointer![],
+            r#"1230("#,
+        );
+
+        test_get_ok(
             r#"{"a":"\n\tHello,\nworld!\n"}"#,
             &pointer!["a"],
             r#""\n\tHello,\nworld!\n""#,
