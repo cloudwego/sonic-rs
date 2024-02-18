@@ -31,10 +31,7 @@ impl Mask for Mask512 {
                 let (v0, v1) = self.0;
                 let (m0, m1) = v0.0;
                 let (m2, m3) = v1.0;
-                let b64 = unsafe {
-                    super::neon::to_bitmask64(m0.0, m1.0, m2.0, m3.0)
-                };
-                b64.into()
+                unsafe { super::neon::to_bitmask64(m0.0, m1.0, m2.0, m3.0) }
             } else {
                 combine_u32(self.0 .0.bitmask(), self.0 .1.bitmask())
             }

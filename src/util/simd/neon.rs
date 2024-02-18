@@ -73,7 +73,7 @@ impl Simd for Simd128i {
 
     #[inline(always)]
     fn splat(elem: i8) -> Self {
-        unsafe { Self(vdupq_n_s8(elem as i8)) }
+        unsafe { Self(vdupq_n_s8(elem)) }
     }
 
     // less or equal
