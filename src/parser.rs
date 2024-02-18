@@ -11,6 +11,8 @@ use faststr::FastStr;
 use smallvec::SmallVec;
 
 use super::reader::{Reader, Reference};
+#[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
+use crate::util::simd::{bits::NeonBits, u8x16};
 use crate::{
     error::{
         Error,
@@ -26,13 +28,14 @@ use crate::{
         arc::Arc,
         arch::{get_nonspace_bits, prefix_xor},
         num::{parse_number, ParserNumber},
-        simd::{bits::NeonBits, i8x32, m8x32, u8x32, u8x64, Mask, Simd},
+        simd::{i8x32, m8x32, u8x32, u8x64, Mask, Simd},
         string::*,
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
     value::{shared::Shared, visitor::JsonVisitor},
     JsonType, LazyValue,
 };
+
 pub(crate) const DEFAULT_KEY_BUF_CAPACITY: usize = 128;
 pub(crate) fn as_str(data: &[u8]) -> &str {
     unsafe { from_utf8_unchecked(data) }
@@ -1421,10 +1424,9 @@ where
         // SIMD path for long number
         while let Some(chunk) = self.read.peek_n(32) {
             let v = unsafe { i8x32::from_slice_unaligned_unchecked(chunk) };
-            let less0 = i8x32::splat((b'0' - 1) as i8);
+            let zero = i8x32::splat(b'0' as i8);
             let nine = i8x32::splat(b'9' as i8);
-            let nondigits = (v.le(&less0) | v.gt(&nine)).bitmask();
-
+            let nondigits = (zero.gt(&v) | v.gt(&nine)).bitmask();
             if nondigits != 0 {
                 let cnt = nondigits.trailing_zeros() as usize;
                 let ch = chunk[cnt];

@@ -42,7 +42,8 @@ impl Simd for Simd128i {
 
     #[inline(always)]
     fn le(&self, rhs: &Self) -> Self::Mask {
-        unsafe { Mask128(_mm_cmpgt_epi8(rhs.0, self.0)) }
+        // self <= rhs equal as rhs >= self
+        rhs.gt(self) | rhs.eq(self)
     }
 
     #[inline(always)]
