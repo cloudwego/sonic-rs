@@ -213,7 +213,7 @@ pub unsafe fn handle_unicode_codepoint_mut(
     // check for low surrogate for characters outside the Basic
     // Multilingual Plane.
     let check = if (0xD800..0xDC00).contains(&code_point) {
-        if **src_ptr == b'\\' || *src_ptr.add(1) == b'u' {
+        if **src_ptr == b'\\' && *src_ptr.add(1) == b'u' {
             let code_point_2 = hex_to_u32_nocheck(&*(src_ptr.add(2) as *const [u8; 4]));
             let low_bit = code_point_2.wrapping_sub(0xdc00);
             if (low_bit >> 10) == 0 {
