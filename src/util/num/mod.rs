@@ -267,9 +267,12 @@ pub(crate) fn parse_number(
                 digits_cnt += 1;
                 *index += 1;
             }
+
+            // overflow for u64 sig, mark as truncated
             while is_digit!(data, *index) {
                 exponent += 1;
                 *index += 1;
+                trunc = true;
             }
         }
 
@@ -474,6 +477,8 @@ mod test {
     use crate::util::num::ParserNumber;
 
     fn test_parse_ok(input: &str, expect: f64) {
+        assert_eq!(input.parse::<f64>().unwrap(), expect);
+
         let mut data = input.as_bytes().to_vec();
         data.push(b' ');
         let mut index = 0;
@@ -528,5 +533,12 @@ mod test {
         );
         test_parse_ok("33333333333333333333", 3.333333333333333e19);
         test_parse_ok("135e-12", 135e-12);
+
+        // test truncated float number without dot
+        test_parse_ok("12448139190673828122020e-47", 1.244813919067383e-25);
+        test_parse_ok(
+            "3469446951536141862700000000000000000e-62",
+            3.469446951536142e-26,
+        );
     }
 }
