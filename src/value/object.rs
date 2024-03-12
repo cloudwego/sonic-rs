@@ -935,7 +935,7 @@ impl<'de> serde::de::Deserialize<'de> for Object {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{from_str, object, to_string, Array, JsonValueMutTrait};
+    use crate::{from_str, to_string, Array, JsonValueMutTrait};
 
     #[test]
     fn test_object_serde() {

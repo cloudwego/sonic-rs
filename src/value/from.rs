@@ -1,4 +1,4 @@
-use std::{borrow::Cow, convert::Into, fmt::Debug, str::FromStr};
+use std::{borrow::Cow, fmt::Debug, str::FromStr};
 
 use faststr::FastStr;
 

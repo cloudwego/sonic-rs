@@ -69,8 +69,6 @@ macro_rules! check_visit {
     };
 }
 
-pub(crate) use perr;
-
 #[inline(always)]
 fn get_escaped_branchless_u64(prev_escaped: &mut u64, backslash: u64) -> u64 {
     const EVEN_BITS: u64 = 0x5555_5555_5555_5555;

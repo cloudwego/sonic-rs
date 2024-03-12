@@ -99,8 +99,6 @@ impl Serializer {
     }
 }
 
-use std::string::ToString;
-
 use crate::serde::tri;
 
 impl serde::Serializer for Serializer {
