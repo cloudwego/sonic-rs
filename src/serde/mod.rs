@@ -20,6 +20,7 @@ pub use self::{
 mod test {
     use std::{borrow::Cow, collections::HashMap, hash::Hash, marker::PhantomData};
 
+    use bytes::Bytes;
     use faststr::FastStr;
     use serde::{Deserialize, Serialize};
 
@@ -306,6 +307,11 @@ mod test {
                     assert_eq!(sv, jv);
                 }
                 Err(err) => {
+                    println!(
+                        "parse invalid json {:?} failed for type {}",
+                        $data,
+                        stringify!($ty)
+                    );
                     let _ = crate::from_slice::<$ty>($data).expect_err(&format!(
                         "parse invalid json {:?} wrong for type {}, should error: {}",
                         $data,
@@ -317,6 +323,14 @@ mod test {
         };
     }
 
+    #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
+    pub struct Data {
+        #[serde(with = "serde_bytes")]
+        pub content: Vec<u8>,
+    }
+
+    use serde_bytes::ByteBuf;
+
     // the testcase is found by fuzzing tests
     #[test]
     fn test_more_structs() {
@@ -326,5 +340,17 @@ mod test {
         test_struct!(String, &[34, 92, 34, 34]);
         test_struct!(String, b"\"\\umap9map009\"");
         test_struct!(Foo, &b"[\"5XXXXXXZX:XXZX:[\",-0]"[..]);
+        test_struct!(Bytes, &b"\"hello world\""[..]);
+        test_struct!(
+            Bytes,
+            &b"[104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100]"[..]
+        );
+        test_struct!(
+            ByteBuf,
+            &b"[104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100]"[..]
+        );
+        test_struct!(ByteBuf, &b"\"hello world\""[..]);
+        test_struct!(Bytes, &b"[]"[..]);
+        test_struct!(Data, &br#"{"content":[1,2,3,4,5]}"#[..]);
     }
 }

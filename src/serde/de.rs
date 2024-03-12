@@ -472,7 +472,10 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 Reference::Borrowed(b) => visitor.visit_borrowed_bytes(b),
                 Reference::Copied(b) => visitor.visit_bytes(b),
             },
-            b'[' => self.deserialize_seq(visitor),
+            b'[' => {
+                self.parser.read.backward(1);
+                self.deserialize_seq(visitor)
+            }
             _ => Err(self.peek_invalid_type(peek, &visitor)),
         };
 
