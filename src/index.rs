@@ -1,5 +1,3 @@
-use std::convert::Into;
-
 use crate::{
     util::{private::Sealed, reborrow::DormantMutRef},
     value::{

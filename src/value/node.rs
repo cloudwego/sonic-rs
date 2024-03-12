@@ -1727,10 +1727,7 @@ mod test {
     use std::path::Path;
 
     use super::*;
-    use crate::{
-        error::{make_error, Result},
-        from_slice, from_str, pointer,
-    };
+    use crate::{error::make_error, from_slice, from_str, pointer};
 
     #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
     struct ValueInStruct {

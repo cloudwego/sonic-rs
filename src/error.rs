@@ -6,12 +6,7 @@ use core::{
     fmt::{self, Debug, Display},
     result,
 };
-use std::{
-    borrow::Cow,
-    error,
-    str::FromStr,
-    string::{String, ToString},
-};
+use std::{borrow::Cow, error, str::FromStr};
 
 use serde::{de, ser};
 use thiserror::Error as ErrorTrait;

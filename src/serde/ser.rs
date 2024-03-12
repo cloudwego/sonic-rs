@@ -6,11 +6,7 @@ use core::{
     fmt::{self, Display},
     num::FpCategory,
 };
-use std::{
-    io,
-    string::{String, ToString},
-    vec::Vec,
-};
+use std::io;
 
 use ::serde::ser::{self, Impossible, Serialize};
 

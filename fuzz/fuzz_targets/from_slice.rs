@@ -1,4 +1,5 @@
 #![no_main]
+#![allow(clippy::mutable_key_type)]
 
 use libfuzzer_sys::fuzz_target;
 use serde_json::Value as JValue;

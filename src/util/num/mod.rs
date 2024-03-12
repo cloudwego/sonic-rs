@@ -5,8 +5,6 @@ mod lemire;
 mod slow;
 mod table;
 
-use std::result::Result;
-
 use self::{common::BiasedFp, float::RawFloat, table::POWER_OF_FIVE_128};
 use crate::{error::ErrorCode, util::arch::simd_str2int};
 

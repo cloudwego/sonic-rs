@@ -298,7 +298,7 @@ impl<'a> LazyValue<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{get_unchecked, pointer, to_array_iter, value::JsonValueTrait};
+    use crate::{pointer, to_array_iter};
 
     const TEST_JSON: &str = r#"{
         "bool": true,

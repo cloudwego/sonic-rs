@@ -305,7 +305,6 @@ impl_container_eq!(Array Object);
 mod test {
     use faststr::FastStr;
 
-    use crate::{array, json};
     #[test]
     fn test_slice_eq() {
         assert_eq!(json!([1, 2, 3]), &[1, 2, 3]);

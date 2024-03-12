@@ -42,6 +42,7 @@ faststr = "0.2"
 json-benchmark = { git = "https://github.com/serde-rs/json-benchmark", default-features = false, features = ["all-files", "lib-serde"]}
 paste = "1.0"
 serde_bytes = "0.11"
+bytes = {version = "1.4", features = ["serde"]}
 chrono = { version = "0.4", features = ["serde"] }
 
 [profile.release]
