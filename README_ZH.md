@@ -18,29 +18,6 @@ sonic-rs 是一个基于 SIMD 的高性能 JSON 库。它参考了其他开源�
 
 ***对于 用户从 `serde_json` 迁移 `sonic_rs`, 请参考 [serdejson_compatibility](docs/serdejson_compatibility.md)***
 
-- [sonic-rs](#sonic-rs)
-    - [要求/注意事项](#要求注意事项)
-    - [如何使用 sonic-rs](#如何使用-sonic-rs)
-- [功能](#功能)
-- [基准测试](#基准测试)
-    - [解析到结构体](#解析到结构体)
-    - [解析到document](#解析到-document)
-    - [序列化document](#序列化-document)
-    - [序列化Rust结构体](#序列化-rust-结构体)
-    - [从JSON中获取](#从-json-中获取)
-- [用法](#用法)
-    - [对Rust类型解析/序列化](#对-rust-类型解析序列化)
-    - [从JSON中获取字段](#从-json-中获取字段)
-    - [解析/序列化document](#解析序列化-document)
-    - [JSON Iterator](#json-iterator)
-    - [JSON LazyValue & Number & RawNumber](#json-lazyvalue--number--rawnumber)
-    - [错误处理](#错误处理)
-- [常见问题](#常见问题)
-    - [关于UTF-8](#关于-utf-8)
-    - [关于浮点数精度](#关于浮点数精度)
-- [致谢](#致谢)
-- [如何贡献](#如何贡献)
-
 ## ***要求/注意事项***
 
 1. 支持 x86_64 或 aarch64。其他架构下走 fallback 逻辑，性能较差。
@@ -56,7 +33,7 @@ sonic-rs 是一个基于 SIMD 的高性能 JSON 库。它参考了其他开源�
 在 Cargo 依赖中添加 sonic-rs:
 ```
 [dependencies]
-sonic-rs = 0.3
+sonic-rs = "0.3"
 ```
 
 ## 功能
