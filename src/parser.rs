@@ -1569,8 +1569,6 @@ where
     // get_from_object will make reader at the position after target key in JSON object.
     #[inline(always)]
     fn get_from_object(&mut self, target_key: &str, temp_buf: &mut Vec<u8>) -> Result<()> {
-        // we assume parsed_key has always
-        debug_assert!(temp_buf.is_empty());
         match self.skip_space() {
             Some(b'{') => {}
             Some(peek) => return Err(self.peek_invalid_type(peek, &"a JSON object")),
@@ -1616,8 +1614,6 @@ where
     // get_from_object will make reader at the position after target key in JSON object.
     #[inline(always)]
     fn get_from_object_checked(&mut self, target_key: &str, temp_buf: &mut Vec<u8>) -> Result<()> {
-        // we assume parsed_key has always
-        debug_assert!(temp_buf.is_empty());
         match self.skip_space() {
             Some(b'{') => {}
             Some(peek) => return Err(self.peek_invalid_type(peek, &"a JSON object")),
