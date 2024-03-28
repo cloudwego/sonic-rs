@@ -443,55 +443,59 @@ mod test {
     use super::*;
     use crate::{pointer, JsonPointer};
 
+    fn test_get_ok(json: &str, path: &JsonPointer, expect: &str) {
+        // get from str
+        let out = unsafe { get_from_str_unchecked(json, path).unwrap() };
+        assert_eq!(out.as_raw_str(), expect);
+        let out = get_from_str(json, path).unwrap();
+        assert_eq!(out.as_raw_str(), expect);
+
+        // get from slice
+        let out = unsafe { get_from_slice_unchecked(json.as_bytes(), path).unwrap() };
+        assert_eq!(out.as_raw_str(), expect);
+        let out = get_from_slice(json.as_bytes(), path).unwrap();
+        assert_eq!(out.as_raw_str(), expect);
+
+        // get from bytes
+        let bytes = Bytes::copy_from_slice(json.as_bytes());
+        let out = unsafe { get_from_bytes_unchecked(&bytes, path).unwrap() };
+        assert_eq!(out.as_raw_str(), expect);
+        let out = get_from_bytes(&bytes, path).unwrap();
+        assert_eq!(out.as_raw_str(), expect);
+
+        // get from FastStr
+        let fstr = faststr::FastStr::from_str(json).unwrap();
+        let out = unsafe { get_from_faststr_unchecked(&fstr, path).unwrap() };
+        assert_eq!(out.as_raw_str(), expect);
+        let out = get_from_faststr(&fstr, path).unwrap();
+        assert_eq!(out.as_raw_str(), expect);
+
+        // get from traits
+        let out = unsafe { get_unchecked(&fstr, path).unwrap() };
+        assert_eq!(out.as_raw_str(), expect);
+        let out = get(&fstr, path).unwrap();
+        assert_eq!(out.as_raw_str(), expect);
+
+        // test for SIMD codes
+        let json = json.to_string() + &" ".repeat(1000);
+        let out = unsafe { get_unchecked(&json, path).unwrap() };
+        assert_eq!(out.as_raw_str(), expect);
+        let out = get(&json, path).unwrap();
+        assert_eq!(out.as_raw_str(), expect);
+    }
+
+    #[test]
+    fn test_get_from_empty_path() {
+        test_get_ok(r#""""#, &pointer![], r#""""#);
+        test_get_ok(r#"{}"#, &pointer![], r#"{}"#);
+        test_get_ok(r#"[]"#, &pointer![], r#"[]"#);
+        test_get_ok(r#"true"#, &pointer![], r#"true"#);
+        test_get_ok(r#"false"#, &pointer![], r#"false"#);
+        test_get_ok(r#"null"#, &pointer![], r#"null"#);
+    }
+
     #[test]
     fn test_get_from_json() {
-        fn test_get_ok(json: &str, path: &JsonPointer, expect: &str) {
-            let out = unsafe { get_from_str_unchecked(json, path).unwrap() };
-            assert_eq!(out.as_raw_str(), expect);
-            let out = get_from_str(json, path).unwrap();
-            assert_eq!(out.as_raw_str(), expect);
-
-            let bytes = Bytes::copy_from_slice(json.as_bytes());
-            let out = unsafe { get_from_bytes_unchecked(&bytes, path).unwrap() };
-            assert_eq!(out.as_raw_str(), expect);
-            let out = get_from_bytes(&bytes, path).unwrap();
-            assert_eq!(out.as_raw_str(), expect);
-
-            let fstr = faststr::FastStr::from_str(json).unwrap();
-            let out = unsafe { get_from_faststr_unchecked(&fstr, path).unwrap() };
-            assert_eq!(out.as_raw_str(), expect);
-
-            // test get from traits
-            let out = unsafe { get_unchecked(&fstr, path).unwrap() };
-            assert_eq!(out.as_raw_str(), expect);
-            let out = get(&fstr, path).unwrap();
-            assert_eq!(out.as_raw_str(), expect);
-
-            let bytes = Bytes::copy_from_slice(json.as_bytes());
-            let out = unsafe { get_unchecked(&bytes, path).unwrap() };
-            assert_eq!(out.as_raw_str(), expect);
-            let out = get(&bytes, path).unwrap();
-            assert_eq!(out.as_raw_str(), expect);
-
-            let out = unsafe { get_unchecked(json.as_bytes(), path).unwrap() };
-            assert_eq!(out.as_raw_str(), expect);
-            let out = get(json.as_bytes(), path).unwrap();
-            assert_eq!(out.as_raw_str(), expect);
-
-            // test for SIMD codes
-            let json = json.to_string() + &" ".repeat(1000);
-            let out = unsafe { get_unchecked(&json, path).unwrap() };
-            assert_eq!(out.as_raw_str(), expect);
-            let out = get(&json, path).unwrap();
-            assert_eq!(out.as_raw_str(), expect);
-        }
-
-        test_get_ok(
-            r#"1230/(xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"#,
-            &pointer![],
-            r#"1230"#,
-        );
-
         test_get_ok(
             r#"{"a":"\n\tHello,\nworld!\n"}"#,
             &pointer!["a"],
@@ -513,6 +517,20 @@ mod test {
             r#"{"a":{"b":{"c":"hello, world!"}}}"#,
             &pointer!["a", "b", "c"],
             r#""hello, world!""#,
+        );
+        test_get_ok(
+            r#"{"a\"":{"b\"":{"c\"":"hello, world!"}}}"#,
+            &pointer!["a\"", "b\"", "c\""],
+            r#""hello, world!""#,
+        );
+    }
+
+    #[test]
+    fn test_get_from_json_with_trailings() {
+        test_get_ok(
+            r#"1230/(xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"#,
+            &pointer![],
+            r#"1230"#,
         );
     }
 
