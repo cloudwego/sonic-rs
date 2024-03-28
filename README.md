@@ -17,29 +17,6 @@ A fast Rust JSON library based on SIMD. It has some references to other open-sou
 
 ***For users to migrate from `serde_json` to `sonic_rs`, can see [serdejson_compatibility](docs/serdejson_compatibility.md)***
 
-- [sonic-rs](#sonic-rs)
-    - [Requirements/Notes](#requirementsnotes)
-    - [Quick to use sonic-rs](#quick-to-use-sonic-rs)
-- [Features](#features)
-- [Benchmark](#benchmark)
-    - [Deserialize Struct](#deserialize-struct)
-    - [Deserialize Untyped](#deserialize-untyped)
-    - [Serialize Untyped](#serialize-untyped)
-    - [Serialize Struct](#serialize-struct)
-    - [Get from JSON](#get-from-json)
-- [Usage](#usage)
-    - [Serde into Rust Type](#serde-into-rust-type)
-    - [Get a field from JSON](#get-a-field-from-json)
-    - [Parse and Serialize into untyped Value](#parse-and-serialize-into-untyped-value)
-    - [JSON Iterator](#json-iterator)
-    - [JSON LazyValue & Number & RawNumber](#json-lazyvalue--number--rawnumber)
-    - [Error handle](#error-handle)
-- [FAQs](#faqs)
-    - [About UTF-8](#about-utf-8)
-    - [About floating point precision](#about-floating-point-precision)
-- [Acknowledgement](#acknowledgement)
-- [Contributing](#contributing)
-
 ## Requirements/Notes
 
 1. Faster in x86_64 or aarch64, other architecture is fallback and maybe very slower.
