@@ -389,17 +389,47 @@ mod test {
         deserializer.deserialize_seq(TupleVisitor)
     }
 
-    #[derive(serde::Deserialize, Eq, PartialEq)]
+    fn my_deseirlize_map<'de, D>(deserializer: D) -> StdResult<(String, i64), D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        struct MapVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for MapVisitor {
+            type Value = (String, i64);
+
+            fn expecting(&self, formatter: &mut Formatter) -> FmtResult {
+                formatter.write_str("expect an array")
+            }
+
+            fn visit_map<S>(self, mut map: S) -> StdResult<Self::Value, S::Error>
+            where
+                S: serde::de::MapAccess<'de>,
+            {
+                let x = map
+                    .next_key()?
+                    .ok_or_else(|| serde::de::Error::custom("miss a key"))?;
+                let y = map.next_value::<i64>()?;
+                Ok((x, y))
+            }
+        }
+
+        deserializer.deserialize_map(MapVisitor)
+    }
+
+    #[derive(serde::Deserialize, Debug, Eq, PartialEq)]
     struct MyTuple {
         #[serde(deserialize_with = "my_deseirlize_seq")]
-        data: (i64, i64),
+        seq: (i64, i64),
+        #[serde(deserialize_with = "my_deseirlize_map")]
+        map: (String, i64),
     }
 
     #[test]
-    fn test_serde_with_seq() {
-        let json = r#"{"data":[1, 2]}"#;
+    fn test_serde_with_fixed_iter_steps() {
+        let json = r#"{"seq":[1, 2], "map": {"key": 123}}"#;
         let expect: MyTuple = serde_json::from_str(json).unwrap();
         let got: MyTuple = from_str(json).unwrap();
-        assert_eq!(expect.data, got.data);
+        assert_eq!(expect, got);
     }
 }

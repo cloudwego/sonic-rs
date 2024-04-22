@@ -5,9 +5,9 @@ use std::{
     str::from_utf8_unchecked,
 };
 
-use ::serde::de::{self, Expected, Unexpected};
 use arrayref::array_ref;
 use faststr::FastStr;
+use serde::de::{self, Expected, Unexpected};
 use smallvec::SmallVec;
 
 use super::reader::{Reader, Reference};

@@ -3,7 +3,7 @@
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
 use std::{mem::ManuallyDrop, ptr::slice_from_raw_parts};
 
-use ::serde::{
+use serde::{
     de::{self, Expected, Unexpected},
     forward_to_deserialize_any,
 };
@@ -135,22 +135,14 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     }
 
     fn end_seq(&mut self) -> Result<()> {
-        match self.parser.skip_space() {
-            Some(b']') => Ok(()),
-            Some(b',') => match self.parser.skip_space() {
-                Some(b']') => Err(self.parser.error(ErrorCode::TrailingComma)),
-                _ => Err(self.parser.error(ErrorCode::TrailingCharacters)),
-            },
-            Some(_) => Err(self.parser.error(ErrorCode::TrailingCharacters)),
-            None => Err(self.parser.error(ErrorCode::EofWhileParsing)),
-        }
+        self.parser.parse_array_end()
     }
 
     fn end_map(&mut self) -> Result<()> {
         match self.parser.skip_space() {
             Some(b'}') => Ok(()),
             Some(b',') => Err(self.parser.error(ErrorCode::TrailingComma)),
-            Some(_) => Err(self.parser.error(ErrorCode::TrailingCharacters)),
+            Some(_) => Err(self.parser.error(ErrorCode::ExpectedObjectCommaOrEnd)),
             None => Err(self.parser.error(ErrorCode::EofWhileParsing)),
         }
     }
@@ -302,13 +294,21 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 let ret = {
                     let _ = DepthGuard::guard(self);
                     visitor.visit_seq(SeqAccess::new(self))
-                }?;
-                self.parser.parse_array_end()?;
-                Ok(ret)
+                };
+                match (ret, self.end_seq()) {
+                    (Ok(ret), Ok(())) => Ok(ret),
+                    (Err(err), _) | (_, Err(err)) => Err(err),
+                }
             }
             b'{' => {
-                let _ = DepthGuard::guard(self);
-                visitor.visit_map(MapAccess::new(self))
+                let ret = {
+                    let _ = DepthGuard::guard(self);
+                    visitor.visit_map(MapAccess::new(self))
+                };
+                match (ret, self.end_map()) {
+                    (Ok(ret), Ok(())) => Ok(ret),
+                    (Err(err), _) | (_, Err(err)) => Err(err),
+                }
             }
             _ => Err(self.parser.error(ErrorCode::InvalidJsonValue)),
         };
@@ -575,9 +575,11 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 let ret = {
                     let _ = DepthGuard::guard(self);
                     visitor.visit_seq(SeqAccess::new(self))
-                }?;
-                self.parser.parse_array_end()?;
-                Ok(ret)
+                };
+                match (ret, self.end_seq()) {
+                    (Ok(ret), Ok(())) => Ok(ret),
+                    (Err(err), _) | (_, Err(err)) => Err(err),
+                }
             }
             _ => return Err(self.peek_invalid_type(peek, &visitor)),
         };
@@ -616,8 +618,14 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
 
         let value = match peek {
             b'{' => {
-                let _ = DepthGuard::guard(self);
-                visitor.visit_map(MapAccess::new(self))
+                let ret = {
+                    let _ = DepthGuard::guard(self);
+                    visitor.visit_map(MapAccess::new(self))
+                };
+                match (ret, self.end_map()) {
+                    (Ok(ret), Ok(())) => Ok(ret),
+                    (Err(err), _) | (_, Err(err)) => Err(err),
+                }
             }
             _ => return Err(self.peek_invalid_type(peek, &visitor)),
         };
@@ -645,16 +653,21 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 let ret = {
                     let _ = DepthGuard::guard(self);
                     visitor.visit_seq(SeqAccess::new(self))
-                }?;
-                self.parser.parse_array_end()?;
-                Ok(ret)
+                };
+                match (ret, self.end_seq()) {
+                    (Ok(ret), Ok(())) => Ok(ret),
+                    (Err(err), _) | (_, Err(err)) => Err(err),
+                }
             }
             b'{' => {
                 let ret = {
                     let _ = DepthGuard::guard(self);
                     visitor.visit_map(MapAccess::new(self))
                 };
-                ret
+                match (ret, self.end_map()) {
+                    (Ok(ret), Ok(())) => Ok(ret),
+                    (Err(err), _) | (_, Err(err)) => Err(err),
+                }
             }
             _ => return Err(self.peek_invalid_type(peek, &visitor)),
         };
@@ -771,12 +784,16 @@ impl<'de, 'a, R: Reader<'de> + 'a> de::MapAccess<'de> for MapAccess<'a, R> {
     where
         K: de::DeserializeSeed<'de>,
     {
-        let peek = match self.de.parser.skip_space() {
+        let peek = match self.de.parser.skip_space_peek() {
             Some(b'}') => {
                 return Ok(None);
             }
-            Some(b',') if !self.first => self.de.parser.skip_space(),
+            Some(b',') if !self.first => {
+                self.de.parser.read.eat(1);
+                self.de.parser.skip_space()
+            }
             Some(b) => {
+                self.de.parser.read.eat(1);
                 if self.first {
                     self.first = false;
                     Some(b)
@@ -1125,6 +1142,8 @@ where
 {
     let mut de = Deserializer::new(read);
     let value = tri!(de::Deserialize::deserialize(&mut de));
+
+    // check errors
 
     // Make sure the whole stream has been consumed.
     tri!(de.parser.parse_trailing());
