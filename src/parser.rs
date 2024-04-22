@@ -5,7 +5,7 @@ use std::{
     str::from_utf8_unchecked,
 };
 
-use ::serde::de::{Expected, Unexpected};
+use ::serde::de::{self, Expected, Unexpected};
 use arrayref::array_ref;
 use faststr::FastStr;
 use smallvec::SmallVec;
@@ -187,7 +187,6 @@ where
             reason = EofWhileParsing;
             index = len;
         }
-
         Error::syntax(reason, self.read.as_u8_slice(), index)
     }
 
@@ -2091,7 +2090,6 @@ where
 
     #[cold]
     pub(crate) fn peek_invalid_type(&mut self, peek: u8, exp: &dyn Expected) -> Error {
-        use ::serde::de;
         let err = match peek {
             b'n' => {
                 if let Err(err) = self.parse_literal("ull") {

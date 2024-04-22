@@ -299,8 +299,12 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 }
             }
             b'[' => {
-                let _ = DepthGuard::guard(self);
-                visitor.visit_seq(SeqAccess::new(self))
+                let ret = {
+                    let _ = DepthGuard::guard(self);
+                    visitor.visit_seq(SeqAccess::new(self))
+                }?;
+                self.parser.parse_array_end()?;
+                Ok(ret)
             }
             b'{' => {
                 let _ = DepthGuard::guard(self);
@@ -571,8 +575,9 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 let ret = {
                     let _ = DepthGuard::guard(self);
                     visitor.visit_seq(SeqAccess::new(self))
-                };
-                ret
+                }?;
+                self.parser.parse_array_end()?;
+                Ok(ret)
             }
             _ => return Err(self.peek_invalid_type(peek, &visitor)),
         };
@@ -586,9 +591,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
     where
         V: de::Visitor<'de>,
     {
-        let ret = self.deserialize_seq(visitor)?;
-        self.parser.parse_array_end()?;
-        Ok(ret)
+        self.deserialize_seq(visitor)
     }
 
     fn deserialize_tuple_struct<V>(
@@ -600,9 +603,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
     where
         V: de::Visitor<'de>,
     {
-        let ret = self.deserialize_seq(visitor)?;
-        self.parser.parse_array_end()?;
-        Ok(ret)
+        self.deserialize_seq(visitor)
     }
 
     fn deserialize_map<V>(self, visitor: V) -> Result<V::Value>
@@ -644,11 +645,9 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 let ret = {
                     let _ = DepthGuard::guard(self);
                     visitor.visit_seq(SeqAccess::new(self))
-                };
-                match (ret, self.end_seq()) {
-                    (Ok(ret), Ok(())) => Ok(ret),
-                    (Err(err), _) | (_, Err(err)) => Err(err),
-                }
+                }?;
+                self.parser.parse_array_end()?;
+                Ok(ret)
             }
             b'{' => {
                 let ret = {
@@ -733,15 +732,18 @@ impl<'de, 'a, R: Reader<'de> + 'a> de::SeqAccess<'de> for SeqAccess<'a, R> {
     where
         T: de::DeserializeSeed<'de>,
     {
-        match self.de.parser.skip_space() {
-            Some(b']') => Ok(None),
-            Some(b',') if !self.first => Ok(Some(tri!(seed.deserialize(&mut *self.de)))),
+        match self.de.parser.skip_space_peek() {
+            Some(b']') => Ok(None), // we will check the ending brace after `visit_seq`
+            Some(b',') if !self.first => {
+                self.de.parser.read.eat(1);
+                Ok(Some(tri!(seed.deserialize(&mut *self.de))))
+            }
             Some(_) => {
                 if self.first {
-                    self.de.parser.read.backward(1);
                     self.first = false;
                     Ok(Some(tri!(seed.deserialize(&mut *self.de))))
                 } else {
+                    self.de.parser.read.eat(1); // makes the error position is correct
                     Err(self.de.parser.error(ErrorCode::ExpectedArrayCommaOrEnd))
                 }
             }
@@ -866,10 +868,7 @@ impl<'de, 'a, R: Reader<'de> + 'a> de::VariantAccess<'de> for VariantAccess<'a, 
     where
         V: de::Visitor<'de>,
     {
-        let parser = &mut self.de.parser as *mut Parser<R>;
-        let ret = de::Deserializer::deserialize_seq(self.de, visitor)?;
-        unsafe { (*parser).parse_array_end()? };
-        Ok(ret)
+        de::Deserializer::deserialize_seq(self.de, visitor)
     }
 
     fn struct_variant<V>(self, fields: &'static [&'static str], visitor: V) -> Result<V::Value>
