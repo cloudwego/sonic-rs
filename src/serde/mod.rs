@@ -353,4 +353,53 @@ mod test {
         test_struct!(Bytes, &b"[]"[..]);
         test_struct!(Data, &br#"{"content":[1,2,3,4,5]}"#[..]);
     }
+
+    use std::{
+        fmt::{Formatter, Result as FmtResult},
+        result::Result as StdResult,
+    };
+
+    fn my_deseirlize_seq<'de, D>(deserializer: D) -> StdResult<(i64, i64), D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        struct TupleVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for TupleVisitor {
+            type Value = (i64, i64);
+
+            fn expecting(&self, formatter: &mut Formatter) -> FmtResult {
+                formatter.write_str("expect an array")
+            }
+
+            fn visit_seq<S>(self, mut seq: S) -> StdResult<Self::Value, S::Error>
+            where
+                S: serde::de::SeqAccess<'de>,
+            {
+                let x = seq
+                    .next_element::<i64>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
+                let y = seq
+                    .next_element::<i64>()?
+                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
+                Ok((x, y))
+            }
+        }
+
+        deserializer.deserialize_seq(TupleVisitor)
+    }
+
+    #[derive(serde::Deserialize, Eq, PartialEq)]
+    struct MyTuple {
+        #[serde(deserialize_with = "my_deseirlize_seq")]
+        data: (i64, i64),
+    }
+
+    #[test]
+    fn test_serde_with_seq() {
+        let json = r#"{"data":[1, 2]}"#;
+        let expect: MyTuple = serde_json::from_str(json).unwrap();
+        let got: MyTuple = from_str(json).unwrap();
+        assert_eq!(expect.data, got.data);
+    }
 }
