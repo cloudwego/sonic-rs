@@ -1,6 +1,5 @@
 cfg_if::cfg_if! {
-    // TODO: more percison target demand
-    if #[cfg(target_arch = "x86_64")] {
+    if #[cfg(all(target_arch = "x86_64", target_feature = "pclmulqdq", target_feature = "avx2", target_feature = "sse2"))] {
         mod x86_64;
         pub use x86_64::*;
     } else if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
