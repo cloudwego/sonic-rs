@@ -273,6 +273,18 @@ pub fn dom_to_string(value: &Document) -> Result<String> {
     Ok(unsafe { String::from_utf8_unchecked(buf) })
 }
 
+#[repr(C)]
+#[derive(Debug, Default, Copy, Clone)]
+pub struct JsonStat {
+    pub object: u32,
+    pub array: u32,
+    pub string: u32,
+    pub number: u32,
+    pub array_elems: u32,
+    pub object_keys: u32,
+    pub max_depth: u32,
+}
+
 #[derive(Debug, Default)]
 pub struct Document {
     /// A continous flatten buffer for all JSON values
@@ -284,6 +296,7 @@ pub struct Document {
     /// if the input json has invalid utf8, we will use utf8_lossy and replace old string with new
     /// buffer
     pub has_utf8_lossy: bool,
+    pub stats: JsonStat,
 }
 
 impl Document {
@@ -318,6 +331,8 @@ impl Document {
         struct DocumentVisitor<'a> {
             nodes: &'a mut Vec<Value>,
             parent: usize,
+            depth: usize,
+            stats: JsonStat,
         }
 
         impl<'a> DocumentVisitor<'a> {
@@ -329,6 +344,10 @@ impl Document {
                 visitor.parent = old;
                 let next = visitor.nodes.len() - parent;
                 visitor.nodes[parent].val = (len as u64) | (next as u64) << CON_LEN_BITS;
+                if visitor.depth as u32 > visitor.stats.max_depth {
+                    visitor.stats.max_depth = visitor.depth as u32;
+                }
+                visitor.depth -= 1;
                 true
             }
 
@@ -350,6 +369,7 @@ impl Document {
 
             #[inline(always)]
             fn visit_f64_pos(&mut self, val: f64, pos: usize) -> bool {
+                self.stats.number += 1;
                 // # Safety
                 // we have checked the f64 in parsing number.
                 let node = unsafe { Value::new_f64_unchecked(val, pos) };
@@ -358,16 +378,19 @@ impl Document {
 
             #[inline(always)]
             fn visit_i64_pos(&mut self, val: i64, pos: usize) -> bool {
+                self.stats.number += 1;
                 self.push_node(Value::new_i64(val, pos))
             }
 
             #[inline(always)]
             fn visit_u64_pos(&mut self, val: u64, pos: usize) -> bool {
+                self.stats.number += 1;
                 self.push_node(Value::new_u64(val, pos))
             }
 
             #[inline(always)]
             fn visit_number(&mut self, val: &str) -> bool {
+                self.stats.number += 1;
                 self.push_node(Value::new_number(val))
             }
 
@@ -378,11 +401,14 @@ impl Document {
                 let len = self.nodes.len();
                 self.nodes[len - 1].val = self.parent as u64;
                 self.parent = len - 1;
+                self.depth += 1;
                 ret
             }
 
             #[inline(always)]
             fn visit_array_end(&mut self, len: usize) -> bool {
+                self.stats.array += 1;
+                self.stats.array_elems += len as u32;
                 self.visit_con_end(len)
             }
 
@@ -392,11 +418,14 @@ impl Document {
                 let len = self.nodes.len();
                 self.nodes[len - 1].val = self.parent as u64;
                 self.parent = len - 1;
+                self.depth += 1;
                 ret
             }
 
             #[inline(always)]
             fn visit_object_end(&mut self, len: usize) -> bool {
+                self.stats.object += 1;
+                self.stats.object_keys += len as u32;
                 self.visit_con_end(len)
             }
 
@@ -407,6 +436,7 @@ impl Document {
 
             #[inline(always)]
             fn visit_str_status(&mut self, value: &str, has_escaped: bool) -> bool {
+                self.stats.string += 1;
                 self.push_node(Value::new_str(value, has_escaped))
             }
 
@@ -425,6 +455,8 @@ impl Document {
         let mut visitor = DocumentVisitor {
             nodes: &mut buf,
             parent,
+            stats: JsonStat::default(),
+            depth: 0,
         };
 
         parser.parse_value(&mut visitor)?;
@@ -432,6 +464,7 @@ impl Document {
         parser.parse_trailing()?;
 
         self.json_buffer = json_buf;
+        self.stats = visitor.stats;
         self.node_buffer = buf;
         Ok(())
     }
@@ -461,6 +494,7 @@ mod test {
             }
         }"#;
         let doc = unsafe { dom_from_slice_unchecked(json.as_bytes()).unwrap() };
+        println!("stats:\n{:#?}", doc.stats);
         let out = dom_to_string(&doc).unwrap();
         println!("{out}");
     }
@@ -514,4 +548,7 @@ mod test {
             test_json(case);
         }
     }
+
+    #[test]
+    fn test_json_stat() {}
 }
