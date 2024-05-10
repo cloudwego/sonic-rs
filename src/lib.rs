@@ -22,6 +22,10 @@ pub use ::serde::{Deserialize, Serialize};
 #[doc(inline)]
 pub use crate::error::{Error, Result};
 #[doc(inline)]
+pub use crate::index::Index;
+#[doc(inline)]
+pub use crate::input::JsonInput;
+#[doc(inline)]
 pub use crate::lazyvalue::{
     get, get_from_bytes, get_from_bytes_unchecked, get_from_faststr, get_from_faststr_unchecked,
     get_from_slice, get_from_slice_unchecked, get_from_str, get_from_str_unchecked, get_many,
