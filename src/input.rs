@@ -66,6 +66,7 @@ impl<'de> AsRef<[u8]> for JsonSlice<'de> {
     }
 }
 
+/// A trait for string/bytes-like types that can be parsed into JSON.
 pub trait JsonInput<'de>: Sealed {
     fn need_utf8_valid(&self) -> bool;
     fn to_json_slice(&self) -> JsonSlice<'de>;

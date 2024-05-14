@@ -16,11 +16,17 @@ pub mod serde;
 pub mod value;
 pub mod writer;
 
+// re-export FastStr
+pub use ::faststr::FastStr;
 // re-export the serde trait
 pub use ::serde::{Deserialize, Serialize};
 
 #[doc(inline)]
 pub use crate::error::{Error, Result};
+#[doc(inline)]
+pub use crate::index::Index;
+#[doc(inline)]
+pub use crate::input::JsonInput;
 #[doc(inline)]
 pub use crate::lazyvalue::{
     get, get_from_bytes, get_from_bytes_unchecked, get_from_faststr, get_from_faststr_unchecked,
