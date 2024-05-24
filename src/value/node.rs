@@ -1742,12 +1742,28 @@ impl Serialize for Value {
                 seq.end()
             }
             OBJECT | ROOT_OBJECT => {
-                let entries = self.object();
-                let mut map = tri!(serializer.serialize_map(Some(entries.len())));
-                for (k, v) in entries {
-                    tri!(map.serialize_entry(k, v));
+                #[cfg(feature = "sort_keys")]
+                {
+                    // TODO: sort the keys use thread-local buffer
+                    let mut kvs: Vec<&(Value, Value)> = self.object().iter().collect();
+                    kvs.sort_by(|(k1, _), (k2, _)| k1.str().cmp(k2.str()));
+
+                    let mut map = tri!(serializer.serialize_map(Some(kvs.len())));
+                    for (k, v) in kvs {
+                        tri!(map.serialize_entry(k, v));
+                    }
+                    map.end()
                 }
-                map.end()
+
+                #[cfg(not(feature = "sort_keys"))]
+                {
+                    let entries = self.object();
+                    let mut map = tri!(serializer.serialize_map(Some(entries.len())));
+                    for (k, v) in entries {
+                        tri!(map.serialize_entry(k, v));
+                    }
+                    map.end()
+                }
             }
             #[cfg(feature = "arbitrary_precision")]
             RAWNUM | ROOT_RAWNUM => {
@@ -2093,6 +2109,43 @@ mod test {
             let value: Value = crate::from_str(num).unwrap();
             assert_eq!(value.as_raw_number().unwrap().as_str(), num);
             assert_eq!(value.to_string(), num);
+        }
+    }
+
+    #[cfg(feature = "sort_keys")]
+    #[test]
+    fn test_sort_keys() {
+        struct Case<'a> {
+            input: &'a str,
+            output: &'a str,
+        }
+
+        let cases = [
+            Case {
+                input: r#"{"b": 2,"bc":{"cb":1,"ca":"hello"},"a": 1}"#,
+                output: r#"{"a":1,"b":2,"bc":{"ca":"hello","cb":1}}"#,
+            },
+            Case {
+                input: r#"{"a":1}"#,
+                output: r#"{"a":1}"#,
+            },
+            Case {
+                input: r#"{"b": 2,"a": 1}"#,
+                output: r#"{"a":1,"b":2}"#,
+            },
+            Case {
+                input: "{}",
+                output: "{}",
+            },
+            Case {
+                input: r#"[{"b": 2,"c":{"cb":1,"ca":"hello"},"a": 1}, {"ab": 2,"aa": 1}]"#,
+                output: r#"[{"a":1,"b":2,"c":{"ca":"hello","cb":1}},{"aa":1,"ab":2}]"#,
+            },
+        ];
+
+        for case in cases {
+            let value: Value = crate::from_str(case.input).unwrap();
+            assert_eq!(value.to_string(), case.output);
         }
     }
 }
