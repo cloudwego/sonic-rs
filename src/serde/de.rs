@@ -243,7 +243,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
                 }
                 let end = self.parser.read.index();
                 let raw = as_str(self.parser.read.slice_unchecked(start, end));
-                // macth the right quote
+                // match the right quote
                 if self.parser.read.next() != Some(b'"') {
                     return Err(self.parser.error(ErrorCode::InvalidNumber));
                 }
