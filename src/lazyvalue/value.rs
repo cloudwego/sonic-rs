@@ -266,7 +266,7 @@ impl<'a> LazyValue<'a> {
     /// ```
     pub fn as_raw_faststr(&self) -> FastStr {
         match &self.raw {
-            JsonSlice::Raw(r) => unsafe { FastStr::from_u8_slice_unchecked(r) },
+            JsonSlice::Raw(r) => unsafe { FastStr::new_u8_slice_unchecked(r) },
             JsonSlice::FastStr(f) => f.clone(),
         }
     }
