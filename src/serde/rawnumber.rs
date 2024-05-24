@@ -6,7 +6,27 @@ use ::std::fmt;
 use super::number::Number;
 use crate::{util::private::Sealed, Error, JsonNumberTrait};
 
-/// Represents a JSON number with arbitrary precision, like as Golang json.Number
+/// Represents a JSON number with arbitrary precision, the underlying representation of a string,
+/// like as Golang `json.Number`.
+///
+/// Example1:
+///
+/// ```
+/// use sonic_rs::RawNumber;
+///
+/// use crate::sonic_rs::JsonNumberTrait;
+///
+/// // RawNumber can be parsed from a JSON number text.
+/// let num: RawNumber = sonic_rs::from_str("123").unwrap();
+/// assert_eq!(num.as_i64(), Some(123));
+/// assert_eq!(num.as_str(), "123");
+///
+/// // RawNumber can be parsed from a JSON string text that contains a number.
+/// let num: RawNumber =
+///     sonic_rs::from_str("\"1.2333333333333333333333333333333333333333\"").unwrap();
+/// assert_eq!(num.as_f64(), Some(1.2333333333333334));
+/// assert_eq!(num.as_str(), "1.2333333333333333333333333333333333333333");
+/// ```
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct RawNumber {
     n: String,

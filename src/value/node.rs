@@ -5,7 +5,6 @@ use std::{
     mem::{transmute, ManuallyDrop, MaybeUninit},
     ptr::NonNull,
     slice::{from_raw_parts, from_raw_parts_mut},
-    str::from_utf8_unchecked,
 };
 
 use bumpalo::Bump;
@@ -19,6 +18,8 @@ use super::{
     value_trait::{JsonContainerTrait, JsonValueMutTrait},
     visitor::JsonVisitor,
 };
+#[cfg(feature = "arbitrary_precision")]
+use crate::RawNumber;
 use crate::{
     error::Result,
     index::Index,
@@ -28,7 +29,7 @@ use crate::{
     serde::tri,
     util::{arc::Arc, taggedptr::TaggedPtr},
     value::{allocator::AllocatorTrait, array::Array, object::Object, value_trait::JsonValueTrait},
-    JsonType, Number,
+    JsonNumberTrait, JsonType, Number,
 };
 
 /// Represents any valid JSON value.
@@ -93,6 +94,14 @@ impl Clone for Value {
                 }
                 let (shared, _) = get_shared_or_new();
                 let mut v = Value::copy_str(s, shared);
+                v.mark_root();
+                v
+            }
+            #[cfg(feature = "arbitrary_precision")]
+            ROOT_RAWNUM | RAWNUM => {
+                let s = self.raw_num();
+                let (shared, _) = get_shared_or_new();
+                let mut v = Value::copy_raw_num(s, shared);
                 v.mark_root();
                 v
             }
@@ -224,7 +233,9 @@ impl Value {
                 }
                 obj
             }
-            ROOT_STRING | STRING => Value::copy_str(self.as_str().unwrap(), shared),
+            ROOT_STRING | STRING => Value::copy_str(self.str(), shared),
+            #[cfg(feature = "arbitrary_precision")]
+            ROOT_RAWNUM | RAWNUM => Value::copy_raw_num(self.raw_num(), shared),
             NULL | FALSE | TRUE | SIGNED | UNSIGNED | FLOAT | STATIC_STR => {
                 let mut v = Value {
                     meta: self.meta,
@@ -312,13 +323,13 @@ pub(crate) union Meta {
     val: u64,
 }
 
-pub(crate) const TYPE_MASK: u64 = (std::mem::align_of::<Shared>() as u64) - 1;
+pub(crate) const TYPE_MASK: u64 = (std::mem::align_of::<Shared>() as u64) - 1; // 0b111_111
+
 pub(crate) const ROOT_MASK: u64 = 0b1100;
 pub(crate) const UNROOT_MASK: u64 = 0b1011;
-/// shared ptr: | hi | valid ptr | tag |
-pub(crate) const SHARED_PTR_MASK: u64 = 0x0000FFFFFFFFFFFF & !TYPE_MASK;
-/// str ptr:    | hi | valid str ptr   |
-pub(crate) const STR_PTR_MASK: u64 = 0x0000FFFFFFFFFFFF;
+
+/// shared ptr:  ptr | tag |
+pub(crate) const SHARED_PTR_MASK: u64 = !TYPE_MASK;
 
 /// Encoding format:
 /// static node
@@ -330,13 +341,16 @@ pub(crate) const FLOAT: u64 = 0b0100;
 pub(crate) const UNSIGNED: u64 = 0b0101;
 pub(crate) const SIGNED: u64 = 0b0110;
 pub(crate) const STATIC_STR: u64 = 0b0111;
+
 /// dynamic node
 pub(crate) const STRING: u64 = 0b1000;
-pub(crate) const _: u64 = 0b1001; // reserved
+#[cfg(feature = "arbitrary_precision")]
+pub(crate) const RAWNUM: u64 = 0b1001;
 pub(crate) const ARRAY: u64 = 0b1010;
 pub(crate) const OBJECT: u64 = 0b1011;
 pub(crate) const ROOT_STRING: u64 = 0b1100;
-pub(crate) const _: u64 = 0b1101; // reserved
+#[cfg(feature = "arbitrary_precision")]
+pub(crate) const ROOT_RAWNUM: u64 = 0b1101;
 pub(crate) const ROOT_ARRAY: u64 = 0b1110;
 pub(crate) const ROOT_OBJECT: u64 = 0b1111;
 
@@ -376,6 +390,7 @@ pub(crate) union Data {
     /// For portability, we do not use a tag in the pointer to store the str length.
     /// And this consumes one more bytes than old value design.
     pub(crate) sval: *const str,
+    pub(crate) rawnum: *const str,
     pub(crate) achildren: *mut Value,
     pub(crate) ochildren: *mut Pair,
     pub(crate) parent: u64,
@@ -418,6 +433,8 @@ impl super::value_trait::JsonValueTrait for Value {
             NULL => JsonType::Null,
             FALSE | TRUE => JsonType::Boolean,
             SIGNED | UNSIGNED | FLOAT => JsonType::Number,
+            #[cfg(feature = "arbitrary_precision")]
+            RAWNUM | ROOT_RAWNUM => JsonType::Number,
             STRING | ROOT_STRING | STATIC_STR => JsonType::String,
             ARRAY | ROOT_ARRAY => JsonType::Array,
             OBJECT | ROOT_OBJECT => JsonType::Object,
@@ -428,39 +445,39 @@ impl super::value_trait::JsonValueTrait for Value {
     #[inline]
     fn as_number(&self) -> Option<Number> {
         match self.typ() {
-            UNSIGNED => self.as_u64().map(|u| u.into()),
-            SIGNED => self.as_i64().map(|i| i.into()),
-            FLOAT => self.as_f64().and_then(Number::from_f64),
+            UNSIGNED => Some(Number::from(self.u64())),
+            SIGNED => Some(Number::from(self.i64())),
+            FLOAT => Number::try_from(self.f64()).ok(),
+            #[cfg(feature = "arbitrary_precision")]
+            RAWNUM | ROOT_RAWNUM => crate::from_str(self.raw_num()).ok(),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "arbitrary_precision")]
+    fn as_raw_number(&self) -> Option<RawNumber> {
+        match self.typ() {
+            UNSIGNED => Some(RawNumber::new(itoa::Buffer::new().format(self.u64()))),
+            SIGNED => Some(RawNumber::new(itoa::Buffer::new().format(self.i64()))),
+            FLOAT => Some(RawNumber::new(ryu::Buffer::new().format(self.f64()))),
+            RAWNUM | ROOT_RAWNUM => Some(RawNumber::new(self.raw_num())),
             _ => None,
         }
     }
 
     #[inline]
     fn as_i64(&self) -> Option<i64> {
-        match self.typ() {
-            SIGNED => Some(self.i64()),
-            UNSIGNED if self.u64() <= i64::MAX as u64 => Some(self.u64() as i64),
-            _ => None,
-        }
+        self.as_number().and_then(|num| num.as_i64())
     }
 
     #[inline]
     fn as_u64(&self) -> Option<u64> {
-        match self.typ() {
-            UNSIGNED => Some(self.u64()),
-            SIGNED if self.i64() >= 0 => Some(self.i64() as u64),
-            _ => None,
-        }
+        self.as_number().and_then(|num| num.as_u64())
     }
 
     #[inline]
     fn as_f64(&self) -> Option<f64> {
-        match self.typ() {
-            UNSIGNED => Some(self.u64() as f64),
-            SIGNED => Some(self.i64() as f64),
-            FLOAT => Some(self.f64()),
-            _ => None,
-        }
+        self.as_number().and_then(|num| num.as_f64())
     }
 
     #[inline]
@@ -507,7 +524,7 @@ impl JsonContainerTrait for Value {
     #[inline]
     fn as_array(&self) -> Option<&Self::ArrayType> {
         if self.is_array() {
-            Some(unsafe { transmute(self) })
+            Some(unsafe { transmute::<&Self, &Self::ArrayType>(self) })
         } else {
             None
         }
@@ -516,7 +533,7 @@ impl JsonContainerTrait for Value {
     #[inline]
     fn as_object(&self) -> Option<&Self::ObjectType> {
         if self.is_object() {
-            Some(unsafe { transmute(self) })
+            Some(unsafe { transmute::<&Self, &Self::ObjectType>(self) })
         } else {
             None
         }
@@ -531,7 +548,7 @@ impl JsonValueMutTrait for Value {
     #[inline]
     fn as_object_mut(&mut self) -> Option<&mut Self::ObjectType> {
         if self.is_object() {
-            Some(unsafe { transmute(self) })
+            Some(unsafe { transmute::<&mut Self, &mut Self::ObjectType>(self) })
         } else {
             None
         }
@@ -540,7 +557,7 @@ impl JsonValueMutTrait for Value {
     #[inline]
     fn as_array_mut(&mut self) -> Option<&mut Self::ArrayType> {
         if self.is_array() {
-            Some(unsafe { transmute(self) })
+            Some(unsafe { transmute::<&mut Self, &mut Self::ArrayType>(self) })
         } else {
             None
         }
@@ -640,6 +657,11 @@ impl Value {
             STRING | ROOT_STRING | STATIC_STR => ValueRef::String(self.as_str().unwrap()),
             ARRAY | ROOT_ARRAY => ValueRef::Array(self.as_array().unwrap()),
             OBJECT | ROOT_OBJECT => ValueRef::Object(self.as_object().unwrap()),
+            #[cfg(feature = "arbitrary_precision")]
+            RAWNUM | ROOT_RAWNUM => match crate::from_str(self.raw_num()) {
+                Ok(num) => ValueRef::Number(num),
+                Err(_) => ValueRef::Null,
+            },
             _ => unreachable!(),
         }
     }
@@ -659,12 +681,10 @@ impl Value {
     /// ```
     #[inline]
     pub fn from_static_str(val: &'static str) -> Self {
-        let mut v = Value {
+        Value {
             meta: Meta::new(STATIC_STR, std::ptr::null()),
             data: Data { sval: val },
-        };
-        v.set_str_len(val.len());
-        v
+        }
     }
 
     #[doc(hidden)]
@@ -772,24 +792,43 @@ impl Value {
     #[doc(hidden)]
     #[inline]
     pub fn new_str(val: &str, share: *const Shared) -> Self {
-        let mut v = Value {
+        Value {
             meta: Meta::new(STRING, share),
             data: Data { sval: val },
-        };
-        v.set_str_len(val.len());
-        v
+        }
+    }
+
+    #[cfg(feature = "arbitrary_precision")]
+    #[doc(hidden)]
+    #[inline]
+    pub fn new_raw_num(num: &str, share: *const Shared) -> Self {
+        Value {
+            meta: Meta::new(RAWNUM, share),
+            data: Data { rawnum: num },
+        }
+    }
+
+    #[cfg(feature = "arbitrary_precision")]
+    #[doc(hidden)]
+    #[inline]
+    pub fn copy_raw_num(num: &str, share: &Shared) -> Self {
+        Value {
+            meta: Meta::new(RAWNUM, share),
+            data: Data {
+                rawnum: share.alloc.alloc_str(num),
+            },
+        }
     }
 
     #[doc(hidden)]
     #[inline]
     pub fn copy_str(src: &str, share: &Shared) -> Self {
-        let s = share.alloc.alloc_str(src);
-        let mut v = Value {
+        Value {
             meta: Meta::new(STRING, share),
-            data: Data { sval: s },
-        };
-        v.set_str_len(s.len());
-        v
+            data: Data {
+                sval: share.alloc.alloc_str(src),
+            },
+        }
     }
 
     // create a new owned allocator, and copied the string
@@ -798,12 +837,10 @@ impl Value {
     pub fn new_str_owned<S: AsRef<str>>(src: S) -> Self {
         let shared = unsafe { &*Shared::new_ptr() };
         let s = shared.alloc.alloc_str(src.as_ref());
-        let mut v = Value {
+        Value {
             meta: Meta::new(ROOT_STRING, shared),
             data: Data { sval: s },
-        };
-        v.set_str_len(s.len());
-        v
+        }
     }
 
     #[doc(hidden)]
@@ -895,20 +932,6 @@ impl Value {
             }
         }
         None
-    }
-
-    #[inline]
-    pub(crate) fn set_str_len(&mut self, _len: usize) {
-        // // check length and the exist ptr is valid
-        // unsafe {
-        //     debug_assert!(len < crate::value::MAX_STR_SIZE);
-        //     debug_assert!(self.meta.val >> 48 == 0);
-        //     debug_assert!(self.data.uval >> 48 == 0);
-        //     let hi = len >> 16;
-        //     let lo = len & 0xFFFF;
-        //     self.meta.val |= (hi as u64) << 48;
-        //     self.data.uval |= (lo as u64) << 48;
-        // }
     }
 
     #[inline]
@@ -1387,24 +1410,18 @@ impl Value {
         unsafe { self.data.fval }
     }
 
+    fn raw_num(&self) -> &str {
+        unsafe { &*(self.data.rawnum) }
+    }
+
     fn str(&self) -> &str {
-        unsafe {
-            let ptr = (self.data.uval & STR_PTR_MASK) as *const u8;
-            let len = self.str_len();
-            let slice = std::slice::from_raw_parts(ptr, len);
-            from_utf8_unchecked(slice)
-        }
+        unsafe { &*(self.data.sval) }
     }
 
     pub(crate) fn str_len(&self) -> usize {
         debug_assert!(self.is_str());
         let s = unsafe { &*self.data.sval };
         s.len()
-        // unsafe {
-        //     let hi = (self.meta.val >> 48) as usize;
-        //     let lo = (self.data.uval >> 48) as usize;
-        //     hi << 16 | lo
-        // }
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -1619,6 +1636,21 @@ impl<'de, 'a: 'de> JsonVisitor<'de> for DocumentVisitor<'a> {
         self.push_node(node)
     }
 
+    #[cfg(feature = "arbitrary_precision")]
+    #[inline(always)]
+    fn visit_raw_number(&mut self, val: &str) -> bool {
+        let alloc = unsafe { &*self.shared.alloc.0.data_ptr() };
+        let value = alloc.alloc_str(val);
+        self.push_node(Value::new_raw_num(value, self.shared as *const _))
+    }
+
+    #[cfg(feature = "arbitrary_precision")]
+    #[inline(always)]
+    fn visit_borrowed_raw_number(&mut self, val: &str) -> bool {
+        let node = Value::new_raw_num(val, self.shared as *const _);
+        self.push_node(node)
+    }
+
     #[inline(always)]
     fn visit_i64(&mut self, val: i64) -> bool {
         self.push_node(Value::new_i64(val, self.shared as *const _))
@@ -1717,7 +1749,16 @@ impl Serialize for Value {
                 }
                 map.end()
             }
-            _ => panic!("unsupported types"),
+            #[cfg(feature = "arbitrary_precision")]
+            RAWNUM | ROOT_RAWNUM => {
+                use ::serde::ser::SerializeStruct;
+
+                use crate::serde::rawnumber::TOKEN;
+                let mut struct_ = tri!(serializer.serialize_struct(TOKEN, 1));
+                tri!(struct_.serialize_field(TOKEN, self.raw_num()));
+                struct_.end()
+            }
+            t => panic!("unsupported types {t}"),
         }
     }
 }
@@ -1727,7 +1768,7 @@ mod test {
     use std::path::Path;
 
     use super::*;
-    use crate::{error::make_error, from_slice, from_str, pointer};
+    use crate::{error::make_error, from_slice, from_str, pointer, util::mock::MockString};
 
     #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
     struct ValueInStruct {
@@ -2010,7 +2051,7 @@ mod test {
             array: Array,
         }
 
-        let foo: Foo = crate::from_str(&String::from(
+        let foo: Foo = crate::from_str(&MockString::from(
             r#"
         {
             "value": "hello",
@@ -2038,5 +2079,20 @@ mod test {
             }"#,
         )
         .unwrap_err();
+    }
+
+    #[cfg(feature = "arbitrary_precision")]
+    #[test]
+    fn test_arbitrary_precision() {
+        let nums = [ "12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123",
+         "1.23456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567e89012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123",
+        "-0.000000023456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567e+89012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123",
+        ];
+
+        for num in nums {
+            let value: Value = crate::from_str(num).unwrap();
+            assert_eq!(value.as_raw_number().unwrap().as_str(), num);
+            assert_eq!(value.to_string(), num);
+        }
     }
 }

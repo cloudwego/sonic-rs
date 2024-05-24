@@ -78,3 +78,7 @@ harness = false
 
 [features]
 default = []
+
+# Use an arbitrary precision number type representation when parsing JSON into `sonic_rs::Value`. 
+# This allows the JSON numbers will be serialized without loss of precision.
+arbitrary_precision = []

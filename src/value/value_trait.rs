@@ -1,3 +1,5 @@
+#[cfg(feature = "arbitrary_precision")]
+use crate::RawNumber;
 use crate::{index::Index, JsonNumberTrait, Number};
 
 /// JsonType is an enum that represents the type of a JSON value.
@@ -314,6 +316,10 @@ pub trait JsonValueTrait {
     /// ```
     fn as_number(&self) -> Option<Number>;
 
+    /// Returns the [`RawNumber`] without precision loss if `self` is a `Number`.
+    #[cfg(feature = "arbitrary_precision")]
+    fn as_raw_number(&self) -> Option<RawNumber>;
+
     /// Returns the str if `self` is a `string`.
     ///
     /// # Examples
@@ -523,6 +529,11 @@ impl<V: JsonValueTrait> JsonValueTrait for Option<V> {
         self.as_ref().and_then(|v| v.as_number())
     }
 
+    #[cfg(feature = "arbitrary_precision")]
+    fn as_raw_number(&self) -> Option<RawNumber> {
+        self.as_ref().and_then(|v| v.as_raw_number())
+    }
+
     fn get_type(&self) -> JsonType {
         self.as_ref().map_or(JsonType::Null, |v| v.get_type())
     }
@@ -603,6 +614,11 @@ impl<V: JsonValueTrait, E> JsonValueTrait for Result<V, E> {
         self.as_ref().ok().and_then(|v| v.as_number())
     }
 
+    #[cfg(feature = "arbitrary_precision")]
+    fn as_raw_number(&self) -> Option<RawNumber> {
+        self.as_ref().ok().and_then(|v| v.as_raw_number())
+    }
+
     fn get_type(&self) -> JsonType {
         self.as_ref().ok().map_or(JsonType::Null, |v| v.get_type())
     }
@@ -681,6 +697,11 @@ impl<V: JsonValueTrait> JsonValueTrait for &V {
 
     fn as_number(&self) -> Option<Number> {
         (*self).as_number()
+    }
+
+    #[cfg(feature = "arbitrary_precision")]
+    fn as_raw_number(&self) -> Option<RawNumber> {
+        (*self).as_raw_number()
     }
 
     fn get_type(&self) -> JsonType {

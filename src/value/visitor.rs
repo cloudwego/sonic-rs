@@ -19,6 +19,14 @@ pub(crate) trait JsonVisitor<'de> {
         false
     }
 
+    fn visit_raw_number(&mut self, _val: &str) -> bool {
+        false
+    }
+
+    fn visit_borrowed_raw_number(&mut self, _val: &str) -> bool {
+        false
+    }
+
     fn visit_str(&mut self, _value: &str) -> bool {
         false
     }
