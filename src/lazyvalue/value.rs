@@ -11,7 +11,7 @@ use faststr::FastStr;
 
 use crate::{
     from_str, get_unchecked, index::Index, input::JsonSlice, serde::Number, JsonType,
-    JsonValueTrait, Result,
+    JsonValueTrait, RawNumber, Result,
 };
 
 /// LazyValue wrappers a unparsed raw JSON text. It is borrowed from the origin JSON text.
@@ -143,6 +143,15 @@ impl<'a> JsonValueTrait for LazyValue<'a> {
     }
 
     fn as_number(&self) -> Option<Number> {
+        if let Ok(num) = from_str(self.as_raw_str()) {
+            Some(num)
+        } else {
+            None
+        }
+    }
+
+    #[cfg(feature = "arbitrary_precision")]
+    fn as_raw_number(&self) -> Option<RawNumber> {
         if let Ok(num) = from_str(self.as_raw_str()) {
             Some(num)
         } else {

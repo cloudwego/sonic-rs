@@ -201,11 +201,12 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn parse_number(&mut self, negative: bool) -> Result<ParserNumber> {
+    pub(crate) fn parse_number(&mut self, first: u8) -> Result<ParserNumber> {
         let reader = &mut self.read;
-        let mut now = reader.index() - ((!negative) as usize);
+        let neg = first == b'-';
+        let mut now = reader.index() - (!neg as usize);
         let data = reader.as_u8_slice();
-        let ret = parse_number(data, &mut now, negative);
+        let ret = parse_number(data, &mut now, neg);
         reader.set_index(now);
         match ret {
             Err(code) => perr!(self, code),
@@ -261,17 +262,55 @@ where
     }
 
     #[inline(always)]
-    fn parse_number_visit<V>(&mut self, negative: bool, visitor: &mut V) -> Result<()>
+    fn parse_number_visit<V>(&mut self, first: u8, visitor: &mut V) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
-        let ok = match self.parse_number(negative)? {
-            ParserNumber::Float(f) => visitor.visit_f64(f),
-            ParserNumber::Unsigned(f) => visitor.visit_u64(f),
-            ParserNumber::Signed(f) => visitor.visit_i64(f),
-        };
-        check_visit!(self, ok);
-        Ok(())
+        #[cfg(feature = "arbitrary_precision")]
+        {
+            let start = self.read.index() - 1;
+            self.skip_number(first)?;
+            let slice = self.read.slice_unchecked(start, self.read.index());
+            check_visit!(self, visitor.visit_raw_number(as_str(slice)));
+            Ok(())
+        }
+
+        #[cfg(not(feature = "arbitrary_precision"))]
+        {
+            let ok = match self.parse_number(first)? {
+                ParserNumber::Float(f) => visitor.visit_f64(f),
+                ParserNumber::Unsigned(f) => visitor.visit_u64(f),
+                ParserNumber::Signed(f) => visitor.visit_i64(f),
+            };
+            check_visit!(self, ok);
+            Ok(())
+        }
+    }
+
+    #[inline(always)]
+    fn parse_number_inplace<V>(&mut self, first: u8, visitor: &mut V) -> Result<()>
+    where
+        V: JsonVisitor<'de>,
+    {
+        #[cfg(feature = "arbitrary_precision")]
+        {
+            let start = self.read.index() - 1;
+            self.skip_number(first)?;
+            let slice = self.read.slice_unchecked(start, self.read.index());
+            check_visit!(self, visitor.visit_borrowed_raw_number(as_str(slice)));
+            Ok(())
+        }
+
+        #[cfg(not(feature = "arbitrary_precision"))]
+        {
+            let ok = match self.parse_number(first)? {
+                ParserNumber::Float(f) => visitor.visit_f64(f),
+                ParserNumber::Unsigned(f) => visitor.visit_u64(f),
+                ParserNumber::Signed(f) => visitor.visit_i64(f),
+            };
+            check_visit!(self, ok);
+            Ok(())
+        }
     }
 
     #[inline(always)]
@@ -293,8 +332,7 @@ where
         let mut count = 0;
         loop {
             match first {
-                Some(b'-') => self.parse_number_visit(true, visitor),
-                Some(b'0'..=b'9') => self.parse_number_visit(false, visitor),
+                Some(c @ b'-' | c @ b'0'..=b'9') => self.parse_number_inplace(c, visitor),
                 Some(b'"') => self.parse_string_inplace(visitor),
                 Some(b'{') => self.parse_object(visitor),
                 Some(b'[') => self.parse_array(visitor),
@@ -482,8 +520,7 @@ where
         V: JsonVisitor<'de>,
     {
         match self.skip_space() {
-            Some(b'-') => self.parse_number_visit(true, visitor),
-            Some(b'0'..=b'9') => self.parse_number_visit(false, visitor),
+            Some(c @ b'-' | c @ b'0'..=b'9') => self.parse_number_inplace(c, visitor),
             Some(b'"') => self.parse_string_inplace(visitor),
             Some(b'{') => self.parse_object(visitor),
             Some(b'[') => self.parse_array(visitor),
@@ -533,8 +570,7 @@ where
                     state = Fsm::ObjKey;
                 }
             }
-            b'-' => return self.parse_number_visit(true, visitor),
-            b'0'..=b'9' => return self.parse_number_visit(false, visitor),
+            c @ b'-' | c @ b'0'..=b'9' => return self.parse_number_visit(c, visitor),
             b'"' => return self.parse_string_owned(visitor, &mut strbuf),
             0 => return perr!(self, EofWhileParsing),
             first => return self.parse_literal_visit(first, visitor),
@@ -569,8 +605,7 @@ where
 
                                 continue 'arr_val;
                             }
-                            b'0'..=b'9' => self.parse_number_visit(false, visitor)?,
-                            b'-' => self.parse_number_visit(true, visitor)?,
+                            c @ b'-' | c @ b'0'..=b'9' => self.parse_number_visit(c, visitor)?,
                             b'"' => self.parse_string_owned(visitor, &mut strbuf)?,
                             first => self.parse_literal_visit(first, visitor)?,
                         }
@@ -627,8 +662,7 @@ where
                                 }
                                 break 'obj_key;
                             }
-                            b'0'..=b'9' => self.parse_number_visit(false, visitor)?,
-                            b'-' => self.parse_number_visit(true, visitor)?,
+                            c @ b'-' | c @ b'0'..=b'9' => self.parse_number_visit(c, visitor)?,
                             b'"' => self.parse_string_owned(visitor, &mut strbuf)?,
                             first => self.parse_literal_visit(first, visitor)?,
                         }
@@ -2109,11 +2143,7 @@ where
                 }
                 de::Error::invalid_type(Unexpected::Bool(false), exp)
             }
-            b'-' => match self.parse_number(true) {
-                Ok(n) => n.invalid_type(exp),
-                Err(err) => return err,
-            },
-            b'0'..=b'9' => match self.parse_number(false) {
+            c @ b'-' | c @ b'0'..=b'9' => match self.parse_number(c) {
                 Ok(n) => n.invalid_type(exp),
                 Err(err) => return err,
             },

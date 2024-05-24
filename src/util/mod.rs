@@ -9,6 +9,8 @@ pub(crate) mod taggedptr;
 pub(crate) mod unicode;
 pub(crate) mod utf8;
 
+pub(crate) mod mock;
+
 #[allow(non_camel_case_types)]
 #[allow(unused_imports)]
 pub(crate) mod simd;

@@ -342,13 +342,13 @@ impl Error {
     }
 
     #[cold]
-    pub(crate) fn new(code: ErrorCode, line: usize, column: usize) -> Self {
+    pub(crate) fn new(code: ErrorCode, msg: Option<String>) -> Self {
         Error {
             err: Box::new(ErrorImpl {
                 code,
-                line,
-                column,
-                descript: None,
+                line: 0,
+                column: 0,
+                descript: msg,
             }),
         }
     }
@@ -424,8 +424,7 @@ impl ser::Error for Error {
     }
 }
 
-// Parse our own error message that looks like "{} at line {} column {}" to work
-// around erased-serde round-tripping the error through de::Error::custom.
+// TODO: remove me in 0.4 version.
 #[cold]
 pub fn make_error(mut msg: String) -> Error {
     let (line, column) = parse_line_col(&mut msg).unwrap_or((0, 0));
