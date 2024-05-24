@@ -30,8 +30,8 @@ impl Drop for MockString {
     fn drop(&mut self) {
         // clear memory expictly before drop
         let bs = unsafe { self.0.as_bytes_mut() };
-        for i in 0..bs.len() {
-            bs[i] = 0;
+        for b in bs.iter_mut() {
+            *b = 0;
         }
     }
 }
