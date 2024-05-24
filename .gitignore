@@ -7,3 +7,4 @@ bench.sh
 rust-
 *.data
 opensource_git_commit.log
+Cargo.lock
