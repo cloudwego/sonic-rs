@@ -31,7 +31,7 @@ macro_rules! impl_lanes {
 cfg_if::cfg_if! {
     if #[cfg(target_feature = "sse2")] {
         use self::sse2::*;
-    } else if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
+    } else if #[cfg(all(target_feature="neon"))] {
         use self::neon::*;
     } else {
         // TODO: support wasm

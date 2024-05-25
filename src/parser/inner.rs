@@ -11,7 +11,8 @@ use faststr::FastStr;
 use serde::de::{self, Expected, Unexpected};
 use smallvec::SmallVec;
 
-use super::reader::{Reader, Reference};
+use super::{as_str, DEFAULT_KEY_BUF_CAPACITY};
+use crate::reader::{Reader, Reference};
 #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
 use crate::util::simd::bits::NeonBits;
 use crate::{
@@ -37,11 +38,6 @@ use crate::{
     value::{shared::Shared, visitor::JsonVisitor},
     JsonType, LazyValue,
 };
-
-pub(crate) const DEFAULT_KEY_BUF_CAPACITY: usize = 128;
-pub(crate) fn as_str(data: &[u8]) -> &str {
-    unsafe { from_utf8_unchecked(data) }
-}
 
 #[inline(always)]
 fn get_escaped_branchless_u32(prev_escaped: &mut u32, backslash: u32) -> u32 {
@@ -152,11 +148,11 @@ where
 }
 
 pub(crate) struct Parser<R, i8x32, u8x32, u8x64> {
-    pub(crate) read: R,
-    error_index: usize,                     // mark the error position
-    nospace_bits: u64,                      // SIMD marked nospace bitmap
-    nospace_start: isize,                   // the start position of nospace_bits
-    pub(crate) shared: Option<Arc<Shared>>, // the shared allocator for `Value`
+    read: R,
+    error_index: usize,          // mark the error position
+    nospace_bits: u64,           // SIMD marked nospace bitmap
+    nospace_start: isize,        // the start position of nospace_bits
+    shared: Option<Arc<Shared>>, // the shared allocator for `Value`
 
     _marker: PhantomData<(i8x32, u8x32, u8x64)>,
 }
@@ -188,6 +184,11 @@ where
 
             _marker: PhantomData,
         }
+    }
+
+    #[inline(always)]
+    pub(crate) fn read(&mut self) -> &mut R {
+        &mut self.read
     }
 
     #[inline(always)]

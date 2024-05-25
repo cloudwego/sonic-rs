@@ -392,7 +392,7 @@ where
     let lv = LazyValue::new(json.from_subset(sub), status == ParseStatus::HasEscaped)?;
 
     // validate the utf-8 if slice
-    let index = parser.read.index();
+    let index = parser.read().index();
     if json.need_utf8_valid() {
         from_utf8(&slice[..index])?;
     }
@@ -429,7 +429,7 @@ where
     let nodes = parser.get_many(tree, true)?;
 
     // validate the utf-8 if slice
-    let index = parser.read.index();
+    let index = parser.read().index();
     if json.need_utf8_valid() {
         from_utf8(&slice[..index])?;
     }

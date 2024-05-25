@@ -1371,7 +1371,7 @@ impl Value {
         self.data = visitor.nodes()[0].data;
         self.meta = visitor.nodes()[0].meta;
         self.mark_root();
-        Ok(parser.read.index())
+        Ok(parser.read().index())
     }
 
     #[inline(never)]
@@ -1379,7 +1379,7 @@ impl Value {
         &mut self,
         parser: &mut Parser<R>,
     ) -> Result<()> {
-        let remain_len = parser.read.remain();
+        let remain_len = parser.read().remain();
         let max_len = (remain_len / 2) + 2;
         let mut buf = TlsBuf::with_capacity(max_len);
 
