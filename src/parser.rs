@@ -29,6 +29,7 @@ use crate::{
         arch::{get_nonspace_bits, prefix_xor},
         num::{parse_number, ParserNumber},
         simd::{i8x32, m8x32, u8x32, u8x64, Mask, Simd},
+        //simd::{Mask, Simd},
         string::*,
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },

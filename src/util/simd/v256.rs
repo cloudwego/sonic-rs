@@ -3,23 +3,23 @@ use std::ops::{BitAnd, BitOr, BitOrAssign};
 use super::{bits::combine_u16, Mask, Mask128, Simd, Simd128i, Simd128u};
 use crate::impl_lanes;
 
-impl_lanes!(Simd256u, 32);
+impl_lanes!([impl<B: Simd> Simd256u<B>] 32);
 
-impl_lanes!(Mask256, 32);
-
-#[derive(Debug)]
-#[repr(transparent)]
-pub struct Simd256u((Simd128u, Simd128u));
+impl_lanes!([impl<M: Mask> Mask256<M>] 32);
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Simd256i((Simd128i, Simd128i));
+pub struct Simd256u<B: Simd>((B, B));
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Mask256(pub(crate) (Mask128, Mask128));
+pub struct Simd256i<B: Simd>((B, B));
 
-impl Mask for Mask256 {
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct Mask256<M: Mask>(pub(crate) (M, M));
+
+impl<M: Mask<BitMask = u16>> Mask for Mask256<M> {
     type BitMask = u32;
     type Element = u8;
 
@@ -38,11 +38,11 @@ impl Mask for Mask256 {
 
     #[inline(always)]
     fn splat(b: bool) -> Self {
-        Mask256((Mask128::splat(b), Mask128::splat(b)))
+        Mask256((M::splat(b), M::splat(b)))
     }
 }
 
-impl BitOr for Mask256 {
+impl<M: Mask> BitOr for Mask256<M> {
     type Output = Self;
 
     #[inline(always)]
@@ -53,7 +53,7 @@ impl BitOr for Mask256 {
     }
 }
 
-impl BitOrAssign for Mask256 {
+impl<M: Mask> BitOrAssign for Mask256<M> {
     #[inline(always)]
     fn bitor_assign(&mut self, rhs: Self) {
         self.0 .0 |= rhs.0 .0;
@@ -61,34 +61,38 @@ impl BitOrAssign for Mask256 {
     }
 }
 
-impl BitAnd<Mask256> for Mask256 {
+impl<M: Mask> BitAnd<Mask256<M>> for Mask256<M> {
     type Output = Self;
 
     #[inline(always)]
-    fn bitand(self, rhs: Mask256) -> Self::Output {
+    fn bitand(self, rhs: Mask256<M>) -> Self::Output {
         let lo = self.0 .0 & rhs.0 .0;
         let hi = self.0 .1 & rhs.0 .1;
         Mask256((lo, hi))
     }
 }
 
-impl Simd for Simd256u {
+impl<B> Simd for Simd256u<B>
+where
+    B: Simd<Element = u8>,
+    B::Mask: Mask<BitMask = u16>,
+{
     const LANES: usize = 32;
 
-    type Mask = Mask256;
+    type Mask = Mask256<B::Mask>;
     type Element = u8;
 
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
-        let lo = Simd128u::loadu(ptr);
-        let hi = Simd128u::loadu(ptr.add(Simd128u::LANES));
+        let lo = B::loadu(ptr);
+        let hi = B::loadu(ptr.add(Simd128u::LANES));
         Simd256u((lo, hi))
     }
 
     #[inline(always)]
     unsafe fn storeu(&self, ptr: *mut u8) {
-        Simd128u::storeu(&self.0 .0, ptr);
-        Simd128u::storeu(&self.0 .1, ptr.add(Simd128u::LANES));
+        B::storeu(&self.0 .0, ptr);
+        B::storeu(&self.0 .1, ptr.add(Simd128u::LANES));
     }
 
     #[inline(always)]
@@ -100,7 +104,7 @@ impl Simd for Simd256u {
 
     #[inline(always)]
     fn splat(elem: u8) -> Self {
-        Simd256u((Simd128u::splat(elem), Simd128u::splat(elem)))
+        Simd256u((B::splat(elem), B::splat(elem)))
     }
 
     #[inline(always)]
@@ -118,23 +122,27 @@ impl Simd for Simd256u {
     }
 }
 
-impl Simd for Simd256i {
+impl<B> Simd for Simd256i<B>
+where
+    B: Simd<Element = i8>,
+    B::Mask: Mask<BitMask = u16>,
+{
     const LANES: usize = 32;
 
-    type Mask = Mask256;
+    type Mask = Mask256<B::Mask>;
     type Element = i8;
 
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
-        let lo = Simd128i::loadu(ptr);
-        let hi = Simd128i::loadu(ptr.add(Simd128i::LANES));
+        let lo = B::loadu(ptr);
+        let hi = B::loadu(ptr.add(Simd128i::LANES));
         Simd256i((lo, hi))
     }
 
     #[inline(always)]
     unsafe fn storeu(&self, ptr: *mut u8) {
-        Simd128i::storeu(&self.0 .0, ptr);
-        Simd128i::storeu(&self.0 .1, ptr.add(Simd128i::LANES));
+        B::storeu(&self.0 .0, ptr);
+        B::storeu(&self.0 .1, ptr.add(Simd128i::LANES));
     }
 
     #[inline(always)]
@@ -146,7 +154,7 @@ impl Simd for Simd256i {
 
     #[inline(always)]
     fn splat(elem: i8) -> Self {
-        Simd256i((Simd128i::splat(elem), Simd128i::splat(elem)))
+        Simd256i((B::splat(elem), B::splat(elem)))
     }
 
     #[inline(always)]

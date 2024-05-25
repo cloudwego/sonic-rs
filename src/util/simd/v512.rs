@@ -3,23 +3,23 @@ use std::ops::{BitAnd, BitOr, BitOrAssign};
 use super::{bits::combine_u32, Mask, Mask256, Simd, Simd256i, Simd256u};
 use crate::impl_lanes;
 
-impl_lanes!(Simd512u, 64);
+impl_lanes!([impl<B: Simd> Simd512u<B>] 64);
 
-impl_lanes!(Mask512, 64);
-
-#[derive(Debug)]
-#[repr(transparent)]
-pub struct Simd512u((Simd256u, Simd256u));
+impl_lanes!([impl<M: Mask> Mask512<M>] 64);
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Simd512i((Simd256i, Simd256i));
+pub struct Simd512u<B: Simd>((B, B));
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Mask512((Mask256, Mask256));
+pub struct Simd512i<B: Simd>((B, B));
 
-impl Mask for Mask512 {
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct Mask512<M: Mask>((M, M));
+
+impl<M: Mask<BitMask = u32>> Mask for Mask512<M> {
     type BitMask = u64;
     type Element = u8;
 
@@ -40,11 +40,11 @@ impl Mask for Mask512 {
 
     #[inline(always)]
     fn splat(b: bool) -> Self {
-        Mask512((Mask256::splat(b), Mask256::splat(b)))
+        Mask512((M::splat(b), M::splat(b)))
     }
 }
 
-impl BitOr for Mask512 {
+impl<M: Mask> BitOr for Mask512<M> {
     type Output = Self;
 
     #[inline(always)]
@@ -55,7 +55,7 @@ impl BitOr for Mask512 {
     }
 }
 
-impl BitOrAssign for Mask512 {
+impl<M: Mask> BitOrAssign for Mask512<M> {
     #[inline(always)]
     fn bitor_assign(&mut self, rhs: Self) {
         self.0 .0 |= rhs.0 .0;
@@ -63,33 +63,37 @@ impl BitOrAssign for Mask512 {
     }
 }
 
-impl BitAnd<Mask512> for Mask512 {
+impl<M: Mask> BitAnd<Mask512<M>> for Mask512<M> {
     type Output = Self;
 
     #[inline(always)]
-    fn bitand(self, rhs: Mask512) -> Self::Output {
+    fn bitand(self, rhs: Mask512<M>) -> Self::Output {
         let lo = self.0 .0 & rhs.0 .0;
         let hi = self.0 .1 & rhs.0 .1;
         Mask512((lo, hi))
     }
 }
 
-impl Simd for Simd512u {
+impl<B> Simd for Simd512u<B>
+where
+    B: Simd<Element = u8>,
+    B::Mask: Mask<BitMask = u32>,
+{
     const LANES: usize = 64;
     type Element = u8;
-    type Mask = Mask512;
+    type Mask = Mask512<B::Mask>;
 
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
-        let lo = Simd256u::loadu(ptr);
-        let hi = Simd256u::loadu(ptr.add(Simd256u::LANES));
+        let lo = B::loadu(ptr);
+        let hi = B::loadu(ptr.add(B::LANES));
         Simd512u((lo, hi))
     }
 
     #[inline(always)]
     unsafe fn storeu(&self, ptr: *mut u8) {
-        Simd256u::storeu(&self.0 .0, ptr);
-        Simd256u::storeu(&self.0 .1, ptr.add(Simd256u::LANES));
+        B::storeu(&self.0 .0, ptr);
+        B::storeu(&self.0 .1, ptr.add(B::LANES));
     }
 
     #[inline(always)]
@@ -101,7 +105,7 @@ impl Simd for Simd512u {
 
     #[inline(always)]
     fn splat(ch: u8) -> Self {
-        Simd512u((Simd256u::splat(ch), Simd256u::splat(ch)))
+        Simd512u((B::splat(ch), B::splat(ch)))
     }
 
     #[inline(always)]
@@ -119,23 +123,27 @@ impl Simd for Simd512u {
     }
 }
 
-impl Simd for Simd512i {
+impl<B> Simd for Simd512i<B>
+where
+    B: Simd<Element = i8>,
+    B::Mask: Mask<BitMask = u32>,
+{
     const LANES: usize = 64;
     type Element = i8;
 
-    type Mask = Mask512;
+    type Mask = Mask512<B::Mask>;
 
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
-        let lo = Simd256i::loadu(ptr);
-        let hi = Simd256i::loadu(ptr.add(Simd256i::LANES));
+        let lo = B::loadu(ptr);
+        let hi = B::loadu(ptr.add(B::LANES));
         Simd512i((lo, hi))
     }
 
     #[inline(always)]
     unsafe fn storeu(&self, ptr: *mut u8) {
-        Simd256i::storeu(&self.0 .0, ptr);
-        Simd256i::storeu(&self.0 .1, ptr.add(Simd256i::LANES));
+        B::storeu(&self.0 .0, ptr);
+        B::storeu(&self.0 .1, ptr.add(B::LANES));
     }
 
     #[inline(always)]
@@ -147,7 +155,7 @@ impl Simd for Simd512i {
 
     #[inline(always)]
     fn splat(elem: i8) -> Self {
-        Simd512i((Simd256i::splat(elem), Simd256i::splat(elem)))
+        Simd512i((B::splat(elem), B::splat(elem)))
     }
 
     #[inline(always)]
