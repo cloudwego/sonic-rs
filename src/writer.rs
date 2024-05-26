@@ -22,12 +22,17 @@ pub trait WriteExt: io::Write {
     unsafe fn flush_len(&mut self, additional: usize) -> io::Result<()>;
 }
 
+/// Wrapper around generic I/O streams implementing [`WriteExt`]
+///
+/// It internally maintains a buffer for fast operations which it then flushes
+/// to the underlying I/O stream when requested.
 pub struct BufferedWriter<W> {
     inner: W,
     buffer: Vec<u8>,
 }
 
 impl<W> BufferedWriter<W> {
+    /// Construct a new buffered writer
     pub fn new(inner: W) -> Self {
         Self {
             inner,
@@ -55,10 +60,12 @@ impl<W> WriteExt for BufferedWriter<W>
 where
     W: io::Write,
 {
+    #[inline(always)]
     fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
         self.buffer.reserve_with(additional)
     }
 
+    #[inline(always)]
     unsafe fn flush_len(&mut self, additional: usize) -> io::Result<()> {
         self.buffer.flush_len(additional)?;
         self.inner.write_all(&self.buffer)?;
