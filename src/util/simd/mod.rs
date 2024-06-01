@@ -54,11 +54,11 @@ pub use self::traits::{BitMask, Mask, Simd};
 use self::v512::*;
 
 pub type u8x16 = Simd128u;
-pub type u8x32 = Simd256u<u8x16>;
-pub type u8x64 = Simd512u<u8x32>;
+pub type u8x32 = Simd256u;
+pub type u8x64 = Simd512u;
 
-pub type i8x32 = Simd256i<Simd128i>;
+pub type i8x32 = Simd256i;
 
 pub type m8x16 = Mask128;
-pub type m8x32 = Mask256<m8x16>;
-pub type m8x64 = Mask512<m8x32>;
+pub type m8x32 = Mask256;
+pub type m8x64 = Mask512;

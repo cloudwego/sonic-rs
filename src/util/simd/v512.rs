@@ -1,6 +1,6 @@
 use std::ops::{BitAnd, BitOr, BitOrAssign};
 
-use super::{bits::combine_u32, Mask, Mask256, Simd, Simd256i, Simd256u};
+use super::{bits::combine_u32, Mask, Simd};
 use crate::impl_lanes;
 
 impl_lanes!([impl<B: Simd> Simd512u<B>] 64);
@@ -9,15 +9,15 @@ impl_lanes!([impl<M: Mask> Mask512<M>] 64);
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Simd512u<B: Simd>((B, B));
+pub struct Simd512u<B: Simd = super::Simd256u>((B, B));
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Simd512i<B: Simd>((B, B));
+pub struct Simd512i<B: Simd = super::Simd256i>((B, B));
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Mask512<M: Mask>((M, M));
+pub struct Mask512<M: Mask = super::Mask256>((M, M));
 
 impl<M: Mask<BitMask = u32>> Mask for Mask512<M> {
     type BitMask = u64;

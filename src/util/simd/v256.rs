@@ -1,6 +1,6 @@
 use std::ops::{BitAnd, BitOr, BitOrAssign};
 
-use super::{bits::combine_u16, Mask, Mask128, Simd, Simd128i, Simd128u};
+use super::{bits::combine_u16, Mask, Simd};
 use crate::impl_lanes;
 
 impl_lanes!([impl<B: Simd> Simd256u<B>] 32);
@@ -9,15 +9,15 @@ impl_lanes!([impl<M: Mask> Mask256<M>] 32);
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Simd256u<B: Simd>((B, B));
+pub struct Simd256u<B: Simd = super::Simd128u>((B, B));
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Simd256i<B: Simd>((B, B));
+pub struct Simd256i<B: Simd = super::Simd128i>((B, B));
 
 #[derive(Debug)]
 #[repr(transparent)]
-pub struct Mask256<M: Mask>(pub(crate) (M, M));
+pub struct Mask256<M: Mask = super::Mask128>(pub(crate) (M, M));
 
 impl<M: Mask<BitMask = u16>> Mask for Mask256<M> {
     type BitMask = u32;
@@ -85,14 +85,14 @@ where
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
         let lo = B::loadu(ptr);
-        let hi = B::loadu(ptr.add(Simd128u::LANES));
+        let hi = B::loadu(ptr.add(B::LANES));
         Simd256u((lo, hi))
     }
 
     #[inline(always)]
     unsafe fn storeu(&self, ptr: *mut u8) {
         B::storeu(&self.0 .0, ptr);
-        B::storeu(&self.0 .1, ptr.add(Simd128u::LANES));
+        B::storeu(&self.0 .1, ptr.add(B::LANES));
     }
 
     #[inline(always)]
@@ -135,14 +135,14 @@ where
     #[inline(always)]
     unsafe fn loadu(ptr: *const u8) -> Self {
         let lo = B::loadu(ptr);
-        let hi = B::loadu(ptr.add(Simd128i::LANES));
+        let hi = B::loadu(ptr.add(B::LANES));
         Simd256i((lo, hi))
     }
 
     #[inline(always)]
     unsafe fn storeu(&self, ptr: *mut u8) {
         B::storeu(&self.0 .0, ptr);
-        B::storeu(&self.0 .1, ptr.add(Simd128i::LANES));
+        B::storeu(&self.0 .1, ptr.add(B::LANES));
     }
 
     #[inline(always)]
