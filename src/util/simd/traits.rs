@@ -49,6 +49,12 @@ pub trait BitMask {
     /// Total bits in the bitmask.
     const LEN: usize;
 
+    /// The primitive type this bit mask is represented by
+    type Primitive;
+
+    /// get the primitive type of this bitmask
+    fn as_primitive(&self) -> Self::Primitive;
+
     /// get the offset of the first `1` bit.
     fn first_offset(&self) -> usize;
 
