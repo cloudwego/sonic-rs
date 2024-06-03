@@ -1,6 +1,6 @@
 use std::ops::{BitAnd, BitOr, BitOrAssign};
 
-use super::{bits::combine_u16, Mask, Simd};
+use super::{bits::combine_u16, BitMask, Mask, Simd};
 use crate::impl_lanes;
 
 impl_lanes!([impl<B: Simd> Simd256u<B>] 32);
@@ -19,7 +19,10 @@ pub struct Simd256i<B: Simd = super::Simd128i>((B, B));
 #[repr(transparent)]
 pub struct Mask256<M: Mask = super::Mask128>(pub(crate) (M, M));
 
-impl<M: Mask<BitMask = u16>> Mask for Mask256<M> {
+impl<M: Mask> Mask for Mask256<M>
+where
+    <M as Mask>::BitMask: BitMask<Primitive = u16>,
+{
     type BitMask = u32;
     type Element = u8;
 
@@ -31,7 +34,7 @@ impl<M: Mask<BitMask = u16>> Mask for Mask256<M> {
                 let(v0, v1) = self.0;
                 unsafe { super::neon::to_bitmask32(v0.0, v1.0) }
             } else {
-                combine_u16(self.0 .0.bitmask(), self.0 .1.bitmask())
+                combine_u16(self.0.0.bitmask().as_primitive(), self.0.1.bitmask().as_primitive())
             }
         }
     }
@@ -75,7 +78,7 @@ impl<M: Mask> BitAnd<Mask256<M>> for Mask256<M> {
 impl<B> Simd for Simd256u<B>
 where
     B: Simd<Element = u8>,
-    B::Mask: Mask<BitMask = u16>,
+    <B::Mask as Mask>::BitMask: BitMask<Primitive = u16>,
 {
     const LANES: usize = 32;
 
@@ -125,7 +128,7 @@ where
 impl<B> Simd for Simd256i<B>
 where
     B: Simd<Element = i8>,
-    B::Mask: Mask<BitMask = u16>,
+    <B::Mask as Mask>::BitMask: BitMask<Primitive = u16>,
 {
     const LANES: usize = 32;
 
