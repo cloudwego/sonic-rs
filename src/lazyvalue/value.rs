@@ -16,6 +16,9 @@ use crate::{
     JsonValueTrait, Result,
 };
 
+#[cfg(feature = "arbitrary_precision")]
+use crate::RawNumber;
+
 /// LazyValue wrappers a unparsed raw JSON text. It is borrowed from the origin JSON text.
 ///
 /// LazyValue can be [`get`](crate::get),  [`get_unchecked`](crate::get_unchecked) or
