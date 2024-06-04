@@ -45,10 +45,24 @@ impl Array {
     /// Constructs a new, empty `Array`.
     ///
     /// The array will not allocate until elements are pushed onto it.
+    ///
+    /// # Example
+    /// ```
+    /// use sonic_rs::{array, from_str, json, prelude::*, Array};
+    ///
+    /// let mut arr: Array = from_str("[]").unwrap();
+    /// dbg!(&arr);
+    /// arr.push(array![]);
+    /// arr.push(1);
+    /// arr[0] = "hello".into();
+    /// arr[1] = array![].into();
+    /// assert_eq!(arr[0], "hello");
+    /// assert_eq!(arr[1], array![]);
+    /// ```
     #[inline]
     pub const fn new() -> Self {
         let value = Value {
-            meta: super::node::Meta::new(super::node::ROOT_ARRAY, std::ptr::null()),
+            meta: super::node::Meta::new(super::node::ARRAY, std::ptr::null()),
             data: super::node::Data {
                 achildren: std::ptr::null_mut(),
             },
@@ -641,6 +655,7 @@ impl Array {
     pub(crate) fn new_in(shared: Arc<Shared>) -> Self {
         let mut array = Array::default();
         array.0.mark_shared(shared.data_ptr());
+        array.0.mark_root();
         std::mem::forget(shared);
         array
     }
