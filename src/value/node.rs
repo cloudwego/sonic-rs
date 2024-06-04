@@ -142,6 +142,7 @@ impl Debug for Value {
 
         let ret = f
             .debug_struct("Value")
+            .field("self ptr", &(self as *const _))
             .field("data", &format!("{}", self))
             .field("is_root", &self.is_root())
             .field("shared_address", &self.meta.ptr())
@@ -1767,7 +1768,7 @@ impl Serialize for Value {
             }
             #[cfg(feature = "arbitrary_precision")]
             RAWNUM | ROOT_RAWNUM => {
-                use ::serde::ser::SerializeStruct;
+                use serde::ser::SerializeStruct;
 
                 use crate::serde::rawnumber::TOKEN;
                 let mut struct_ = tri!(serializer.serialize_struct(TOKEN, 1));
