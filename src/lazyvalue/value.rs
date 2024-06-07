@@ -66,6 +66,51 @@ use crate::{
 /// let data: TestLazyValue = sonic_rs::from_str(input).unwrap();
 /// assert_eq!(data.borrowed_lv.as_raw_str(), "\"hello\"");
 /// ```
+///
+/// # Convert to serde_json::Value
+///
+/// `LazyValue<'a>` can convert into `serde_json::Value` from bytes slice.
+///
+/// ```
+///  use sonic_rs::{pointer, JsonValueTrait};
+///
+///  let json: &str = r#"{
+///      "bool": true,
+///      "int": -1,
+///      "uint": 0,
+///      "float": 1.1,
+///      "string": "hello",
+///      "string_escape": "\"hello\"",
+///      "array": [1,2,3],
+///      "object": {"a":"aaa"},
+///      "strempty": "",
+///      "objempty": {},
+///      "arrempty": []
+///  }"#;
+///  let lazy_value = sonic_rs::get(json, pointer![].iter()).unwrap();
+///
+///  for (key, expect_value) in [
+///      ("bool", serde_json::json!(true)),
+///      ("int", serde_json::json!(-1)),
+///      ("uint", serde_json::json!(0)),
+///      ("float", serde_json::json!(1.1)),
+///      ("string", serde_json::json!("hello")),
+///      ("string_escape", serde_json::json!("\"hello\"")),
+///      ("array", serde_json::json!([1, 2, 3])),
+///      ("object", serde_json::json!({"a":"aaa"})),
+///      ("strempty", serde_json::json!("")),
+///      ("objempty", serde_json::json!({})),
+///      ("arrempty", serde_json::json!([])),
+///  ] {
+///      let value = lazy_value.get(key);
+///
+///      let trans_value =
+///          serde_json::from_slice::<serde_json::Value>(value.unwrap().as_raw_str().as_bytes())
+///              .unwrap();
+///      assert_eq!(trans_value, expect_value);
+///      println!("checked {key} with {trans_value:?}");
+///  }
+/// ```
 pub struct LazyValue<'a> {
     // the raw slice from origin json
     pub(crate) raw: JsonSlice<'a>,
