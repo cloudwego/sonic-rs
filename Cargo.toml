@@ -1,6 +1,6 @@
 [package]
 name = "sonic-rs"
-version = "0.3.6"
+version = "0.3.7"
 authors = ["Volo Team <volo@cloudwego.io>"]
 edition = "2021"
 description = "Sonic-rs is a fast Rust JSON library based on SIMD"
