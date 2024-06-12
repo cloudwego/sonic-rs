@@ -208,7 +208,7 @@ macro_rules! deserialize_numeric_key {
         {
             let mut de =
                 crate::Deserializer::new(crate::reader::SliceRead::new(self.key.as_bytes()));
-            match de.parser.read.peek() {
+            match de.parser.read().peek() {
                 Some(b'0'..=b'9' | b'-') => {}
                 _ => return Err(Error::syntax(ErrorCode::ExpectedNumericKey, b"", 0)),
             }

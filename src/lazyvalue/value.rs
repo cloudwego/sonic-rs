@@ -9,9 +9,11 @@ use std::{
 
 use faststr::FastStr;
 
+#[cfg(feature = "arbitrary_precision")]
+use crate::RawNumber;
 use crate::{
     from_str, get_unchecked, index::Index, input::JsonSlice, serde::Number, JsonType,
-    JsonValueTrait, RawNumber, Result,
+    JsonValueTrait, Result,
 };
 
 /// LazyValue wrappers a unparsed raw JSON text. It is borrowed from the origin JSON text.
@@ -380,13 +382,13 @@ mod test {
         );
         assert_eq!(
             value
-                .pointer(&pointer!["object", "a"])
+                .pointer(pointer!["object", "a"])
                 .unwrap()
                 .as_raw_str()
                 .as_bytes(),
             b"\"aaa\""
         );
-        assert!(value.pointer(&pointer!["objempty", "a"]).is_none());
+        assert!(value.pointer(pointer!["objempty", "a"]).is_none());
     }
 
     #[test]
@@ -410,18 +412,18 @@ mod test {
     fn test_lazyvalue_get() {
         let value = unsafe { get_unchecked(TEST_JSON, pointer![].iter()).unwrap() };
         assert_eq!(value.get("int").as_i64().unwrap(), -1);
-        assert_eq!(value.pointer(&pointer!["array", 2]).as_u64().unwrap(), 3);
+        assert_eq!(value.pointer(pointer!["array", 2]).as_u64().unwrap(), 3);
         assert_eq!(
-            value.pointer(&pointer!["object", "a"]).as_str().unwrap(),
+            value.pointer(pointer!["object", "a"]).as_str().unwrap(),
             "aaa"
         );
-        assert!(value.pointer(&pointer!["object", "b"]).is_none());
-        assert!(value.pointer(&pointer!["object", "strempty"]).is_none());
-        assert_eq!(value.pointer(&pointer!["objempty", "a"]).as_str(), None);
-        assert!(value.pointer(&pointer!["arrempty", 1]).is_none());
-        assert!(value.pointer(&pointer!["array", 3]).is_none());
-        assert!(value.pointer(&pointer!["array", 4]).is_none());
-        assert_eq!(value.pointer(&pointer!["arrempty", 1]).as_str(), None);
+        assert!(value.pointer(pointer!["object", "b"]).is_none());
+        assert!(value.pointer(pointer!["object", "strempty"]).is_none());
+        assert_eq!(value.pointer(pointer!["objempty", "a"]).as_str(), None);
+        assert!(value.pointer(pointer!["arrempty", 1]).is_none());
+        assert!(value.pointer(pointer!["array", 3]).is_none());
+        assert!(value.pointer(pointer!["array", 4]).is_none());
+        assert_eq!(value.pointer(pointer!["arrempty", 1]).as_str(), None);
         assert_eq!(value.get("string").as_str().unwrap(), "hello");
 
         let value = unsafe { get_unchecked(TEST_JSON, pointer![].iter()).unwrap() };

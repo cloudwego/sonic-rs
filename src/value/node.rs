@@ -1371,7 +1371,7 @@ impl Value {
         self.data = visitor.nodes()[0].data;
         self.meta = visitor.nodes()[0].meta;
         self.mark_root();
-        Ok(parser.read.index())
+        Ok(parser.read().index())
     }
 
     #[inline(never)]
@@ -1379,7 +1379,7 @@ impl Value {
         &mut self,
         parser: &mut Parser<R>,
     ) -> Result<()> {
-        let remain_len = parser.read.remain();
+        let remain_len = parser.read().remain();
         let max_len = (remain_len / 2) + 2;
         let mut buf = TlsBuf::with_capacity(max_len);
 
@@ -2015,16 +2015,16 @@ mod test {
         assert_eq!(value.get("int").as_i64().unwrap(), -1);
         assert_eq!(value["array"].get(0).as_i64().unwrap(), 1);
 
-        assert_eq!(value.pointer(&pointer!["array", 2]).as_u64().unwrap(), 3);
+        assert_eq!(value.pointer(pointer!["array", 2]).as_u64().unwrap(), 3);
         assert_eq!(
-            value.pointer(&pointer!["object", "a"]).as_str().unwrap(),
+            value.pointer(pointer!["object", "a"]).as_str().unwrap(),
             "aaa"
         );
-        assert_eq!(value.pointer(&pointer!["objempty", "a"]).as_str(), None);
+        assert_eq!(value.pointer(pointer!["objempty", "a"]).as_str(), None);
 
-        assert_eq!(value.pointer(&pointer!["arrempty", 1]).as_str(), None);
+        assert_eq!(value.pointer(pointer!["arrempty", 1]).as_str(), None);
 
-        assert!(!value.pointer(&pointer!["unknown"]).is_str());
+        assert!(!value.pointer(pointer!["unknown"]).is_str());
     }
 
     #[test]

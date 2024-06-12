@@ -86,7 +86,7 @@ impl JsonNumberTrait for Number {
     #[inline]
     fn is_i64(&self) -> bool {
         match self.n {
-            N::PosInt(v) => v <= i64::max_value() as u64,
+            N::PosInt(v) => v <= i64::MAX as u64,
             N::NegInt(_) => true,
             N::Float(_) => false,
         }
@@ -125,7 +125,7 @@ impl JsonNumberTrait for Number {
     fn as_i64(&self) -> Option<i64> {
         match self.n {
             N::PosInt(n) => {
-                if n <= i64::max_value() as u64 {
+                if n <= i64::MAX as u64 {
                     Some(n as i64)
                 } else {
                     None
