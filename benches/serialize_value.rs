@@ -5,6 +5,7 @@ use std::{fs::File, io::Read};
 
 use criterion::{criterion_group, BatchSize, Criterion, SamplingMode, Throughput};
 
+#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 

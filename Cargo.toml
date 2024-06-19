@@ -29,7 +29,6 @@ parking_lot = "0.12"
 page_size = "0.6"
 
 [dev-dependencies]
-jemallocator =  "0.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
 simd-json = "0.13"
@@ -44,6 +43,10 @@ paste = "1.0"
 serde_bytes = "0.11"
 bytes = {version = "1.4", features = ["serde"]}
 chrono = { version = "0.4", features = ["serde"] }
+
+[target.'cfg(not(target_env = "msvc"))'.dev-dependencies]
+jemallocator = "0.5"
+
 
 [profile.release]
 opt-level = 3
