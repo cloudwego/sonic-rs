@@ -1,7 +1,10 @@
 use std::{marker::PhantomData, ops::Deref, ptr::NonNull};
 
-use crate::util::private::Sealed;
-
+use crate::{
+    error::invalid_utf8,
+    util::{private::Sealed, utf8::from_utf8},
+    Result,
+};
 // support borrow for owned deserizlie or skip
 pub(crate) enum Reference<'b, 'c, T>
 where
@@ -78,17 +81,43 @@ pub trait Reader<'de>: Sealed {
     fn slice_unchecked(&self, start: usize, end: usize) -> &'de [u8];
 
     fn as_u8_slice(&self) -> &'de [u8];
+
+    // we only need validate utf8 for [u8]
+    fn validate_utf8(&mut self, allowed_space: (usize, usize)) -> Result<()> {
+        let _ = allowed_space;
+        Ok(())
+    }
+
+    fn check_utf8_final(&self) -> Result<()> {
+        Ok(())
+    }
 }
 
 /// JSON input source that reads from a slice of bytes.
 pub(crate) struct SliceRead<'a> {
     slice: &'a [u8],
     pub(crate) index: usize,
+    // next invalid utf8 position, if not found, will be usize::MAX
+    next_invalid_utf8: usize,
 }
 
 impl<'a> SliceRead<'a> {
-    pub fn new(slice: &'a [u8]) -> Self {
-        Self { slice, index: 0 }
+    pub fn new(slice: &'a [u8], need_validate: bool) -> Self {
+        // validate the utf-8 at first for slice
+        let next_invalid_utf8 = if need_validate {
+            match from_utf8(slice) {
+                Ok(_) => usize::MAX,
+                Err(e) => e.offset(),
+            }
+        } else {
+            usize::MAX
+        };
+
+        Self {
+            slice,
+            index: 0,
+            next_invalid_utf8,
+        }
     }
 }
 
@@ -171,6 +200,30 @@ impl<'a> Reader<'a> for SliceRead<'a> {
     #[inline(always)]
     fn as_u8_slice(&self) -> &'a [u8] {
         self.slice
+    }
+
+    #[inline(always)]
+    fn check_utf8_final(&self) -> Result<()> {
+        if self.next_invalid_utf8 == usize::MAX {
+            Ok(())
+        } else {
+            Err(invalid_utf8(self.slice, self.next_invalid_utf8))
+        }
+    }
+
+    fn validate_utf8(&mut self, allowd_space: (usize, usize)) -> Result<()> {
+        if self.next_invalid_utf8 < allowd_space.0 {
+            Err(invalid_utf8(self.slice, self.next_invalid_utf8))
+        } else if self.next_invalid_utf8 < allowd_space.1 {
+            // this space is allowed, should update the next invalid utf8 position
+            self.next_invalid_utf8 = match from_utf8(&self.slice[self.index..]) {
+                Ok(_) => usize::MAX,
+                Err(e) => self.index + e.offset(),
+            };
+            Ok(())
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -279,14 +332,14 @@ mod test {
 
     fn test_peek() {
         let data = b"1234567890";
-        let mut reader = SliceRead::new(data);
+        let mut reader = SliceRead::new(data, false);
         assert_eq!(reader.peek(), Some(b'1'));
         assert_eq!(reader.peek_n(4).unwrap(), &b"1234"[..]);
     }
 
     fn test_next() {
         let data = b"1234567890";
-        let mut reader = SliceRead::new(data);
+        let mut reader = SliceRead::new(data, false);
         assert_eq!(reader.next(), Some(b'1'));
         assert_eq!(reader.peek(), Some(b'2'));
         assert_eq!(reader.next_n(4).unwrap(), &b"2345"[..]);
@@ -295,7 +348,7 @@ mod test {
 
     fn test_index() {
         let data = b"1234567890";
-        let mut reader = SliceRead::new(data);
+        let mut reader = SliceRead::new(data, false);
         assert_eq!(reader.index(), 0);
 
         reader.next().unwrap();

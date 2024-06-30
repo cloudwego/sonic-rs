@@ -459,8 +459,10 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         self.deserialize_str(visitor)
     }
 
-    /// Parses a JSON string as bytes `serde_bytes::ByteBuf`.
-    /// Note that this function does not check whether the bytes represent a valid UTF-8 string.
+    /// Parses a JSON string as bytes. Note that this function does not check
+    /// whether the bytes represent a valid UTF-8 string.
+    ///
+    /// Followed as `serde_json`.
     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -469,6 +471,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
             return Err(self.parser.error(ErrorCode::EofWhileParsing));
         };
 
+        let start = self.parser.read.index();
         let value = match peek {
             b'"' => match tri!(self.parser.parse_string_raw(&mut self.scratch)) {
                 Reference::Borrowed(b) => visitor.visit_borrowed_bytes(b),
@@ -481,6 +484,10 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
             _ => Err(self.peek_invalid_type(peek, &visitor)),
         };
 
+        // check invalid utf8 with allow space here
+        self.parser
+            .read
+            .validate_utf8((start, self.parser.read.index()))?;
         match value {
             Ok(value) => Ok(value),
             Err(err) => Err(self.parser.fix_position(err)),
@@ -1141,10 +1148,11 @@ where
     let mut de = Deserializer::new(read);
     let value = tri!(de::Deserialize::deserialize(&mut de));
 
-    // check errors
-
     // Make sure the whole stream has been consumed.
     tri!(de.parser.parse_trailing());
+
+    // check invalid utf8
+    tri!(de.parser.read.check_utf8_final());
     Ok(value)
 }
 
@@ -1154,13 +1162,7 @@ pub fn from_slice<'a, T>(json: &'a [u8]) -> Result<T>
 where
     T: de::Deserialize<'a>,
 {
-    // validate the utf-8 at first for slice
-    let json = {
-        let json = crate::util::utf8::from_utf8(json)?;
-        json.as_bytes()
-    };
-
-    from_trait(SliceRead::new(json))
+    from_trait(SliceRead::new(json, true))
 }
 
 /// Deserialize an instance of type `T` from bytes of JSON text.
@@ -1171,7 +1173,7 @@ pub unsafe fn from_slice_unchecked<'a, T>(json: &'a [u8]) -> Result<T>
 where
     T: de::Deserialize<'a>,
 {
-    from_trait(SliceRead::new(json))
+    from_trait(SliceRead::new(json, false))
 }
 
 /// Deserialize an instance of type `T` from a string of JSON text.
@@ -1179,5 +1181,5 @@ pub fn from_str<'a, T>(s: &'a str) -> Result<T>
 where
     T: de::Deserialize<'a>,
 {
-    from_trait(SliceRead::new(s.as_bytes()))
+    from_trait(SliceRead::new(s.as_bytes(), false))
 }

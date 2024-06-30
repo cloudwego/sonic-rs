@@ -5,7 +5,7 @@ use crate::{
     input::{JsonInput, JsonSlice},
     lazyvalue::LazyValue,
     parser::{Parser, DEFAULT_KEY_BUF_CAPACITY},
-    reader::SliceRead,
+    reader::{Reader, SliceRead},
 };
 
 /// A lazied iterator for JSON object text. It will parse the JSON when iterating.
@@ -102,7 +102,15 @@ impl<'de> ObjectInner<'de> {
         if self.parser.is_none() {
             let slice = self.json.as_ref();
             let slice = unsafe { std::slice::from_raw_parts(slice.as_ptr(), slice.len()) };
-            let parser = Parser::new(SliceRead::new(slice));
+            let parser = Parser::new(SliceRead::new(slice, check));
+            // check invalid utf8
+            match parser.read.check_utf8_final() {
+                Err(err) if check => {
+                    self.ending = true;
+                    return Some(Err(err.into()));
+                }
+                _ => {}
+            }
             self.parser = Some(parser);
         }
 
@@ -144,7 +152,15 @@ impl<'de> ArrayInner<'de> {
         if self.parser.is_none() {
             let slice = self.json.as_ref();
             let slice = unsafe { std::slice::from_raw_parts(slice.as_ptr(), slice.len()) };
-            let parser = Parser::new(SliceRead::new(slice));
+            let parser = Parser::new(SliceRead::new(slice, check));
+            // check invalid utf8
+            match parser.read.check_utf8_final() {
+                Err(err) if check => {
+                    self.ending = true;
+                    return Some(Err(err.into()));
+                }
+                _ => {}
+            }
             self.parser = Some(parser);
         }
 
@@ -502,6 +518,31 @@ mod test {
     fn test_num_iter() {
         for i in to_array_iter("[6,-9E6]") {
             println!("{:?}", i.unwrap().as_raw_str());
+        }
+    }
+
+    #[test]
+    fn test_json_iter_for_utf8() {
+        let data = [b'[', b'"', 0, 0, 0, 0x80, 0x90, b'"', b']'];
+        let iter = to_array_iter(&data[..]);
+        for item in iter {
+            assert_eq!(
+                item.err().unwrap().to_string(),
+                "Invalid UTF-8 characters in json at line 1 column \
+                 5\n\n\t[\"\0\0\0��\"]\n\t.....^...\n"
+            );
+        }
+
+        let data = [
+            b'{', b'"', 0, 0, 0, 0x80, 0x90, b'"', b':', b'"', b'"', b'}',
+        ];
+        let iter = to_object_iter(&data[..]);
+        for item in iter {
+            assert_eq!(
+                item.err().unwrap().to_string(),
+                "Invalid UTF-8 characters in json at line 1 column \
+                 5\n\n\t{\"\0\0\0��\":\"\"}\n\t.....^......\n"
+            );
         }
     }
 }
