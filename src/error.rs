@@ -132,6 +132,11 @@ impl Error {
     pub fn is_eof(&self) -> bool {
         self.classify() == Category::Eof
     }
+
+    /// Returens the offset of the error position from the starting of JSON text.
+    pub fn offset(&self) -> usize {
+        self.err.index
+    }
 }
 
 #[allow(clippy::fallible_impl_from)]
@@ -183,6 +188,7 @@ pub enum Category {
 
 struct ErrorImpl {
     code: ErrorCode,
+    index: usize,
     line: usize,
     column: usize,
     // the descript of the error position
@@ -319,6 +325,7 @@ impl Error {
                 code,
                 line: position.line,
                 column: position.column,
+                index,
                 descript: Some(descript),
             }),
         }
@@ -330,6 +337,7 @@ impl Error {
             err: Box::new(ErrorImpl {
                 code: ErrorCode::Io(error),
                 line: 0,
+                index: 0,
                 column: 0,
                 descript: None,
             }),
@@ -347,6 +355,7 @@ impl Error {
             err: Box::new(ErrorImpl {
                 code,
                 line: 0,
+                index: 0,
                 column: 0,
                 descript: msg,
             }),
@@ -432,6 +441,7 @@ pub fn make_error(mut msg: String) -> Error {
         err: Box::new(ErrorImpl {
             code: ErrorCode::Message(msg.into()),
             line,
+            index: 0,
             column,
             descript: None,
         }),
@@ -485,6 +495,10 @@ fn starts_with_digit(slice: &str) -> bool {
         None => false,
         Some(&byte) => byte.is_ascii_digit(),
     }
+}
+
+pub(crate) fn invalid_utf8(json: &[u8], index: usize) -> Error {
+    Error::syntax(ErrorCode::InvalidUTF8, json, index)
 }
 
 #[cfg(test)]

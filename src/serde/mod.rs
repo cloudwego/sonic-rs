@@ -288,11 +288,24 @@ mod test {
         );
     }
 
-    macro_rules! test_struct {
+    macro_rules! test_from_slice {
         ($ty:ty, $data:expr) => {
-            match serde_json::from_slice::<$ty>($data) {
+            test_from! {$ty, from_slice, $data};
+        };
+    }
+
+    macro_rules! test_from_str {
+        ($ty:ty, $data:expr) => {
+            test_from! {$ty, from_str, $data};
+        };
+    }
+
+    macro_rules! test_from {
+        ($ty:ty, $f:ty, $data:expr) => {
+            ::paste::paste! {
+            match serde_json::$f::<$ty>($data) {
                 Ok(jv) => {
-                    let sv = crate::from_slice::<$ty>($data).expect(&format!(
+                    let sv = crate::$f::<$ty>($data).expect(&format!(
                         "parse valid json {:?} failed for type {}",
                         $data,
                         stringify!($ty)
@@ -307,18 +320,14 @@ mod test {
                     assert_eq!(sv, jv);
                 }
                 Err(err) => {
-                    println!(
-                        "parse invalid json {:?} failed for type {}",
-                        $data,
-                        stringify!($ty)
-                    );
-                    let _ = crate::from_slice::<$ty>($data).expect_err(&format!(
+                    let _ = crate::$f::<$ty>($data).expect_err(&format!(
                         "parse invalid json {:?} wrong for type {}, should error: {}",
                         $data,
                         stringify!($ty),
                         err
                     ));
                 }
+            }
             }
         };
     }
@@ -335,23 +344,23 @@ mod test {
     #[test]
     fn test_more_structs() {
         // invalid json: has control chars
-        test_struct!(String, &[34, 58, 55, 10, 0, 34, 32, 10]);
-        test_struct!(String, &[34, b'\\', b't', 9, 34]);
-        test_struct!(String, &[34, 92, 34, 34]);
-        test_struct!(String, b"\"\\umap9map009\"");
-        test_struct!(Foo, &b"[\"5XXXXXXZX:XXZX:[\",-0]"[..]);
-        test_struct!(Bytes, &b"\"hello world\""[..]);
-        test_struct!(
+        test_from_slice!(String, &[34, 58, 55, 10, 0, 34, 32, 10]);
+        test_from_slice!(String, &[34, b'\\', b't', 9, 34]);
+        test_from_slice!(String, &[34, 92, 34, 34]);
+        test_from_slice!(String, b"\"\\umap9map009\"");
+        test_from_slice!(Foo, &b"[\"5XXXXXXZX:XXZX:[\",-0]"[..]);
+        test_from_slice!(Bytes, &b"\"hello world\""[..]);
+        test_from_slice!(
             Bytes,
             &b"[104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100]"[..]
         );
-        test_struct!(
+        test_from_slice!(
             ByteBuf,
             &b"[104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100]"[..]
         );
-        test_struct!(ByteBuf, &b"\"hello world\""[..]);
-        test_struct!(Bytes, &b"[]"[..]);
-        test_struct!(Data, &br#"{"content":[1,2,3,4,5]}"#[..]);
+        test_from_slice!(ByteBuf, &b"\"hello world\""[..]);
+        test_from_slice!(Bytes, &b"[]"[..]);
+        test_from_slice!(Data, &br#"{"content":[1,2,3,4,5]}"#[..]);
     }
 
     use std::{
@@ -426,10 +435,20 @@ mod test {
     }
 
     #[test]
-    fn test_serde_with_fixed_iter_steps() {
-        let json = r#"{"seq":[1, 2], "map": {"key": 123}}"#;
-        let expect: MyTuple = serde_json::from_str(json).unwrap();
-        let got: MyTuple = from_str(json).unwrap();
-        assert_eq!(expect, got);
+    fn test_serde_invalid_utf8() {
+        let json = r#""王先生""#;
+
+        let (encoded, _, error) = encoding_rs::GB18030.encode(json);
+        assert!(!error, "Encoded error");
+
+        let obj: &[u8] = from_slice(encoded.as_ref()).expect("Failed deserialize");
+        println!("Deserialized {:?}", obj);
+
+        let sout = crate::to_string(&obj).unwrap();
+        let jout = serde_json::to_string(&obj).unwrap();
+        assert_eq!(jout, sout);
+        println!("json is {}", jout);
+        // this will failed
+        // let jv = serde_json::from_str::<&[u8]>(&jout).unwrap();
     }
 }

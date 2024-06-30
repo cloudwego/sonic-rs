@@ -180,6 +180,13 @@ where
     /// Error caused by a byte from next_char().
     #[cold]
     pub(crate) fn error(&self, mut reason: ErrorCode) -> Error {
+        // check invalid utf8 here at first
+        // FIXME: maybe has invalid utf8 when deserialzing into byte, and just bytes has other
+        // errors?
+        if let Err(e) = self.read.check_utf8_final() {
+            return e;
+        }
+
         // check errors, if exceed, the reason must be eof, and begin parsing the padding chars
         let mut index = self.error_index();
         let len = self.read.as_u8_slice().len();
