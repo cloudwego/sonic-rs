@@ -6,9 +6,12 @@ use core::{
     fmt::{self, Debug, Display},
     result,
 };
-use std::{borrow::Cow, error, str::FromStr};
+use std::{borrow::Cow, error, fmt::Result as FmtResult, str::FromStr};
 
-use serde::{de, ser};
+use serde::{
+    de::{self, Unexpected},
+    ser,
+};
 use thiserror::Error as ErrorTrait;
 
 use crate::reader::Position;
@@ -88,7 +91,7 @@ impl Error {
             | ErrorCode::ExpectedArrayStart
             | ErrorCode::ExpectedObjectStart
             | ErrorCode::InvalidSurrogateUnicodeCodePoint
-            | ErrorCode::ValueKeyMustBeString
+            | ErrorCode::SerExpectKeyIsStrOrNum(_)
             | ErrorCode::FloatMustBeFinite
             | ErrorCode::ExpectedQuote
             | ErrorCode::ExpectedNumericKey
@@ -274,8 +277,6 @@ pub(crate) enum ErrorCode {
 
     #[error("Invalid surrogate Unicode code point")]
     InvalidSurrogateUnicodeCodePoint,
-    #[error("JSON `Value` key must be string")]
-    ValueKeyMustBeString,
 
     #[error("Float number must be finite, not be Infinity or NaN")]
     FloatMustBeFinite,
@@ -285,6 +286,9 @@ pub(crate) enum ErrorCode {
 
     #[error("Expect a quote")]
     ExpectedQuote,
+
+    #[error("Expected the key to be string/bool/number when serializing map, now is {0}")]
+    SerExpectKeyIsStrOrNum(Unexpected<'static>),
 }
 
 impl Error {
@@ -332,6 +336,19 @@ impl Error {
     }
 
     #[cold]
+    pub(crate) fn ser_error(code: ErrorCode) -> Self {
+        Error {
+            err: Box::new(ErrorImpl {
+                code,
+                line: 0,
+                column: 0,
+                index: 0,
+                descript: None,
+            }),
+        }
+    }
+
+    #[cold]
     pub(crate) fn io(error: std::io::Error) -> Self {
         Error {
             err: Box::new(ErrorImpl {
@@ -373,13 +390,13 @@ impl serde::de::StdError for Error {
 }
 
 impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> FmtResult {
         Display::fmt(&*self.err, f)
     }
 }
 
 impl Display for ErrorImpl {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> FmtResult {
         if self.line != 0 {
             write!(
                 f,
@@ -398,15 +415,8 @@ impl Display for ErrorImpl {
 // Remove two layers of verbosity from the debug representation. Humans often
 // end up seeing this representation because it is what unwrap() shows.
 impl Debug for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Error({}, line: {}, column: {}){}",
-            self.err.code,
-            self.err.line,
-            self.err.column,
-            self.err.descript.as_ref().unwrap_or(&"".to_string())
-        )
+    fn fmt(&self, f: &mut fmt::Formatter) -> FmtResult {
+        Display::fmt(&self, f)
     }
 }
 

@@ -9,6 +9,7 @@ use core::{
 use std::io;
 
 use ::serde::ser::{self, Impossible, Serialize};
+use serde::de::Unexpected;
 
 use super::de::tri;
 use crate::{
@@ -763,11 +764,11 @@ struct MapKeySerializer<'a, W: 'a, F: 'a> {
 }
 
 fn invalid_raw_value() -> Error {
-    Error::new(ErrorCode::InvalidJsonValue, None)
+    Error::ser_error(ErrorCode::InvalidJsonValue)
 }
 
-fn key_must_be_a_string() -> Error {
-    Error::new(ErrorCode::ExpectObjectKeyOrEnd, None)
+pub(crate) fn key_must_be_str_or_num(cur: Unexpected<'static>) -> Error {
+    Error::ser_error(ErrorCode::SerExpectKeyIsStrOrNum(cur))
 }
 
 impl<'a, W, F> ser::Serializer for MapKeySerializer<'a, W, F>
@@ -809,8 +810,21 @@ where
     type SerializeStruct = Impossible<(), Error>;
     type SerializeStructVariant = Impossible<(), Error>;
 
-    fn serialize_bool(self, _value: bool) -> Result<()> {
-        Err(key_must_be_a_string())
+    fn serialize_bool(self, value: bool) -> Result<()> {
+        tri!(self
+            .ser
+            .formatter
+            .begin_string(&mut self.ser.writer)
+            .map_err(Error::io));
+        tri!(self
+            .ser
+            .formatter
+            .write_bool(&mut self.ser.writer, value)
+            .map_err(Error::io));
+        self.ser
+            .formatter
+            .end_string(&mut self.ser.writer)
+            .map_err(Error::io)
     }
 
     fn serialize_i8(self, value: i8) -> Result<()> {
@@ -983,12 +997,30 @@ where
             .map_err(Error::io)
     }
 
-    fn serialize_f32(self, _value: f32) -> Result<()> {
-        Err(key_must_be_a_string())
+    fn serialize_f32(self, value: f32) -> Result<()> {
+        if value.is_finite() {
+            self.ser
+                .formatter
+                .write_f32(&mut self.ser.writer, value)
+                .map_err(Error::io)
+        } else {
+            Err(key_must_be_str_or_num(Unexpected::Other(
+                "NaN or Infinite f32",
+            )))
+        }
     }
 
-    fn serialize_f64(self, _value: f64) -> Result<()> {
-        Err(key_must_be_a_string())
+    fn serialize_f64(self, value: f64) -> Result<()> {
+        if value.is_finite() {
+            self.ser
+                .formatter
+                .write_f64(&mut self.ser.writer, value)
+                .map_err(Error::io)
+        } else {
+            Err(key_must_be_str_or_num(Unexpected::Other(
+                "NaN or Infinite f64",
+            )))
+        }
     }
 
     fn serialize_char(self, value: char) -> Result<()> {
@@ -996,15 +1028,15 @@ where
     }
 
     fn serialize_bytes(self, _value: &[u8]) -> Result<()> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Other("bytes")))
     }
 
     fn serialize_unit(self) -> Result<()> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Other("uint")))
     }
 
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<()> {
-        Err(key_must_be_a_string())
+    fn serialize_unit_struct(self, name: &'static str) -> Result<()> {
+        Err(key_must_be_str_or_num(Unexpected::Other(name)))
     }
 
     fn serialize_newtype_variant<T>(
@@ -1017,11 +1049,11 @@ where
     where
         T: ?Sized + Serialize,
     {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::NewtypeVariant))
     }
 
     fn serialize_none(self) -> Result<()> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Other("none")))
     }
 
     fn serialize_some<T>(self, value: &T) -> Result<()>
@@ -1032,11 +1064,11 @@ where
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Seq))
     }
 
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Other("tuple")))
     }
 
     fn serialize_tuple_struct(
@@ -1044,7 +1076,7 @@ where
         _name: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleStruct> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Other("tuple_struct")))
     }
 
     fn serialize_tuple_variant(
@@ -1054,15 +1086,15 @@ where
         _variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::TupleVariant))
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Map))
     }
 
-    fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
-        Err(key_must_be_a_string())
+    fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
+        Err(key_must_be_str_or_num(Unexpected::Other(name)))
     }
 
     fn serialize_struct_variant(
@@ -1072,7 +1104,7 @@ where
         _variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeStructVariant> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::StructVariant))
     }
 
     fn collect_str<T>(self, value: &T) -> Result<()>

@@ -1,11 +1,15 @@
 use core::fmt::Display;
 use std::ptr::NonNull;
 
-use serde::ser::{Impossible, Serialize};
+use serde::{
+    de::Unexpected,
+    ser::{Impossible, Serialize},
+};
 
 use super::shared::Shared;
 use crate::{
     error::{Error, ErrorCode, Result},
+    serde::ser::key_must_be_str_or_num,
     util::arc::Arc,
     value::node::Value,
     JsonValueTrait,
@@ -54,7 +58,7 @@ use crate::{
 /// let mut map = BTreeMap::new();
 /// map.insert(vec![32, 64], "x86");
 /// let err = to_value(&map).unwrap_err().to_string();
-/// assert!(err.contains("key must be string"));
+/// assert!(err.contains("Expected the key to be string/bool/number when serializing map"));
 /// ```
 pub fn to_value<T>(value: &T) -> Result<Value>
 where
@@ -149,7 +153,7 @@ impl serde::Serializer for Serializer {
             Ok(Value::new_i64(value, self.shared_ptr()))
         } else {
             // FIXME: print i128 in error message
-            Err(Error::syntax(ErrorCode::NumberOutOfRange, b"", 0))
+            Err(Error::ser_error(ErrorCode::NumberOutOfRange))
         }
     }
 
@@ -177,7 +181,7 @@ impl serde::Serializer for Serializer {
         if let Ok(value) = u64::try_from(value) {
             Ok(Value::new_u64(value, self.shared_ptr()))
         } else {
-            Err(Error::syntax(ErrorCode::NumberOutOfRange, b"", 0))
+            Err(Error::ser_error(ErrorCode::NumberOutOfRange))
         }
     }
 
@@ -186,7 +190,9 @@ impl serde::Serializer for Serializer {
         if value.is_finite() {
             Ok(unsafe { Value::new_f64_unchecked(value as f64, self.shared_ptr()) })
         } else {
-            Err(Error::syntax(ErrorCode::FloatMustBeFinite, b"", 0))
+            Err(key_must_be_str_or_num(Unexpected::Other(
+                "NaN or Infinite f32",
+            )))
         }
     }
 
@@ -195,7 +201,9 @@ impl serde::Serializer for Serializer {
         if value.is_finite() {
             Ok(unsafe { Value::new_f64_unchecked(value, self.shared_ptr()) })
         } else {
-            Err(Error::syntax(ErrorCode::FloatMustBeFinite, b"", 0))
+            Err(key_must_be_str_or_num(Unexpected::Other(
+                "NaN or Infinite f64",
+            )))
         }
     }
 
@@ -517,12 +525,8 @@ impl MapKeySerializer {
     }
 }
 
-fn key_must_be_a_string() -> Error {
-    Error::syntax(ErrorCode::ValueKeyMustBeString, b"", 0)
-}
-
 fn float_key_must_be_finite() -> Error {
-    Error::syntax(ErrorCode::FloatMustBeFinite, b"", 0)
+    Error::ser_error(ErrorCode::FloatMustBeFinite)
 }
 
 impl serde::Serializer for MapKeySerializer {
@@ -624,15 +628,15 @@ impl serde::Serializer for MapKeySerializer {
     }
 
     fn serialize_bytes(self, _value: &[u8]) -> Result<Value> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Other("bytes")))
     }
 
     fn serialize_unit(self) -> Result<Value> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Other("unit")))
     }
 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Value> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Other("unit struct")))
     }
 
     fn serialize_newtype_variant<T>(
@@ -645,26 +649,26 @@ impl serde::Serializer for MapKeySerializer {
     where
         T: ?Sized + Serialize,
     {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Other("newtype variant")))
     }
 
     fn serialize_none(self) -> Result<Value> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Other("none")))
     }
 
     fn serialize_some<T>(self, _value: &T) -> Result<Value>
     where
         T: ?Sized + Serialize,
     {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Option))
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Seq))
     }
 
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Other("tuple")))
     }
 
     fn serialize_tuple_struct(
@@ -672,7 +676,7 @@ impl serde::Serializer for MapKeySerializer {
         _name: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleStruct> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Other("tuple struct")))
     }
 
     fn serialize_tuple_variant(
@@ -682,15 +686,15 @@ impl serde::Serializer for MapKeySerializer {
         _variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::TupleVariant))
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::Map))
     }
 
-    fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
-        Err(key_must_be_a_string())
+    fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
+        Err(key_must_be_str_or_num(Unexpected::Other(name)))
     }
 
     fn serialize_struct_variant(
@@ -700,7 +704,7 @@ impl serde::Serializer for MapKeySerializer {
         _variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeStructVariant> {
-        Err(key_must_be_a_string())
+        Err(key_must_be_str_or_num(Unexpected::StructVariant))
     }
 
     fn collect_str<T>(self, value: &T) -> Result<Value>
@@ -777,16 +781,20 @@ where
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    #[derive(Debug, serde::Serialize, Hash, Default, Eq, PartialEq)]
+    struct User {
+        string: String,
+        number: i32,
+        array: Vec<String>,
+    }
 
     #[test]
     fn test_to_value() {
         use crate::{json, to_value, Value};
-        #[derive(Debug, serde::Serialize)]
-        struct User {
-            string: String,
-            number: i32,
-            array: Vec<String>,
-        }
 
         let user = User {
             string: "hello".into(),
@@ -806,5 +814,15 @@ mod test {
 
         let got: Value = to_value(&123).unwrap();
         assert_eq!(got, 123);
+    }
+
+    #[test]
+    fn test_ser_errors() {
+        let mut map = HashMap::<User, i64>::new();
+        map.insert(User::default(), 123);
+
+        let got = to_value(&map);
+        println!("{:?}", got);
+        assert!(got.is_err());
     }
 }
