@@ -1,9 +1,9 @@
 //! Serde between JSON text and Rust data structure.
 
-mod de;
+pub(crate) mod de;
 pub(crate) mod number;
 pub(crate) mod rawnumber;
-mod ser;
+pub(crate) mod ser;
 
 pub(crate) use self::de::tri;
 pub use self::{
@@ -294,12 +294,6 @@ mod test {
         };
     }
 
-    macro_rules! test_from_str {
-        ($ty:ty, $data:expr) => {
-            test_from! {$ty, from_str, $data};
-        };
-    }
-
     macro_rules! test_from {
         ($ty:ty, $f:ty, $data:expr) => {
             ::paste::paste! {
@@ -450,5 +444,22 @@ mod test {
         println!("json is {}", jout);
         // this will failed
         // let jv = serde_json::from_str::<&[u8]>(&jout).unwrap();
+    }
+
+    #[test]
+    fn test_ser_errors() {
+        #[derive(Debug, serde::Serialize, Hash, Default, Eq, PartialEq)]
+        struct User {
+            string: String,
+            number: i32,
+            array: Vec<String>,
+        }
+
+        let mut map = HashMap::<User, i64>::new();
+        map.insert(User::default(), 123);
+
+        let got = to_string(&map);
+        println!("{:?}", got);
+        assert!(got.is_err());
     }
 }
