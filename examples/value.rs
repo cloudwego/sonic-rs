@@ -27,7 +27,7 @@ fn main() {
     assert_eq!(first, "+123456");
 
     // get by pointer
-    let phones = root.pointer(&pointer!["phones", 0]);
+    let phones = root.pointer(pointer!["phones", 0]);
     assert_eq!(phones.as_str().unwrap(), "+123456");
 
     // convert to mutable object

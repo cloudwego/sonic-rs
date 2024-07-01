@@ -107,7 +107,7 @@ impl<'de> ObjectInner<'de> {
             match parser.read.check_utf8_final() {
                 Err(err) if check => {
                     self.ending = true;
-                    return Some(Err(err.into()));
+                    return Some(Err(err));
                 }
                 _ => {}
             }
@@ -157,7 +157,7 @@ impl<'de> ArrayInner<'de> {
             match parser.read.check_utf8_final() {
                 Err(err) if check => {
                     self.ending = true;
-                    return Some(Err(err.into()));
+                    return Some(Err(err));
                 }
                 _ => {}
             }

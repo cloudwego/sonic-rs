@@ -2015,16 +2015,16 @@ mod test {
         assert_eq!(value.get("int").as_i64().unwrap(), -1);
         assert_eq!(value["array"].get(0).as_i64().unwrap(), 1);
 
-        assert_eq!(value.pointer(&pointer!["array", 2]).as_u64().unwrap(), 3);
+        assert_eq!(value.pointer(pointer!["array", 2]).as_u64().unwrap(), 3);
         assert_eq!(
-            value.pointer(&pointer!["object", "a"]).as_str().unwrap(),
+            value.pointer(pointer!["object", "a"]).as_str().unwrap(),
             "aaa"
         );
-        assert_eq!(value.pointer(&pointer!["objempty", "a"]).as_str(), None);
+        assert_eq!(value.pointer(pointer!["objempty", "a"]).as_str(), None);
 
-        assert_eq!(value.pointer(&pointer!["arrempty", 1]).as_str(), None);
+        assert_eq!(value.pointer(pointer!["arrempty", 1]).as_str(), None);
 
-        assert!(!value.pointer(&pointer!["unknown"]).is_str());
+        assert!(!value.pointer(pointer!["unknown"]).is_str());
     }
 
     #[test]

@@ -157,7 +157,7 @@ pub(crate) unsafe fn to_bitmask64(
     v2: uint8x16_t,
     v3: uint8x16_t,
 ) -> u64 {
-    let bit_mask = std::mem::transmute(BIT_MASK_TAB);
+    let bit_mask = std::mem::transmute::<[u8; 16], uint8x16_t>(BIT_MASK_TAB);
 
     let t0 = vandq_u8(v0, bit_mask);
     let t1 = vandq_u8(v1, bit_mask);
@@ -174,7 +174,7 @@ pub(crate) unsafe fn to_bitmask64(
 
 #[inline(always)]
 pub(crate) unsafe fn to_bitmask32(v0: uint8x16_t, v1: uint8x16_t) -> u32 {
-    let bit_mask = std::mem::transmute(BIT_MASK_TAB);
+    let bit_mask = std::mem::transmute::<[u8; 16], uint8x16_t>(BIT_MASK_TAB);
 
     let t0 = vandq_u8(v0, bit_mask);
     let t1 = vandq_u8(v1, bit_mask);
