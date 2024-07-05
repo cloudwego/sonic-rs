@@ -11,7 +11,7 @@ use faststr::FastStr;
 
 use crate::{
     from_str, get_unchecked, index::Index, input::JsonSlice, serde::Number, JsonType,
-    JsonValueTrait, RawNumber, Result,
+    JsonValueTrait, Result,
 };
 
 /// LazyValue wrappers a unparsed raw JSON text. It is borrowed from the origin JSON text.
