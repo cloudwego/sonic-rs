@@ -9,6 +9,8 @@ use std::{
 
 use faststr::FastStr;
 
+#[cfg(feature = "arbitrary_precision")]
+use crate::RawNumber;
 use crate::{
     from_str, get_unchecked, index::Index, input::JsonSlice, serde::Number, JsonType,
     JsonValueTrait, Result,
