@@ -5,7 +5,7 @@ use crate::{
     input::{JsonInput, JsonSlice},
     lazyvalue::LazyValue,
     parser::{Parser, DEFAULT_KEY_BUF_CAPACITY},
-    reader::{Reader, SliceRead},
+    reader::{Read, Reader},
 };
 
 /// A lazied iterator for JSON object text. It will parse the JSON when iterating.
@@ -67,7 +67,7 @@ pub struct ArrayJsonIter<'de>(ArrayInner<'de>);
 
 struct ObjectInner<'de> {
     json: JsonSlice<'de>,
-    parser: Option<Parser<SliceRead<'static>>>,
+    parser: Option<Parser<Read<'static>>>,
     strbuf: Vec<u8>,
     first: bool,
     ending: bool,
@@ -76,7 +76,7 @@ struct ObjectInner<'de> {
 
 struct ArrayInner<'de> {
     json: JsonSlice<'de>,
-    parser: Option<Parser<SliceRead<'static>>>,
+    parser: Option<Parser<Read<'static>>>,
     first: bool,
     ending: bool,
     check: bool,
@@ -102,7 +102,7 @@ impl<'de> ObjectInner<'de> {
         if self.parser.is_none() {
             let slice = self.json.as_ref();
             let slice = unsafe { std::slice::from_raw_parts(slice.as_ptr(), slice.len()) };
-            let parser = Parser::new(SliceRead::new(slice, check));
+            let parser = Parser::new(Read::new(slice, check));
             // check invalid utf8
             match parser.read.check_utf8_final() {
                 Err(err) if check => {
@@ -152,7 +152,7 @@ impl<'de> ArrayInner<'de> {
         if self.parser.is_none() {
             let slice = self.json.as_ref();
             let slice = unsafe { std::slice::from_raw_parts(slice.as_ptr(), slice.len()) };
-            let parser = Parser::new(SliceRead::new(slice, check));
+            let parser = Parser::new(Read::new(slice, check));
             // check invalid utf8
             match parser.read.check_utf8_final() {
                 Err(err) if check => {

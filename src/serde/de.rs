@@ -15,7 +15,7 @@ use crate::{
         Result,
     },
     parser::{as_str, ParseStatus, Parser},
-    reader::{Reader, Reference, SliceRead},
+    reader::{Read, Reader, Reference},
     util::num::ParserNumber,
     value::node::Value,
 };
@@ -1162,7 +1162,7 @@ pub fn from_slice<'a, T>(json: &'a [u8]) -> Result<T>
 where
     T: de::Deserialize<'a>,
 {
-    from_trait(SliceRead::new(json, true))
+    from_trait(Read::new(json, true))
 }
 
 /// Deserialize an instance of type `T` from bytes of JSON text.
@@ -1173,7 +1173,7 @@ pub unsafe fn from_slice_unchecked<'a, T>(json: &'a [u8]) -> Result<T>
 where
     T: de::Deserialize<'a>,
 {
-    from_trait(SliceRead::new(json, false))
+    from_trait(Read::new(json, false))
 }
 
 /// Deserialize an instance of type `T` from a string of JSON text.
@@ -1181,5 +1181,5 @@ pub fn from_str<'a, T>(s: &'a str) -> Result<T>
 where
     T: de::Deserialize<'a>,
 {
-    from_trait(SliceRead::new(s.as_bytes(), false))
+    from_trait(Read::new(s.as_bytes(), false))
 }

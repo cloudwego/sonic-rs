@@ -8,7 +8,7 @@ use crate::{
     input::JsonInput,
     parser::{ParseStatus, Parser},
     pointer::PointerTree,
-    reader::{Reader, SliceRead},
+    reader::{Read, Reader},
     util::utf8::from_utf8,
 };
 
@@ -177,7 +177,7 @@ where
     Path::Item: Index,
 {
     let slice = json.to_u8_slice();
-    let reader = SliceRead::new(slice, false);
+    let reader = Read::new(slice, false);
     let mut parser = Parser::new(reader);
     let (sub, status) = parser.get_from_with_iter(path)?;
     LazyValue::new(json.from_subset(sub), status == ParseStatus::HasEscaped)
@@ -215,7 +215,7 @@ where
     Input: JsonInput<'de>,
 {
     let slice = json.to_u8_slice();
-    let reader = SliceRead::new(slice, false);
+    let reader = Read::new(slice, false);
     let mut parser = Parser::new(reader);
     parser.get_many(tree, false)
 }
@@ -386,7 +386,7 @@ where
     Path::Item: Index,
 {
     let slice = json.to_u8_slice();
-    let reader = SliceRead::new(slice, false);
+    let reader = Read::new(slice, false);
     let mut parser = Parser::new(reader);
     let (sub, status) = parser.get_from_with_iter_checked(path)?;
     let lv = LazyValue::new(json.from_subset(sub), status == ParseStatus::HasEscaped)?;
@@ -424,7 +424,7 @@ where
     Input: JsonInput<'de>,
 {
     let slice = json.to_u8_slice();
-    let reader = SliceRead::new(slice, false);
+    let reader = Read::new(slice, false);
     let mut parser = Parser::new(reader);
     let nodes = parser.get_many(tree, true)?;
 
