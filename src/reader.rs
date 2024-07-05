@@ -95,7 +95,30 @@ pub trait Reader<'de>: Sealed {
     }
 }
 
-/// JSON input source that reads from a slice of bytes.
+/// JSON input source that reads from a string/bytes-like JSON input.
+///
+/// Support most common types: &str, &[u8], &FastStr, &Bytes and &String
+///
+/// # Examples
+/// ```
+/// use bytes::Bytes;
+/// use faststr::FastStr;
+/// use serde::de::Deserialize;
+/// use sonic_rs::{Deserializer, Read};
+///
+/// let mut de = Deserializer::new(Read::from(r#"123"#));
+/// let num: i32 = Deserialize::deserialize(&mut de).unwrap();
+/// assert_eq!(num, 123);
+///
+/// let mut de = Deserializer::new(Read::from(r#"123"#.as_bytes()));
+/// let num: i32 = Deserialize::deserialize(&mut de).unwrap();
+/// assert_eq!(num, 123);
+///
+/// let f = FastStr::new("123");
+/// let mut de = Deserializer::new(Read::from(&f));
+/// let num: i32 = Deserialize::deserialize(&mut de).unwrap();
+/// assert_eq!(num, 123);
+/// ```
 pub struct Read<'a> {
     slice: &'a [u8],
     pub(crate) index: usize,
@@ -335,8 +358,11 @@ impl<'a> Reader<'a> for PaddedSliceRead<'a> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use bytes::Bytes;
+    use faststr::FastStr;
 
+    use super::*;
+    use crate::{Deserialize, Deserializer};
     fn test_peek() {
         let data = b"1234567890";
         let mut reader = Read::new(data, false);
@@ -370,5 +396,25 @@ mod test {
         test_peek();
         test_next();
         test_index();
+    }
+
+    macro_rules! test_deserialize_reader {
+        ($json:expr) => {
+            let mut de = Deserializer::new(Read::from($json));
+            let num: i32 = Deserialize::deserialize(&mut de).unwrap();
+            assert_eq!(num, 123);
+        };
+    }
+
+    #[test]
+    fn test_deserialize() {
+        let b = Bytes::from(r#"123"#);
+        let f = FastStr::from(r#"123"#);
+        let s = String::from(r#"123"#);
+        test_deserialize_reader!(r#"123"#);
+        test_deserialize_reader!(r#"123"#.as_bytes());
+        test_deserialize_reader!(&b);
+        test_deserialize_reader!(&f);
+        test_deserialize_reader!(&s);
     }
 }
