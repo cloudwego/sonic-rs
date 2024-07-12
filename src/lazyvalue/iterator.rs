@@ -102,9 +102,9 @@ impl<'de> ObjectInner<'de> {
         if self.parser.is_none() {
             let slice = self.json.as_ref();
             let slice = unsafe { std::slice::from_raw_parts(slice.as_ptr(), slice.len()) };
-            let parser = Parser::new(Read::new(slice, check));
+            let mut parser = Parser::new(Read::new(slice, check));
             // check invalid utf8
-            match parser.read.check_utf8_final() {
+            match parser.read().check_utf8_final() {
                 Err(err) if check => {
                     self.ending = true;
                     return Some(Err(err));
@@ -152,9 +152,9 @@ impl<'de> ArrayInner<'de> {
         if self.parser.is_none() {
             let slice = self.json.as_ref();
             let slice = unsafe { std::slice::from_raw_parts(slice.as_ptr(), slice.len()) };
-            let parser = Parser::new(Read::new(slice, check));
+            let mut parser = Parser::new(Read::new(slice, check));
             // check invalid utf8
-            match parser.read.check_utf8_final() {
+            match parser.read().check_utf8_final() {
                 Err(err) if check => {
                     self.ending = true;
                     return Some(Err(err));

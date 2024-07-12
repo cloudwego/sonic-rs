@@ -471,7 +471,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
             return Err(self.parser.error(ErrorCode::EofWhileParsing));
         };
 
-        let start = self.parser.read.index();
+        let start = self.parser.read().index();
         let value = match peek {
             b'"' => match tri!(self.parser.parse_string_raw(&mut self.scratch)) {
                 Reference::Borrowed(b) => visitor.visit_borrowed_bytes(b),
@@ -485,9 +485,11 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         };
 
         // check invalid utf8 with allow space here
+        let index = self.parser.read().index();
         self.parser
-            .read
-            .validate_utf8((start, self.parser.read.index()))?;
+            .read()
+            .validate_utf8((start, index))?;
+
         match value {
             Ok(value) => Ok(value),
             Err(err) => Err(self.parser.fix_position(err)),
@@ -1152,7 +1154,7 @@ where
     tri!(de.parser.parse_trailing());
 
     // check invalid utf8
-    tri!(de.parser.read.check_utf8_final());
+    tri!(de.parser.read().check_utf8_final());
     Ok(value)
 }
 
