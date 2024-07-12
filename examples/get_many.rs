@@ -8,7 +8,7 @@ fn main() {
     let mut tree = sonic_rs::PointerTree::new();
 
     tree.add_path(&["u"]);
-    tree.add_path(&pointer!["a", "b", "c", 1]);
+    tree.add_path(pointer!["a", "b", "c", 1]);
 
     let nodes = unsafe { sonic_rs::get_many_unchecked(json, &tree) };
 

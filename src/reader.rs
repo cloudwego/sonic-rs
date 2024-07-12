@@ -1,7 +1,10 @@
 use std::{marker::PhantomData, ops::Deref, ptr::NonNull};
 
-use crate::util::private::Sealed;
-
+use crate::{
+    error::invalid_utf8,
+    util::{private::Sealed, utf8::from_utf8},
+    JsonInput, Result,
+};
 // support borrow for owned deserizlie or skip
 pub(crate) enum Reference<'b, 'c, T>
 where
@@ -50,7 +53,9 @@ where
     }
 }
 
-/// Reader is a unified wrapper for inputs.
+/// Trait is used by the deserializer for iterating over input. And it is sealed and cannot be
+/// implemented for types outside of sonic_rs.
+
 #[doc(hidden)]
 pub trait Reader<'de>: Sealed {
     fn remain(&self) -> usize;
@@ -78,21 +83,75 @@ pub trait Reader<'de>: Sealed {
     fn slice_unchecked(&self, start: usize, end: usize) -> &'de [u8];
 
     fn as_u8_slice(&self) -> &'de [u8];
-}
 
-/// JSON input source that reads from a slice of bytes.
-pub(crate) struct SliceRead<'a> {
-    slice: &'a [u8],
-    pub(crate) index: usize,
-}
+    // we only need validate utf8 for [u8]
+    fn validate_utf8(&mut self, allowed_space: (usize, usize)) -> Result<()> {
+        let _ = allowed_space;
+        Ok(())
+    }
 
-impl<'a> SliceRead<'a> {
-    pub fn new(slice: &'a [u8]) -> Self {
-        Self { slice, index: 0 }
+    fn check_utf8_final(&self) -> Result<()> {
+        Ok(())
     }
 }
 
-impl<'a> Reader<'a> for SliceRead<'a> {
+/// JSON input source that reads from a string/bytes-like JSON input.
+///
+/// Support most common types: &str, &[u8], &FastStr, &Bytes and &String
+///
+/// # Examples
+/// ```
+/// use bytes::Bytes;
+/// use faststr::FastStr;
+/// use serde::de::Deserialize;
+/// use sonic_rs::{Deserializer, Read};
+///
+/// let mut de = Deserializer::new(Read::from(r#"123"#));
+/// let num: i32 = Deserialize::deserialize(&mut de).unwrap();
+/// assert_eq!(num, 123);
+///
+/// let mut de = Deserializer::new(Read::from(r#"123"#.as_bytes()));
+/// let num: i32 = Deserialize::deserialize(&mut de).unwrap();
+/// assert_eq!(num, 123);
+///
+/// let f = FastStr::new("123");
+/// let mut de = Deserializer::new(Read::from(&f));
+/// let num: i32 = Deserialize::deserialize(&mut de).unwrap();
+/// assert_eq!(num, 123);
+/// ```
+pub struct Read<'a> {
+    slice: &'a [u8],
+    pub(crate) index: usize,
+    // next invalid utf8 position, if not found, will be usize::MAX
+    next_invalid_utf8: usize,
+}
+
+impl<'a> Read<'a> {
+    /// Make a `Read` from string/bytes-like JSON input.
+    pub fn from<I: JsonInput<'a>>(input: I) -> Self {
+        Self::new(input.to_u8_slice(), input.need_utf8_valid())
+    }
+
+    pub(crate) fn new(slice: &'a [u8], need_validate: bool) -> Self {
+        // validate the utf-8 at first for slice
+        let next_invalid_utf8 = if need_validate {
+            match from_utf8(slice) {
+                Ok(_) => usize::MAX,
+                Err(e) => e.offset(),
+            }
+        } else {
+            usize::MAX
+        };
+
+        Self {
+            slice,
+            index: 0,
+            next_invalid_utf8,
+        }
+    }
+}
+
+impl<'a> Reader<'a> for Read<'a> {
     #[inline(always)]
     fn remain(&self) -> usize {
         self.slice.len() - self.index
@@ -171,6 +230,30 @@ impl<'a> Reader<'a> for SliceRead<'a> {
     #[inline(always)]
     fn as_u8_slice(&self) -> &'a [u8] {
         self.slice
+    }
+
+    #[inline(always)]
+    fn check_utf8_final(&self) -> Result<()> {
+        if self.next_invalid_utf8 == usize::MAX {
+            Ok(())
+        } else {
+            Err(invalid_utf8(self.slice, self.next_invalid_utf8))
+        }
+    }
+
+    fn validate_utf8(&mut self, allowd_space: (usize, usize)) -> Result<()> {
+        if self.next_invalid_utf8 < allowd_space.0 {
+            Err(invalid_utf8(self.slice, self.next_invalid_utf8))
+        } else if self.next_invalid_utf8 < allowd_space.1 {
+            // this space is allowed, should update the next invalid utf8 position
+            self.next_invalid_utf8 = match from_utf8(&self.slice[self.index..]) {
+                Ok(_) => usize::MAX,
+                Err(e) => self.index + e.offset(),
+            };
+            Ok(())
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -275,18 +358,21 @@ impl<'a> Reader<'a> for PaddedSliceRead<'a> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use bytes::Bytes;
+    use faststr::FastStr;
 
+    use super::*;
+    use crate::{Deserialize, Deserializer};
     fn test_peek() {
         let data = b"1234567890";
-        let mut reader = SliceRead::new(data);
+        let mut reader = Read::new(data, false);
         assert_eq!(reader.peek(), Some(b'1'));
         assert_eq!(reader.peek_n(4).unwrap(), &b"1234"[..]);
     }
 
     fn test_next() {
         let data = b"1234567890";
-        let mut reader = SliceRead::new(data);
+        let mut reader = Read::new(data, false);
         assert_eq!(reader.next(), Some(b'1'));
         assert_eq!(reader.peek(), Some(b'2'));
         assert_eq!(reader.next_n(4).unwrap(), &b"2345"[..]);
@@ -295,7 +381,7 @@ mod test {
 
     fn test_index() {
         let data = b"1234567890";
-        let mut reader = SliceRead::new(data);
+        let mut reader = Read::new(data, false);
         assert_eq!(reader.index(), 0);
 
         reader.next().unwrap();
@@ -310,5 +396,25 @@ mod test {
         test_peek();
         test_next();
         test_index();
+    }
+
+    macro_rules! test_deserialize_reader {
+        ($json:expr) => {
+            let mut de = Deserializer::new(Read::from($json));
+            let num: i32 = Deserialize::deserialize(&mut de).unwrap();
+            assert_eq!(num, 123);
+        };
+    }
+
+    #[test]
+    fn test_deserialize() {
+        let b = Bytes::from(r#"123"#);
+        let f = FastStr::from(r#"123"#);
+        let s = String::from(r#"123"#);
+        test_deserialize_reader!(r#"123"#);
+        test_deserialize_reader!(r#"123"#.as_bytes());
+        test_deserialize_reader!(&b);
+        test_deserialize_reader!(&f);
+        test_deserialize_reader!(&s);
     }
 }

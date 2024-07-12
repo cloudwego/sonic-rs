@@ -61,10 +61,25 @@ impl Object {
     }
 
     /// Create a new empty object.
+    ///
+    /// # Example
+    /// ```
+    /// use sonic_rs::{from_str, json, object, prelude::*, Object};
+    ///
+    /// let mut obj: Object = from_str("{}").unwrap();
+    /// obj.insert(&"arr", object! {});
+    /// obj.insert(&"a", 1);
+    /// obj.insert(&"arr2", Object::new());
+    /// obj["a"] = json!(123);
+    /// obj["arr2"] = json!("hello world");
+    ///
+    /// assert_eq!(obj["a"], 123);
+    /// assert_eq!(obj["arr2"], "hello world");
+    /// ```
     #[inline]
     pub const fn new() -> Object {
         let value = Value {
-            meta: super::node::Meta::new(super::node::ROOT_OBJECT, std::ptr::null()),
+            meta: super::node::Meta::new(super::node::OBJECT, std::ptr::null()),
             data: super::node::Data {
                 achildren: std::ptr::null_mut(),
             },
@@ -578,14 +593,20 @@ impl<'a> VacantEntry<'a> {
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{object, value::object::Entry};
+    /// use sonic_rs::{json, object, value::object::Entry};
     ///
     /// let mut obj = object! {};
     ///
     /// if let Entry::Vacant(entry) = obj.entry(&"hello") {
     ///     assert_eq!(entry.insert(1), &1);
     /// }
+    ///
+    /// if let Entry::Vacant(entry) = obj.entry(&"world") {
+    ///     assert_eq!(entry.insert(json!("woo").clone()), "woo");
+    /// }
+    ///
     /// assert_eq!(obj.get(&"hello").unwrap(), 1);
+    /// assert_eq!(obj.get(&"world").unwrap(), "woo");
     /// ```
     pub fn insert<T: Into<Value>>(self, val: T) -> &'a mut Value {
         let obj = unsafe { self.dormant_obj.awaken() };

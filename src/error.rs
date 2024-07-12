@@ -6,9 +6,12 @@ use core::{
     fmt::{self, Debug, Display},
     result,
 };
-use std::{borrow::Cow, error, str::FromStr};
+use std::{borrow::Cow, error, fmt::Result as FmtResult, str::FromStr};
 
-use serde::{de, ser};
+use serde::{
+    de::{self, Unexpected},
+    ser,
+};
 use thiserror::Error as ErrorTrait;
 
 use crate::reader::Position;
@@ -88,7 +91,7 @@ impl Error {
             | ErrorCode::ExpectedArrayStart
             | ErrorCode::ExpectedObjectStart
             | ErrorCode::InvalidSurrogateUnicodeCodePoint
-            | ErrorCode::ValueKeyMustBeString
+            | ErrorCode::SerExpectKeyIsStrOrNum(_)
             | ErrorCode::FloatMustBeFinite
             | ErrorCode::ExpectedQuote
             | ErrorCode::ExpectedNumericKey
@@ -131,6 +134,11 @@ impl Error {
     /// deserialization once more data is available.
     pub fn is_eof(&self) -> bool {
         self.classify() == Category::Eof
+    }
+
+    /// Returens the offset of the error position from the starting of JSON text.
+    pub fn offset(&self) -> usize {
+        self.err.index
     }
 }
 
@@ -183,6 +191,7 @@ pub enum Category {
 
 struct ErrorImpl {
     code: ErrorCode,
+    index: usize,
     line: usize,
     column: usize,
     // the descript of the error position
@@ -268,8 +277,6 @@ pub(crate) enum ErrorCode {
 
     #[error("Invalid surrogate Unicode code point")]
     InvalidSurrogateUnicodeCodePoint,
-    #[error("JSON `Value` key must be string")]
-    ValueKeyMustBeString,
 
     #[error("Float number must be finite, not be Infinity or NaN")]
     FloatMustBeFinite,
@@ -279,6 +286,9 @@ pub(crate) enum ErrorCode {
 
     #[error("Expect a quote")]
     ExpectedQuote,
+
+    #[error("Expected the key to be string/bool/number when serializing map, now is {0}")]
+    SerExpectKeyIsStrOrNum(Unexpected<'static>),
 }
 
 impl Error {
@@ -319,7 +329,21 @@ impl Error {
                 code,
                 line: position.line,
                 column: position.column,
+                index,
                 descript: Some(descript),
+            }),
+        }
+    }
+
+    #[cold]
+    pub(crate) fn ser_error(code: ErrorCode) -> Self {
+        Error {
+            err: Box::new(ErrorImpl {
+                code,
+                line: 0,
+                column: 0,
+                index: 0,
+                descript: None,
             }),
         }
     }
@@ -330,6 +354,7 @@ impl Error {
             err: Box::new(ErrorImpl {
                 code: ErrorCode::Io(error),
                 line: 0,
+                index: 0,
                 column: 0,
                 descript: None,
             }),
@@ -347,6 +372,7 @@ impl Error {
             err: Box::new(ErrorImpl {
                 code,
                 line: 0,
+                index: 0,
                 column: 0,
                 descript: msg,
             }),
@@ -364,13 +390,13 @@ impl serde::de::StdError for Error {
 }
 
 impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> FmtResult {
         Display::fmt(&*self.err, f)
     }
 }
 
 impl Display for ErrorImpl {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> FmtResult {
         if self.line != 0 {
             write!(
                 f,
@@ -389,15 +415,8 @@ impl Display for ErrorImpl {
 // Remove two layers of verbosity from the debug representation. Humans often
 // end up seeing this representation because it is what unwrap() shows.
 impl Debug for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Error({}, line: {}, column: {}){}",
-            self.err.code,
-            self.err.line,
-            self.err.column,
-            self.err.descript.as_ref().unwrap_or(&"".to_string())
-        )
+    fn fmt(&self, f: &mut fmt::Formatter) -> FmtResult {
+        Display::fmt(&self, f)
     }
 }
 
@@ -432,6 +451,7 @@ pub fn make_error(mut msg: String) -> Error {
         err: Box::new(ErrorImpl {
             code: ErrorCode::Message(msg.into()),
             line,
+            index: 0,
             column,
             descript: None,
         }),
@@ -485,6 +505,10 @@ fn starts_with_digit(slice: &str) -> bool {
         None => false,
         Some(&byte) => byte.is_ascii_digit(),
     }
+}
+
+pub(crate) fn invalid_utf8(json: &[u8], index: usize) -> Error {
+    Error::syntax(ErrorCode::InvalidUTF8, json, index)
 }
 
 #[cfg(test)]

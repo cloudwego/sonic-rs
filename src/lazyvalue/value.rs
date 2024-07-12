@@ -9,9 +9,11 @@ use std::{
 
 use faststr::FastStr;
 
+#[cfg(feature = "arbitrary_precision")]
+use crate::RawNumber;
 use crate::{
     from_str, get_unchecked, index::Index, input::JsonSlice, serde::Number, JsonType,
-    JsonValueTrait, RawNumber, Result,
+    JsonValueTrait, Result,
 };
 
 /// LazyValue wrappers a unparsed raw JSON text. It is borrowed from the origin JSON text.
@@ -65,6 +67,51 @@ use crate::{
 ///
 /// let data: TestLazyValue = sonic_rs::from_str(input).unwrap();
 /// assert_eq!(data.borrowed_lv.as_raw_str(), "\"hello\"");
+/// ```
+///
+/// # Convert to serde_json::Value
+///
+/// `LazyValue<'a>` can convert into `serde_json::Value` from bytes slice.
+///
+/// ```
+///  use sonic_rs::{pointer, JsonValueTrait};
+///
+///  let json: &str = r#"{
+///      "bool": true,
+///      "int": -1,
+///      "uint": 0,
+///      "float": 1.1,
+///      "string": "hello",
+///      "string_escape": "\"hello\"",
+///      "array": [1,2,3],
+///      "object": {"a":"aaa"},
+///      "strempty": "",
+///      "objempty": {},
+///      "arrempty": []
+///  }"#;
+///  let lazy_value = sonic_rs::get(json, pointer![].iter()).unwrap();
+///
+///  for (key, expect_value) in [
+///      ("bool", serde_json::json!(true)),
+///      ("int", serde_json::json!(-1)),
+///      ("uint", serde_json::json!(0)),
+///      ("float", serde_json::json!(1.1)),
+///      ("string", serde_json::json!("hello")),
+///      ("string_escape", serde_json::json!("\"hello\"")),
+///      ("array", serde_json::json!([1, 2, 3])),
+///      ("object", serde_json::json!({"a":"aaa"})),
+///      ("strempty", serde_json::json!("")),
+///      ("objempty", serde_json::json!({})),
+///      ("arrempty", serde_json::json!([])),
+///  ] {
+///      let value = lazy_value.get(key);
+///
+///      let trans_value =
+///          serde_json::from_slice::<serde_json::Value>(value.unwrap().as_raw_str().as_bytes())
+///              .unwrap();
+///      assert_eq!(trans_value, expect_value);
+///      println!("checked {key} with {trans_value:?}");
+///  }
 /// ```
 pub struct LazyValue<'a> {
     // the raw slice from origin json
@@ -335,13 +382,13 @@ mod test {
         );
         assert_eq!(
             value
-                .pointer(&pointer!["object", "a"])
+                .pointer(pointer!["object", "a"])
                 .unwrap()
                 .as_raw_str()
                 .as_bytes(),
             b"\"aaa\""
         );
-        assert!(value.pointer(&pointer!["objempty", "a"]).is_none());
+        assert!(value.pointer(pointer!["objempty", "a"]).is_none());
     }
 
     #[test]
@@ -365,18 +412,18 @@ mod test {
     fn test_lazyvalue_get() {
         let value = unsafe { get_unchecked(TEST_JSON, pointer![].iter()).unwrap() };
         assert_eq!(value.get("int").as_i64().unwrap(), -1);
-        assert_eq!(value.pointer(&pointer!["array", 2]).as_u64().unwrap(), 3);
+        assert_eq!(value.pointer(pointer!["array", 2]).as_u64().unwrap(), 3);
         assert_eq!(
-            value.pointer(&pointer!["object", "a"]).as_str().unwrap(),
+            value.pointer(pointer!["object", "a"]).as_str().unwrap(),
             "aaa"
         );
-        assert!(value.pointer(&pointer!["object", "b"]).is_none());
-        assert!(value.pointer(&pointer!["object", "strempty"]).is_none());
-        assert_eq!(value.pointer(&pointer!["objempty", "a"]).as_str(), None);
-        assert!(value.pointer(&pointer!["arrempty", 1]).is_none());
-        assert!(value.pointer(&pointer!["array", 3]).is_none());
-        assert!(value.pointer(&pointer!["array", 4]).is_none());
-        assert_eq!(value.pointer(&pointer!["arrempty", 1]).as_str(), None);
+        assert!(value.pointer(pointer!["object", "b"]).is_none());
+        assert!(value.pointer(pointer!["object", "strempty"]).is_none());
+        assert_eq!(value.pointer(pointer!["objempty", "a"]).as_str(), None);
+        assert!(value.pointer(pointer!["arrempty", 1]).is_none());
+        assert!(value.pointer(pointer!["array", 3]).is_none());
+        assert!(value.pointer(pointer!["array", 4]).is_none());
+        assert_eq!(value.pointer(pointer!["arrempty", 1]).as_str(), None);
         assert_eq!(value.get("string").as_str().unwrap(), "hello");
 
         let value = unsafe { get_unchecked(TEST_JSON, pointer![].iter()).unwrap() };
