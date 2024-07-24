@@ -18,7 +18,12 @@ pub use self::{
 #[cfg(test)]
 #[allow(clippy::mutable_key_type)]
 mod test {
-    use std::{borrow::Cow, collections::HashMap, hash::Hash, marker::PhantomData};
+    use std::{
+        borrow::Cow,
+        collections::{BTreeMap, HashMap},
+        hash::Hash,
+        marker::PhantomData,
+    };
 
     use bytes::Bytes;
     use faststr::FastStr;
@@ -26,6 +31,21 @@ mod test {
 
     use super::*;
     use crate::Result;
+
+    macro_rules! hashmap {
+        () => {
+            HashMap::new()
+        };
+        ($($k:expr => $v:expr),+ $(,)?) => {
+            {
+                let mut m = HashMap::new();
+                $(
+                    m.insert($k, $v);
+                )+
+                m
+            }
+        };
+    }
 
     #[derive(Debug, Deserialize, Serialize, PartialEq)]
     struct Foo {
@@ -113,11 +133,25 @@ mod test {
         #[serde(borrow)]
         wrapper: Wrapper<'a>,
         phan_struct: Phan<&'a ()>,
+
+        // non-str keys for map
+        map_u8: HashMap<u8, u8>,
+        map_u16: HashMap<u16, u16>,
+        map_u32: HashMap<u32, u32>,
+        map_u64: HashMap<u64, u64>,
+        map_u128: HashMap<u128, u128>,
+
+        map_i8: HashMap<i8, i8>,
+        map_i16: HashMap<i16, i16>,
+        map_i32: HashMap<i32, i32>,
+        map_i64: HashMap<i64, i64>,
+        map_i128: HashMap<i128, i128>,
+
+        map_bool: HashMap<bool, bool>,
     }
 
-    #[test]
-    fn test_serde_struct() {
-        let data = TestData {
+    fn gen_data() -> TestData<'static> {
+        TestData {
             boolean: true,
             integer: -42,
             float: 3.33,
@@ -132,32 +166,22 @@ mod test {
             vector: vec![42, 24, 7],
             array: [99],
             empty_array: [],
-            map: {
-                let mut m = HashMap::new();
-                m.insert(FastStr::from("key1"), 1.1);
-                m.insert(FastStr::from("key2"), 2.2);
-                m
-            },
-            map_opkey: {
-                #[allow(clippy::mutable_key_type)]
-                let mut m = HashMap::new();
-                m.insert(Some(FastStr::from("key1")), 1.1);
-                m
-            },
-
+            map: hashmap!(
+                FastStr::from("key1") => 1.1,
+                FastStr::from("key2") => 2.2,
+            ),
+            map_opkey: hashmap!(
+                Some(FastStr::from("key1")) => 1.1,
+            ),
             option: Some(String::from("I'm here")),
-            enummap: {
-                let mut m = HashMap::new();
-                m.insert(Enum::Zero, FieldlessEnum::Struct {});
-                m.insert(Enum::One, FieldlessEnum::Unit);
-                m
-            },
-            nummap: {
-                let mut m = HashMap::new();
-                m.insert(0, FieldlessEnum::Struct {});
-                m.insert(1, FieldlessEnum::Unit);
-                m
-            },
+            enummap: hashmap!(
+                Enum::Zero => FieldlessEnum::Struct {},
+                Enum::One => FieldlessEnum::Unit,
+            ),
+            nummap: hashmap!(
+                0 => FieldlessEnum::Struct {},
+                1 => FieldlessEnum::Unit,
+            ),
             fieldenum: FieldEnum::Tuple((FastStr::from("test"), 42)),
             fieldless: FieldlessEnum::Struct {},
             enum_: Enum::One,
@@ -170,8 +194,27 @@ mod test {
                 phan: String::from("test data"),
                 _data: PhantomData,
             },
-        };
 
+            map_u8: hashmap!(u8::MAX => u8::MAX),
+            map_u16: hashmap!(u16::MAX => u16::MAX),
+            map_u32: hashmap!(u32::MAX => u32::MAX),
+            map_u64: hashmap!(u64::MAX => u64::MAX),
+            map_u128: hashmap!(u128::MAX => u128::MAX),
+
+            map_i8: hashmap!(i8::MAX => i8::MAX),
+            map_i16: hashmap!(i16::MAX => i16::MAX),
+            map_i32: hashmap!(i32::MAX => i32::MAX),
+            map_i64: hashmap!(i64::MAX => i64::MAX),
+            map_i128: hashmap!(i128::MAX => i128::MAX),
+
+            map_bool: hashmap!(true => true, false => false),
+        }
+    }
+
+    #[allow(clippy::mutable_key_type)]
+    #[test]
+    fn test_serde_struct() {
+        let data = gen_data();
         let expect = serde_json::to_string(&data).expect("Failed to serialize the data");
         let got = to_string(&data).expect("Failed to serialize the data");
         assert_eq!(expect, got);
@@ -185,10 +228,12 @@ mod test {
 
     #[test]
     fn test_struct_with_skipped() {
-        let json = r#"{"unknown":0,"unknown":null,"unknown":1234e123,"unknown":1.234,"unknown":[],"unknown":{},"unknown":{"a":[]},"unknown":[1,2,3],"fieldless":{"Struct":{}},"enummap":{"Zero":{"Struct":{}},"One":"Unit"},"nummap":{"0":{"Struct":{}},"1":"Unit"},"enum_":"One","boolean":true,"integer":-42,"float":3.33,"int128":-22000000000000000000000000,"uint128":11000000000000000000000000,"char_":"A","str_":"hello world","string":"hello world","faststr":"hello world","cow":"borrowed","vector":[42,24,7],"array":[99],"empty_array":[],"map":{"key2":2.2,"key1":1.1},"map_opkey":{"key1":1.1},"option":"I'm here","fieldenum":{"Tuple":["test",42]},"tuple":[42,"test"],"tuple_struct":[42,3.33],"unit_struct":null,"wrapper":"hello","phan_struct":{"phan":"test data","_data":null},"unknown":0,"unknown":null,"unknown":1234e123,"unknown":1.234,"unknown":[],"unknown":{},"unknown":{"a":[]},"unknown":[1,2,3]}"#;
+        let data = gen_data();
+        let json = r#"{"unknown":0,"unknown":null,"unknown":1234e123,"unknown":1.234,"unknown":[],"unknown":{},"unknown":{"a":[]},"unknown":[1,2,3],"#.to_string()
+            + &serde_json::to_string(&data).expect("Failed to serialize the data")[1..];
 
-        let expect: TestData = serde_json::from_str(json).unwrap();
-        let val: TestData = from_str(json).unwrap();
+        let expect: TestData = serde_json::from_str(&json).unwrap();
+        let val: TestData = from_str(&json).unwrap();
         assert_eq!(val, expect);
     }
 
@@ -461,5 +506,34 @@ mod test {
         let got = to_string(&map);
         println!("{:?}", got);
         assert!(got.is_err());
+    }
+
+    #[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Clone)]
+    struct Float;
+    impl Serialize for Float {
+        fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            serializer.serialize_f32(1.23)
+        }
+    }
+    impl<'de> Deserialize<'de> for Float {
+        fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            f32::deserialize(deserializer).map(|_| Float)
+        }
+    }
+
+    #[test]
+    fn test_float_key() {
+        // map with float key
+        let mut map = BTreeMap::new();
+        map.insert(&Float, "x");
+
+        test_from!(BTreeMap<Float, String>, from_str, "{\"1.23\":\"x\"}" );
+        test_from!(BTreeMap<Float, String>, from_str, "{\"1.23\":null}" );
     }
 }
