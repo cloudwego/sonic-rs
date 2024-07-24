@@ -771,6 +771,22 @@ pub(crate) fn key_must_be_str_or_num(cur: Unexpected<'static>) -> Error {
     Error::ser_error(ErrorCode::SerExpectKeyIsStrOrNum(cur))
 }
 
+macro_rules! quote {
+    ($self:ident, $value:expr) => {{
+        tri!($self
+            .ser
+            .formatter
+            .begin_string(&mut $self.ser.writer)
+            .map_err(Error::io));
+        tri!($value);
+        return $self
+            .ser
+            .formatter
+            .end_string(&mut $self.ser.writer)
+            .map_err(Error::io);
+    }};
+}
+
 impl<'a, W, F> ser::Serializer for MapKeySerializer<'a, W, F>
 where
     W: WriteExt,
@@ -811,198 +827,124 @@ where
     type SerializeStructVariant = Impossible<(), Error>;
 
     fn serialize_bool(self, value: bool) -> Result<()> {
-        tri!(self
-            .ser
-            .formatter
-            .begin_string(&mut self.ser.writer)
-            .map_err(Error::io));
-        tri!(self
-            .ser
-            .formatter
-            .write_bool(&mut self.ser.writer, value)
-            .map_err(Error::io));
-        self.ser
-            .formatter
-            .end_string(&mut self.ser.writer)
-            .map_err(Error::io)
+        quote!(
+            self,
+            self.ser
+                .formatter
+                .write_bool(&mut self.ser.writer, value)
+                .map_err(Error::io)
+        );
     }
 
     fn serialize_i8(self, value: i8) -> Result<()> {
-        tri!(self
-            .ser
-            .formatter
-            .begin_string(&mut self.ser.writer)
-            .map_err(Error::io));
-        tri!(self
-            .ser
-            .formatter
-            .write_i8(&mut self.ser.writer, value)
-            .map_err(Error::io));
-        self.ser
-            .formatter
-            .end_string(&mut self.ser.writer)
-            .map_err(Error::io)
+        quote!(
+            self,
+            self.ser
+                .formatter
+                .write_i8(&mut self.ser.writer, value)
+                .map_err(Error::io)
+        );
     }
 
     fn serialize_i16(self, value: i16) -> Result<()> {
-        tri!(self
-            .ser
-            .formatter
-            .begin_string(&mut self.ser.writer)
-            .map_err(Error::io));
-        tri!(self
-            .ser
-            .formatter
-            .write_i16(&mut self.ser.writer, value)
-            .map_err(Error::io));
-        self.ser
-            .formatter
-            .end_string(&mut self.ser.writer)
-            .map_err(Error::io)
+        quote!(
+            self,
+            self.ser
+                .formatter
+                .write_i16(&mut self.ser.writer, value)
+                .map_err(Error::io)
+        );
     }
 
     fn serialize_i32(self, value: i32) -> Result<()> {
-        tri!(self
-            .ser
-            .formatter
-            .begin_string(&mut self.ser.writer)
-            .map_err(Error::io));
-        tri!(self
-            .ser
-            .formatter
-            .write_i32(&mut self.ser.writer, value)
-            .map_err(Error::io));
-        self.ser
-            .formatter
-            .end_string(&mut self.ser.writer)
-            .map_err(Error::io)
+        quote!(
+            self,
+            self.ser
+                .formatter
+                .write_i32(&mut self.ser.writer, value)
+                .map_err(Error::io)
+        );
     }
 
     fn serialize_i64(self, value: i64) -> Result<()> {
-        tri!(self
-            .ser
-            .formatter
-            .begin_string(&mut self.ser.writer)
-            .map_err(Error::io));
-        tri!(self
-            .ser
-            .formatter
-            .write_i64(&mut self.ser.writer, value)
-            .map_err(Error::io));
-        self.ser
-            .formatter
-            .end_string(&mut self.ser.writer)
-            .map_err(Error::io)
+        quote!(
+            self,
+            self.ser
+                .formatter
+                .write_i64(&mut self.ser.writer, value)
+                .map_err(Error::io)
+        );
     }
 
     fn serialize_i128(self, value: i128) -> Result<()> {
-        tri!(self
-            .ser
-            .formatter
-            .begin_string(&mut self.ser.writer)
-            .map_err(Error::io));
-        tri!(self
-            .ser
-            .formatter
-            .write_i128(&mut self.ser.writer, value)
-            .map_err(Error::io));
-        self.ser
-            .formatter
-            .end_string(&mut self.ser.writer)
-            .map_err(Error::io)
+        quote!(
+            self,
+            self.ser
+                .formatter
+                .write_i128(&mut self.ser.writer, value)
+                .map_err(Error::io)
+        );
     }
 
     fn serialize_u8(self, value: u8) -> Result<()> {
-        tri!(self
-            .ser
-            .formatter
-            .begin_string(&mut self.ser.writer)
-            .map_err(Error::io));
-        tri!(self
-            .ser
-            .formatter
-            .write_u8(&mut self.ser.writer, value)
-            .map_err(Error::io));
-        self.ser
-            .formatter
-            .end_string(&mut self.ser.writer)
-            .map_err(Error::io)
+        quote!(
+            self,
+            self.ser
+                .formatter
+                .write_u8(&mut self.ser.writer, value)
+                .map_err(Error::io)
+        );
     }
 
     fn serialize_u16(self, value: u16) -> Result<()> {
-        tri!(self
-            .ser
-            .formatter
-            .begin_string(&mut self.ser.writer)
-            .map_err(Error::io));
-        tri!(self
-            .ser
-            .formatter
-            .write_u16(&mut self.ser.writer, value)
-            .map_err(Error::io));
-        self.ser
-            .formatter
-            .end_string(&mut self.ser.writer)
-            .map_err(Error::io)
+        quote!(
+            self,
+            self.ser
+                .formatter
+                .write_u16(&mut self.ser.writer, value)
+                .map_err(Error::io)
+        );
     }
 
     fn serialize_u32(self, value: u32) -> Result<()> {
-        tri!(self
-            .ser
-            .formatter
-            .begin_string(&mut self.ser.writer)
-            .map_err(Error::io));
-        tri!(self
-            .ser
-            .formatter
-            .write_u32(&mut self.ser.writer, value)
-            .map_err(Error::io));
-        self.ser
-            .formatter
-            .end_string(&mut self.ser.writer)
-            .map_err(Error::io)
+        quote!(
+            self,
+            self.ser
+                .formatter
+                .write_u32(&mut self.ser.writer, value)
+                .map_err(Error::io)
+        );
     }
 
     fn serialize_u64(self, value: u64) -> Result<()> {
-        tri!(self
-            .ser
-            .formatter
-            .begin_string(&mut self.ser.writer)
-            .map_err(Error::io));
-        tri!(self
-            .ser
-            .formatter
-            .write_u64(&mut self.ser.writer, value)
-            .map_err(Error::io));
-        self.ser
-            .formatter
-            .end_string(&mut self.ser.writer)
-            .map_err(Error::io)
+        quote!(
+            self,
+            self.ser
+                .formatter
+                .write_u64(&mut self.ser.writer, value)
+                .map_err(Error::io)
+        );
     }
 
     fn serialize_u128(self, value: u128) -> Result<()> {
-        tri!(self
-            .ser
-            .formatter
-            .begin_string(&mut self.ser.writer)
-            .map_err(Error::io));
-        tri!(self
-            .ser
-            .formatter
-            .write_u128(&mut self.ser.writer, value)
-            .map_err(Error::io));
-        self.ser
-            .formatter
-            .end_string(&mut self.ser.writer)
-            .map_err(Error::io)
+        quote!(
+            self,
+            self.ser
+                .formatter
+                .write_u128(&mut self.ser.writer, value)
+                .map_err(Error::io)
+        );
     }
 
     fn serialize_f32(self, value: f32) -> Result<()> {
         if value.is_finite() {
-            self.ser
-                .formatter
-                .write_f32(&mut self.ser.writer, value)
-                .map_err(Error::io)
+            quote!(
+                self,
+                self.ser
+                    .formatter
+                    .write_f32(&mut self.ser.writer, value)
+                    .map_err(Error::io)
+            );
         } else {
             Err(key_must_be_str_or_num(Unexpected::Other(
                 "NaN or Infinite f32",
@@ -1012,10 +954,13 @@ where
 
     fn serialize_f64(self, value: f64) -> Result<()> {
         if value.is_finite() {
-            self.ser
-                .formatter
-                .write_f64(&mut self.ser.writer, value)
-                .map_err(Error::io)
+            quote!(
+                self,
+                self.ser
+                    .formatter
+                    .write_f64(&mut self.ser.writer, value)
+                    .map_err(Error::io)
+            );
         } else {
             Err(key_must_be_str_or_num(Unexpected::Other(
                 "NaN or Infinite f64",
