@@ -27,7 +27,7 @@ mod test {
 
     use bytes::Bytes;
     use faststr::FastStr;
-    use serde::{Deserialize, Serialize};
+    use serde::{de::IgnoredAny, Deserialize, Serialize};
 
     use super::*;
     use crate::Result;
@@ -75,8 +75,9 @@ mod test {
         Unit,
     }
 
+    // newtype struct
     #[derive(Debug, Deserialize, Serialize, PartialEq)]
-    struct Wrapper<'a>(&'a str);
+    struct NewtypeStruct<'a>(&'a str);
 
     // A unit struct
     #[derive(Debug, Deserialize, Serialize, PartialEq)]
@@ -131,7 +132,7 @@ mod test {
         unit_struct: Unit,
 
         #[serde(borrow)]
-        wrapper: Wrapper<'a>,
+        wrapper: NewtypeStruct<'a>,
         phan_struct: Phan<&'a ()>,
 
         // non-str keys for map
@@ -148,6 +149,9 @@ mod test {
         map_i128: HashMap<i128, i128>,
 
         map_bool: HashMap<bool, bool>,
+
+        #[serde(skip_serializing)]
+        ignored: IgnoredAny,
     }
 
     fn gen_data() -> TestData<'static> {
@@ -189,7 +193,7 @@ mod test {
             tuple: (42, String::from("test")),
             tuple_struct: Pair(42, 3.33),
             unit_struct: Unit,
-            wrapper: Wrapper("hello"),
+            wrapper: NewtypeStruct("hello"),
             phan_struct: Phan {
                 phan: String::from("test data"),
                 _data: PhantomData,
@@ -208,6 +212,7 @@ mod test {
             map_i128: hashmap!(i128::MAX => i128::MAX),
 
             map_bool: hashmap!(true => true, false => false),
+            ignored: IgnoredAny,
         }
     }
 
@@ -220,9 +225,10 @@ mod test {
         assert_eq!(expect, got);
         println!("serialized json is {}", got);
 
+        let got = r#"{"ignored":0,"#.to_string() + &got[1..];
         let expect_value: TestData =
-            serde_json::from_str(&expect).expect("Failed to deserialize the data");
-        let got_value: TestData = from_str(&expect).expect("Failed to deserialize the data");
+            serde_json::from_str(&got).expect("Failed to deserialize the data");
+        let got_value: TestData = from_str(&got).expect("Failed to deserialize the data");
         assert_eq!(expect_value, got_value);
     }
 
@@ -230,6 +236,17 @@ mod test {
     fn test_struct_with_skipped() {
         let data = gen_data();
         let json = r#"{"unknown":0,"unknown":null,"unknown":1234e123,"unknown":1.234,"unknown":[],"unknown":{},"unknown":{"a":[]},"unknown":[1,2,3],"#.to_string()
+            + &serde_json::to_string(&data).expect("Failed to serialize the data")[1..];
+
+        let expect: TestData = serde_json::from_str(&json).unwrap();
+        let val: TestData = from_str(&json).unwrap();
+        assert_eq!(val, expect);
+    }
+
+    #[test]
+    fn test_struct_with_ignored() {
+        let data = gen_data();
+        let json = r#"{"ignored":[1,2,3],"#.to_string()
             + &serde_json::to_string(&data).expect("Failed to serialize the data")[1..];
 
         let expect: TestData = serde_json::from_str(&json).unwrap();
@@ -535,5 +552,147 @@ mod test {
 
         test_from!(BTreeMap<Float, String>, from_str, "{\"1.23\":\"x\"}" );
         test_from!(BTreeMap<Float, String>, from_str, "{\"1.23\":null}" );
+    }
+
+    // test deserialize into different mapkeys
+    #[derive(PartialEq, Debug)]
+    struct MapKeys<'a> {
+        invalutf: Vec<u8>,
+        bytes: Vec<u8>,
+        string: String,
+        bool: bool,
+
+        i8: i8,
+        i16: i16,
+        i32: i32,
+        i64: i64,
+        i128: i128,
+
+        u8: u8,
+        u16: u16,
+        u32: u32,
+        u64: u64,
+        u128: u128,
+
+        isize: isize,
+        usize: usize,
+
+        f32: f32,
+        f64: f64,
+        option: Option<i64>,
+        wrapper: NewtypeStruct<'a>,
+        enum_key: Enum,
+        char_key: char,
+        ignored: IgnoredAny,
+    }
+
+    fn gen_keys_json() -> String {
+        r#"
+        {   "invalid utf8 here": "invalid utf8 here",
+            "bytes": [1,2,3],
+            "string": "hello",
+        
+            "true": true,
+    
+            "1": 1,
+            "123": 123,
+            "-123": -123,
+            "12345": 12345,
+            "1": 1,
+    
+            "1": 1,
+            "123": 123,
+            "123": -123,
+            "12345": 12345,
+            "1": 1,
+    
+            "12345": 12345,
+            "1": 1,
+    
+            "1.23e+2": 1.23,
+            "-1.23": -1.23,
+    
+            "123": "option",
+    
+            "wrapper": {},
+    
+            "Zero": "enum",
+    
+            "A": "char",
+    
+            "ignored": "ignored"
+        }
+        "#
+        .to_string()
+        .replace("invalid utf8", unsafe {
+            std::str::from_utf8_unchecked(&[0xff, 0xff, 0xff][..])
+        })
+    }
+
+    impl<'de> serde::de::Deserialize<'de> for MapKeys<'de> {
+        fn deserialize<D>(d: D) -> std::result::Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            struct Visitor {}
+
+            impl<'de> serde::de::Visitor<'de> for Visitor {
+                type Value = MapKeys<'de>;
+
+                fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    f.write_str("a map")
+                }
+
+                fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+                where
+                    A: serde::de::MapAccess<'de>,
+                {
+                    fn parse_key<'de, V, A>(map: &mut A) -> std::result::Result<V, A::Error>
+                    where
+                        A: serde::de::MapAccess<'de>,
+                        V: serde::Deserialize<'de>,
+                    {
+                        let key = map.next_key::<V>()?.unwrap();
+                        let _ = map.next_value::<IgnoredAny>()?;
+                        Ok(key)
+                    }
+
+                    Ok(MapKeys {
+                        invalutf: parse_key::<&'de [u8], A>(&mut map)?.to_owned(),
+                        bytes: parse_key::<&'de [u8], A>(&mut map)?.to_owned(),
+                        string: parse_key::<String, A>(&mut map)?,
+                        bool: parse_key::<bool, A>(&mut map)?,
+                        i8: parse_key::<i8, A>(&mut map)?,
+                        i16: parse_key::<i16, A>(&mut map)?,
+                        i32: parse_key::<i32, A>(&mut map)?,
+                        i64: parse_key::<i64, A>(&mut map)?,
+                        i128: parse_key::<i128, A>(&mut map)?,
+                        u8: parse_key::<u8, A>(&mut map)?,
+                        u16: parse_key::<u16, A>(&mut map)?,
+                        u32: parse_key::<u32, A>(&mut map)?,
+                        u64: parse_key::<u64, A>(&mut map)?,
+                        u128: parse_key::<u128, A>(&mut map)?,
+                        isize: parse_key::<isize, A>(&mut map)?,
+                        usize: parse_key::<usize, A>(&mut map)?,
+                        f32: parse_key::<f32, A>(&mut map)?,
+                        f64: parse_key::<f64, A>(&mut map)?,
+                        option: parse_key::<Option<i64>, A>(&mut map)?,
+                        wrapper: parse_key::<NewtypeStruct<'de>, A>(&mut map)?,
+                        enum_key: parse_key::<Enum, A>(&mut map)?,
+                        char_key: parse_key::<char, A>(&mut map)?,
+                        ignored: parse_key::<IgnoredAny, A>(&mut map)?,
+                    })
+                }
+            }
+            d.deserialize_map(Visitor {})
+        }
+    }
+
+    #[test]
+    fn test_parse_map_keys() {
+        let s = gen_keys_json();
+        let expect: MapKeys = serde_json::from_str(&s).unwrap();
+        let got: MapKeys = crate::from_str(&s).unwrap();
+        assert_eq!(expect, got);
     }
 }
