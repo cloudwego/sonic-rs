@@ -235,7 +235,7 @@ mod test {
     #[test]
     fn test_struct_with_skipped() {
         let data = gen_data();
-        let json = r#"{"unknown":0,"unknown":null,"unknown":1234e123,"unknown":1.234,"unknown":[],"unknown":{},"unknown":{"a":[]},"unknown":[1,2,3],"#.to_string()
+        let json = r#"{"ignored":0, "unknown":0,"unknown":null,"unknown":1234e123,"unknown":1.234,"unknown":[],"unknown":{},"unknown":{"a":[]},"unknown":[1,2,3],"#.to_string()
             + &serde_json::to_string(&data).expect("Failed to serialize the data")[1..];
 
         let expect: TestData = serde_json::from_str(&json).unwrap();
