@@ -1122,6 +1122,7 @@ where
     where
         V: de::Visitor<'de>,
     {
+        self.de.parser.read.backward(1);
         self.de.deserialize_bytes(visitor)
     }
 
@@ -1130,6 +1131,7 @@ where
     where
         V: de::Visitor<'de>,
     {
+        self.de.parser.read.backward(1);
         self.de.deserialize_bytes(visitor)
     }
 
