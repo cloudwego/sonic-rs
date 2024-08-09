@@ -275,7 +275,7 @@ mod test {
 
     #[test]
     fn test_struct() {
-        use json_benchmark::{citm_catalog::CitmCatalog, twitter::Twitter};
+        use schema::{citm_catalog::CitmCatalog, twitter::Twitter};
         let mut vec = Vec::new();
         read_file("twitter.json", &mut vec);
         let _value: Twitter = from_slice(&vec).unwrap();

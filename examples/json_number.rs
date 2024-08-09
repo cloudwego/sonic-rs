@@ -1,10 +1,4 @@
-use sonic_rs::{from_str, to_string, Deserialize, JsonNumberTrait, Number, RawNumber, Serialize};
-
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
-struct TestJsonNumber {
-    num: Number,
-    raw_num: RawNumber,
-}
+use sonic_rs::{from_str, to_string, JsonNumberTrait, Number, RawNumber};
 
 fn main() {
     // parse RawNumber from JSON number
