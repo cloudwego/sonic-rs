@@ -5,8 +5,9 @@ use std::{fs::File, io::Read, str::from_utf8_unchecked};
 
 use criterion::{criterion_group, BatchSize, Criterion, SamplingMode, Throughput};
 
+#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
-static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 fn simdjson_to_borrowed_value(data: &mut [u8]) {
     let _ = simd_json::to_borrowed_value(data).unwrap();

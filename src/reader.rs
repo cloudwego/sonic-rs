@@ -70,13 +70,13 @@ pub trait Reader<'de>: Sealed {
 
     #[inline(always)]
     fn next(&mut self) -> Option<u8> {
-        self.peek().map(|a| {
+        self.peek().inspect(|_| {
             self.eat(1);
-            a
         })
     }
     fn cur_ptr(&mut self) -> *mut u8;
 
+    unsafe fn update_slice(&mut self, _start: *const u8) {}
     /// # Safety
     /// cur must be a valid pointer in the slice
     unsafe fn set_ptr(&mut self, cur: *mut u8);
@@ -195,6 +195,10 @@ impl<'a> Reader<'a> for Read<'a> {
         } else {
             None
         }
+    }
+
+    unsafe fn update_slice(&mut self, start: *const u8) {
+        self.slice = std::slice::from_raw_parts(start, self.slice.len());
     }
 
     #[inline(always)]
