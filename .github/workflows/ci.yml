@@ -26,6 +26,7 @@ jobs:
         - run: cargo test --features arbitrary_precision
         - run: cargo test --features sort_keys
         - run: ./scripts/run_examples.sh
+        - run: ./scripts/sanitize.sh
 
   test-stable-self:
     name: Rust stable on self-hosted arm
