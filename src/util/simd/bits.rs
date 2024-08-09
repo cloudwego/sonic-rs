@@ -9,6 +9,13 @@ macro_rules! impl_bits {
             impl BitMask for $ty {
                 const LEN: usize = std::mem::size_of::<$ty>() * 8;
 
+                type Primitive = $ty;
+
+                #[inline]
+                fn as_primitive(&self) -> $ty {
+                    *self
+                }
+
                 #[inline]
                 fn before(&self, rhs: &Self) -> bool {
                     (self.as_little_endian()  & rhs.as_little_endian().wrapping_sub(1)) != 0
@@ -68,6 +75,13 @@ impl NeonBits {
 
 impl BitMask for NeonBits {
     const LEN: usize = 16;
+
+    type Primitive = u64;
+
+    #[inline]
+    fn as_primitive(&self) -> Self::Primitive {
+        self.0
+    }
 
     #[inline]
     fn first_offset(&self) -> usize {

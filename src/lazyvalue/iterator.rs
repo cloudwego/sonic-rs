@@ -102,9 +102,9 @@ impl<'de> ObjectInner<'de> {
         if self.parser.is_none() {
             let slice = self.json.as_ref();
             let slice = unsafe { std::slice::from_raw_parts(slice.as_ptr(), slice.len()) };
-            let parser = Parser::new(Read::new(slice, check));
+            let mut parser = Parser::new(Read::new(slice, check));
             // check invalid utf8
-            if let Err(err) = parser.read.check_utf8_final() {
+            if let Err(err) = parser.read().check_utf8_final() {
                 self.ending = true;
                 return Some(Err(err));
             }
@@ -112,7 +112,7 @@ impl<'de> ObjectInner<'de> {
         }
 
         let parser = unsafe { self.parser.as_mut().unwrap_unchecked() };
-        unsafe { parser.read.update_slice(self.json.as_ref().as_ptr()) };
+        unsafe { parser.read().update_slice(self.json.as_ref().as_ptr()) };
         match parser.parse_entry_lazy(&mut self.strbuf, &mut self.first, check) {
             Ok(ret) => {
                 if let Some((key, val, has_escaped)) = ret {
@@ -150,9 +150,9 @@ impl<'de> ArrayInner<'de> {
         if self.parser.is_none() {
             let slice = self.json.as_ref();
             let slice = unsafe { std::slice::from_raw_parts(slice.as_ptr(), slice.len()) };
-            let parser = Parser::new(Read::new(slice, check));
+            let mut parser = Parser::new(Read::new(slice, check));
             // check invalid utf8
-            if let Err(err) = parser.read.check_utf8_final() {
+            if let Err(err) = parser.read().check_utf8_final() {
                 self.ending = true;
                 return Some(Err(err));
             }
@@ -160,7 +160,7 @@ impl<'de> ArrayInner<'de> {
         }
 
         let parser = self.parser.as_mut().unwrap();
-        unsafe { parser.read.update_slice(self.json.as_ref().as_ptr()) };
+        unsafe { parser.read().update_slice(self.json.as_ref().as_ptr()) };
         match parser.parse_array_elem_lazy(&mut self.first, check) {
             Ok(ret) => {
                 if let Some((ret, has_escaped)) = ret {

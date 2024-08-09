@@ -79,7 +79,8 @@ name = "get_from"
 harness = false
 
 [features]
-default = []
+default = ["runtime-detection"]
+runtime-detection = []
 
 # Use an arbitrary precision number type representation when parsing JSON into `sonic_rs::Value`. 
 # This allows the JSON numbers will be serialized without loss of precision.
