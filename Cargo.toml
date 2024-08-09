@@ -29,19 +29,19 @@ parking_lot = "0.12"
 page_size = "0.6"
 
 
-[dev-dependencies]
+[target.'cfg(not(target_env = "msvc"))'.dev-dependencies]
 jemallocator =  "0.5"
-serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
 serde_json = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
 simd-json = "0.13"
 core_affinity = "0.8"
 criterion = { version = "0.5", features = ["html_reports"] }
 gjson = "0.8"
 serde_derive = "1.0"
-faststr = "0.2"
 encoding_rs = "0.8"
-# This config will disable rustc-serialize crate to avoid security warnings in ci
-json-benchmark = { git = "https://github.com/serde-rs/json-benchmark", default-features = false, features = ["all-files", "lib-serde"]}
+# This schema are used in benches and copied from https://github.com/serde-rs/json-benchmark
+schema = { path = "benches/schema" }
 paste = "1.0"
 serde_bytes = "0.11"
 bytes = {version = "1.4", features = ["serde"]}

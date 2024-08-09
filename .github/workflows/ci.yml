@@ -16,7 +16,7 @@ jobs:
     strategy:
         fail-fast: false
         matrix:
-            os: [ubuntu, macos]
+            os: [ubuntu, macos, windows]
     timeout-minutes: 45
     steps:
         - uses: actions/checkout@v4
@@ -26,7 +26,6 @@ jobs:
         - run: cargo test --features arbitrary_precision
         - run: cargo test --features sort_keys
         - run: ./scripts/run_examples.sh
-        - run: ./scripts/sanitize.sh
 
   test-stable-self:
     name: Rust stable on self-hosted arm
@@ -46,7 +45,7 @@ jobs:
     strategy:
         fail-fast: false
         matrix:
-            os: [ubuntu, macos]
+            os: [ubuntu, macos, windows]
     timeout-minutes: 45
     steps:
         - uses: actions/checkout@v4
@@ -83,6 +82,20 @@ jobs:
       run: |
         cargo clippy --all-targets --all-features -- -D warnings
         cargo fmt -- --check
+
+  sanitize:
+    runs-on: [self-hosted, X64]
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+    - uses: actions-rs/clippy-check@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Sanitize
+      run: ./scripts/sanitize.sh
+        
 
 #   check-spelling:
 #     name: Check spelling
