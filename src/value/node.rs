@@ -863,6 +863,7 @@ impl Value {
         debug_assert!(self.is_container() || self.is_str());
         if self.is_static() {
             self.mark_shared(Shared::new_ptr());
+            self.mark_root();
         }
         self.shared()
     }

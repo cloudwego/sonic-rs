@@ -14,7 +14,8 @@ sanitize() {
     TARGET=$2
     TESTCASE=$3
     echo "Running tests with $SAN on $TARGET"
-    # # use single thread to make error info more readable and accurate
+    
+    # use single thread to make error info more readable and accurate
     RUSTFLAGS="-Zsanitizer=$SAN" RUSTDOCFLAGS="-Zsanitizer=$SAN" cargo test --target $TARGET $3 -- --test-threads=1
 
     RUSTFLAGS="-Zsanitizer=$SAN" RUSTDOCFLAGS="-Zsanitizer=$SAN" cargo test --doc --package sonic-rs --target $TARGET $3  -- --show-output --test-threads=1
