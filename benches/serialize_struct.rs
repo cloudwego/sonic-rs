@@ -1,12 +1,13 @@
 #[macro_use]
 extern crate criterion;
-
 use std::{fs::File, io::Read};
 
 use criterion::{criterion_group, BatchSize, Criterion, SamplingMode, Throughput};
+use schema::{canada::Canada, citm_catalog::CitmCatalog, twitter::Twitter};
 
+#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
-static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 fn diff_json(got: &str, expect: &str) -> bool {
     let value1: serde_json::Value = serde_json::from_str(got).unwrap();
@@ -99,11 +100,6 @@ macro_rules! bench_file {
         }
     };
 }
-
-use json_benchmark::{
-    canada::Canada,
-    copy::{citm_catalog::CitmCatalog, twitter::Twitter},
-};
 
 bench_file!(
     json: twitter,

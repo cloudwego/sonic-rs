@@ -4,9 +4,11 @@ extern crate criterion;
 use std::{fs::File, io::Read, str::from_utf8_unchecked};
 
 use criterion::{criterion_group, BatchSize, Criterion, SamplingMode, Throughput};
+use schema::{canada::Canada, citm_catalog::CitmCatalog, twitter::Twitter};
 
+#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
-static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 fn serde_json_parse_struct<'de, T>(data: &'de [u8]) -> serde_json::Result<T>
 where
@@ -135,8 +137,6 @@ macro_rules! bench_file {
         }
     };
 }
-
-use json_benchmark::{canada::Canada, citm_catalog::CitmCatalog, twitter::Twitter};
 
 bench_file!(
     json: twitter,

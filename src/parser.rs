@@ -181,7 +181,7 @@ where
     #[cold]
     pub(crate) fn error(&self, mut reason: ErrorCode) -> Error {
         // check invalid utf8 here at first
-        // FIXME: maybe has invalid utf8 when deserialzing into byte, and just bytes has other
+        // FIXME: maybe has invalid utf8 when deserializing into byte, and just bytes has other
         // errors?
         if let Err(e) = self.read.check_utf8_final() {
             return e;
