@@ -12,19 +12,6 @@ cfg_if::cfg_if! {
     }
 }
 
-#[inline]
-pub fn page_size() -> usize {
-    cfg_if::cfg_if! {
-        // fast path for most common arch
-        if #[cfg(any(target_os = "linux", target_os = "macos"))] {
-            4096
-        } else {
-            // slow path for portability
-            ::page_size::get()
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
