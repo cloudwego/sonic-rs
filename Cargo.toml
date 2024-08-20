@@ -15,7 +15,6 @@ categories = ["encoding", "parser-implementations"]
 
 [dependencies]
 cfg-if = "1.0"
-arrayref = "0.3"
 serde = { version = "1.0", features = ["rc", "derive"] }
 itoa = "1.0"
 ryu = "1.0"
@@ -26,7 +25,6 @@ bytes = "1.4"
 thiserror = "1.0"
 simdutf8 = "0.1"
 parking_lot = "0.12"
-page_size = "0.6"
 
 
 [target.'cfg(not(target_env = "msvc"))'.dev-dependencies]
@@ -76,6 +74,10 @@ harness = false
 
 [[bench]]
 name = "get_from"
+harness = false
+
+[[bench]]
+name = "value_operator"
 harness = false
 
 [features]

@@ -293,12 +293,38 @@ impl Object {
     }
 
     /// Returns an immutable iterator over the key-value pairs of the object.
+    ///
+    /// # Examples
+    /// ```
+    /// use sonic_rs::object;
+    ///
+    /// let obj = object! {"a": 1, "b": true, "c": null};
+    ///
+    /// for (key, value) in obj.iter() {
+    ///     println!("{}: {}", key, value);
+    /// }
+    /// ```
     #[inline]
     pub fn iter(&self) -> Iter<'_> {
         Iter(self.0.iter::<Pair>())
     }
 
     /// Returns an mutable iterator over  the key-value pairs of the object.
+    ///
+    /// # Examples
+    /// ```
+    /// use sonic_rs::{object, Value};
+    ///
+    /// let mut obj = object! {"a": 1, "b": true, "c": null};
+    ///
+    /// for (key, value) in obj.iter_mut() {
+    ///     *value = Value::from(key);
+    /// }
+    ///
+    /// assert_eq!(obj["a"], "a");
+    /// assert_eq!(obj["b"], "b");
+    /// assert_eq!(obj["c"], "c");
+    /// ```
     #[inline]
     pub fn iter_mut(&mut self) -> IterMut<'_> {
         IterMut(self.0.iter_mut::<Pair>())

@@ -12,7 +12,6 @@ use crate::{
         self, ControlCharacterWhileParsingString, InvalidEscape, InvalidUnicodeCodePoint,
     },
     util::{
-        arch::page_size,
         simd::{BitMask, Mask, Simd},
         unicode::handle_unicode_codepoint_mut,
     },
@@ -496,9 +495,18 @@ unsafe fn escape_unchecked(src: &mut *const u8, nb: &mut usize, dst: &mut *mut u
 }
 
 #[inline(always)]
-fn cross_page(ptr: *const u8, step: usize) -> bool {
-    let page_size = page_size();
-    ((ptr as usize & (page_size - 1)) + step) > page_size
+fn check_cross_page(ptr: *const u8, step: usize) -> bool {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        let page_size = 4096;
+        ((ptr as usize & (page_size - 1)) + step) > page_size
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        // not check page cross in fallback envs, always true
+        true
+    }
 }
 
 #[inline(always)]
@@ -565,7 +573,7 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
 
         let mut temp: [u8; LANES] = [0u8; LANES];
         while nb > 0 {
-            v = if cross_page(sptr, LANES) {
+            v = if check_cross_page(sptr, LANES) {
                 std::ptr::copy_nonoverlapping(sptr, temp[..].as_mut_ptr(), nb);
                 load(temp[..].as_ptr())
             } else {
