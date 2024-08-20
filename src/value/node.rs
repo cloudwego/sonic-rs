@@ -190,10 +190,6 @@ impl Value {
         self.meta.tag() < STRING && !self.is_static()
     }
 
-    pub(crate) fn is_shared(&self) -> bool {
-        !self.is_root() && !self.is_static()
-    }
-
     pub(crate) fn unmark_root(&mut self) {
         let tag = self.meta.tag();
         if tag >= STRING {
@@ -1493,10 +1489,7 @@ pub(crate) enum ValueState<'a> {
 #[inline]
 pub(crate) fn replace_value(dst: &mut Value, mut src: Value) -> Value {
     match dst.state() {
-        ValueState::Static(dst) => {
-            let old = std::mem::replace(dst, src);
-            return old;
-        }
+        ValueState::Static(dst) => return std::mem::replace(dst, src),
         ValueState::Shared(_) | ValueState::Inlined(_) => {}
         ValueState::Root(dst) => return std::mem::replace(dst, src),
     }

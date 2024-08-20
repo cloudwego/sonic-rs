@@ -6,7 +6,6 @@ use std::{
     str::from_utf8_unchecked,
 };
 
-use arrayref::array_ref;
 use faststr::FastStr;
 use serde::de::{self, Expected, Unexpected};
 use smallvec::SmallVec;
@@ -1237,7 +1236,7 @@ where
         let reader = &mut self.read;
 
         while let Some(chunk) = reader.peek_n(64) {
-            let input = array_ref![chunk, 0, 64];
+            let input = unsafe { &*(chunk.as_ptr() as *const [_; 64]) };
             if let Some(count) = skip_container_loop::<U8x64>(
                 input,
                 &mut prev_instring,
@@ -1311,7 +1310,7 @@ where
 
         // then we use simd to accelerate skipping space
         while let Some(chunk) = reader.peek_n(64) {
-            let chunk = array_ref![chunk, 0, 64];
+            let chunk = unsafe { &*(chunk.as_ptr() as *const [_; 64]) };
             let bitmap = unsafe { get_nonspace_bits(chunk) };
             if bitmap != 0 {
                 self.nospace_bits = bitmap;
@@ -1371,7 +1370,7 @@ where
 
         // then we use simd to accelerate skipping space
         while let Some(chunk) = reader.peek_n(64) {
-            let chunk = array_ref![chunk, 0, 64];
+            let chunk = unsafe { &*(chunk.as_ptr() as *const [_; 64]) };
             let bitmap = unsafe { get_nonspace_bits(chunk) };
             if bitmap != 0 {
                 self.nospace_bits = bitmap;

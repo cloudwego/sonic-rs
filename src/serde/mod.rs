@@ -7,7 +7,7 @@ pub(crate) mod ser;
 
 pub(crate) use self::de::tri;
 pub use self::{
-    de::{from_slice, from_slice_unchecked, from_str, Deserializer},
+    de::{from_slice, from_slice_unchecked, from_str, Deserializer, StreamDeserializer},
     number::{JsonNumberTrait, Number},
     rawnumber::RawNumber,
     ser::{

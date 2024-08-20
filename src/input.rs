@@ -9,7 +9,7 @@ use crate::{parser::as_str, util::private::Sealed};
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum JsonSlice<'de> {
     Raw(&'de [u8]),
-    FastStr(FastStr),
+    FastStr(FastStr), // note: FastStr maybe inlined and in the stack.
 }
 
 impl<'de> JsonSlice<'de> {

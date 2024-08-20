@@ -42,6 +42,7 @@ pub use crate::pointer::{JsonPointer, PointerNode, PointerTree};
 pub use crate::serde::{
     from_slice, from_slice_unchecked, from_str, to_string, to_string_pretty, to_vec, to_vec_pretty,
     to_writer, to_writer_pretty, Deserializer, JsonNumberTrait, Number, RawNumber, Serializer,
+    StreamDeserializer,
 };
 #[doc(inline)]
 pub use crate::value::{
