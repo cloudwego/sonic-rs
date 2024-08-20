@@ -8,3 +8,5 @@ rust-
 *.data
 opensource_git_commit.log
 Cargo.lock
+*.profraw
+*.profdata
