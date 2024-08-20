@@ -1,7 +1,7 @@
 //! Deserialize JSON data to a Rust data structure.
 
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
-use std::{mem::ManuallyDrop, ptr::slice_from_raw_parts};
+use std::{marker::PhantomData, mem::ManuallyDrop, ptr::slice_from_raw_parts};
 
 use serde::{
     de::{self, Expected, Unexpected},
@@ -18,6 +18,7 @@ use crate::{
     reader::{Read, Reader, Reference},
     util::num::ParserNumber,
     value::node::Value,
+    JsonInput,
 };
 
 const MAX_ALLOWED_DEPTH: u8 = u8::MAX;
@@ -29,6 +30,131 @@ pub struct Deserializer<R> {
     pub(crate) parser: Parser<R>,
     scratch: Vec<u8>,
     remaining_depth: u8,
+}
+
+// some functions only used for struct visitors.
+impl<'de, R: Reader<'de>> Deserializer<R> {
+    /// Create a new deserializer.
+    pub fn new(read: R) -> Self {
+        Self {
+            parser: Parser::new(read),
+            scratch: Vec::new(),
+            remaining_depth: MAX_ALLOWED_DEPTH,
+        }
+    }
+
+    /// Deserialize a JSON stream to a Rust data structure.
+    ///
+    /// It can be used repeatedly and we do not check trailing chars after deserilalized.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use sonic_rs::{prelude::*, Value};
+    ///
+    /// use sonic_rs::Deserializer;
+    ///
+    /// let multiple_json = r#"{"a": 123, "b": "foo"} true [1, 2, 3] wrong chars"#;
+    ///
+    /// let mut deserializer = Deserializer::from_json(multiple_json);
+    ///
+    /// let val: Value = deserializer.deserialize().unwrap();
+    /// assert_eq!(val["a"].as_i64().unwrap(), 123);
+    /// assert_eq!(val["b"].as_str().unwrap(), "foo");
+    ///
+    /// let val: bool = deserializer.deserialize().unwrap();
+    /// assert_eq!(val, true);
+    ///
+    /// let val: Vec<u8> = deserializer.deserialize().unwrap();
+    /// assert_eq!(val, &[1, 2, 3]);
+    ///
+    /// // encounter the wrong chars in json
+    /// assert!(deserializer.deserialize::<Value>().is_err());
+    /// ```
+    pub fn deserialize<T>(&mut self) -> Result<T>
+    where
+        T: de::Deserialize<'de>,
+    {
+        de::Deserialize::deserialize(self)
+    }
+
+    /// Convert Deserializer to a [`StreamDeserializer`].
+    pub fn into_stream<T>(self) -> StreamDeserializer<'de, T, R> {
+        StreamDeserializer {
+            de: self,
+            data: PhantomData,
+            lifetime: PhantomData,
+            is_ending: false,
+        }
+    }
+}
+
+impl<'de> Deserializer<Read<'de>> {
+    /// Create a new deserializer from a json input [`JsonInput`].
+    pub fn from_json<I: JsonInput<'de>>(input: I) -> Self {
+        Self::new(Read::from(input))
+    }
+
+    /// Create a new deserializer from a string.
+    #[allow(clippy::should_implement_trait)]
+    pub fn from_str(s: &'de str) -> Self {
+        Self::new(Read::from(s))
+    }
+
+    /// Create a new deserializer from a string slice.
+    pub fn from_slice(s: &'de [u8]) -> Self {
+        Self::new(Read::from(s))
+    }
+}
+
+/// An iterator that deserializes a json stream into multiple `T` values.
+///
+/// # Example
+///
+/// ```
+/// use sonic_rs::{prelude::*, Deserializer, Value};
+///
+/// let multiple_json = r#"{"a": 123, "b": "foo"} true [1, 2, 3] wrong chars"#;
+///
+/// let mut stream = Deserializer::from_json(multiple_json).into_stream::<Value>();
+///
+/// let val = stream.next().unwrap().unwrap();
+/// assert_eq!(val["a"].as_i64().unwrap(), 123);
+/// assert_eq!(val["b"].as_str().unwrap(), "foo");
+///
+/// let val = stream.next().unwrap().unwrap();
+/// assert_eq!(val, true);
+///
+/// let val = stream.next().unwrap().unwrap();
+/// assert_eq!(val, &[1, 2, 3]);
+///
+/// // encounter the wrong chars in json
+/// assert!(stream.next().unwrap().is_err());
+/// ```
+pub struct StreamDeserializer<'de, T, R> {
+    de: Deserializer<R>,
+    data: PhantomData<T>,
+    lifetime: PhantomData<&'de R>,
+    is_ending: bool,
+}
+
+impl<'de, T, R> Iterator for StreamDeserializer<'de, T, R>
+where
+    T: de::Deserialize<'de>,
+    R: Reader<'de>,
+{
+    type Item = Result<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.is_ending {
+            return None;
+        }
+        let val: Result<T> = self.de.deserialize();
+        if val.is_err() {
+            self.is_ending = true;
+        }
+        Some(val)
+    }
 }
 
 // We only use our own error type; no need for From conversions provided by the
@@ -100,14 +226,6 @@ macro_rules! impl_deserialize_number {
 
 // some functions only used for struct visitors.
 impl<'de, R: Reader<'de>> Deserializer<R> {
-    pub fn new(read: R) -> Self {
-        Self {
-            parser: Parser::new(read),
-            scratch: Vec::new(),
-            remaining_depth: MAX_ALLOWED_DEPTH,
-        }
-    }
-
     pub(crate) fn deserialize_number<V>(&mut self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,

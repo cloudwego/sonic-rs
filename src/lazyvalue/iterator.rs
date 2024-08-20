@@ -34,7 +34,14 @@ use crate::{
 ///     }
 /// }
 /// ```
-pub struct ObjectJsonIter<'de>(ObjectInner<'de>);
+pub struct ObjectJsonIter<'de> {
+    json: JsonSlice<'de>,
+    parser: Option<Parser<Read<'de>>>,
+    strbuf: Vec<u8>,
+    first: bool,
+    ending: bool,
+    check: bool,
+}
 
 /// A lazied iterator for JSON array text. It will parse the JSON when iterating.
 ///
@@ -63,18 +70,7 @@ pub struct ObjectJsonIter<'de>(ObjectInner<'de>);
 ///     }
 /// }
 /// ```
-pub struct ArrayJsonIter<'de>(ArrayInner<'de>);
-
-struct ObjectInner<'de> {
-    json: JsonSlice<'de>,
-    parser: Option<Parser<Read<'de>>>,
-    strbuf: Vec<u8>,
-    first: bool,
-    ending: bool,
-    check: bool,
-}
-
-struct ArrayInner<'de> {
+pub struct ArrayJsonIter<'de> {
     json: JsonSlice<'de>,
     parser: Option<Parser<Read<'de>>>,
     first: bool,
@@ -82,7 +78,7 @@ struct ArrayInner<'de> {
     check: bool,
 }
 
-impl<'de> ObjectInner<'de> {
+impl<'de> ObjectJsonIter<'de> {
     fn new(json: JsonSlice<'de>, check: bool) -> Self {
         Self {
             json,
@@ -131,7 +127,7 @@ impl<'de> ObjectInner<'de> {
     }
 }
 
-impl<'de> ArrayInner<'de> {
+impl<'de> ArrayJsonIter<'de> {
     fn new(json: JsonSlice<'de>, check: bool) -> Self {
         Self {
             json,
@@ -219,7 +215,7 @@ impl<'de> ArrayInner<'de> {
 /// }
 /// ```
 pub fn to_object_iter<'de, I: JsonInput<'de>>(json: I) -> ObjectJsonIter<'de> {
-    ObjectJsonIter(ObjectInner::new(json.to_json_slice(), true))
+    ObjectJsonIter::new(json.to_json_slice(), true)
 }
 
 /// Traverse the JSON array text through a lazy iterator. The JSON parsing will doing when
@@ -256,7 +252,7 @@ pub fn to_object_iter<'de, I: JsonInput<'de>>(json: I) -> ObjectJsonIter<'de> {
 /// }
 /// ```
 pub fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayJsonIter<'de> {
-    ArrayJsonIter(ArrayInner::new(json.to_json_slice(), true))
+    ArrayJsonIter::new(json.to_json_slice(), true)
 }
 
 /// Traverse the JSON text through a lazy object iterator. The JSON parsing will doing when
@@ -293,7 +289,7 @@ pub fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayJsonIter<'de> {
 /// }
 /// ```
 pub unsafe fn to_object_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> ObjectJsonIter<'de> {
-    ObjectJsonIter(ObjectInner::new(json.to_json_slice(), false))
+    ObjectJsonIter::new(json.to_json_slice(), false)
 }
 
 /// Traverse the JSON text through a lazy object iterator. The JSON parsing will doing when
@@ -327,14 +323,14 @@ pub unsafe fn to_object_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> Objec
 /// }
 /// ```
 pub unsafe fn to_array_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> ArrayJsonIter<'de> {
-    ArrayJsonIter(ArrayInner::new(json.to_json_slice(), false))
+    ArrayJsonIter::new(json.to_json_slice(), false)
 }
 
 impl<'de> Iterator for ObjectJsonIter<'de> {
     type Item = Result<(FastStr, LazyValue<'de>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next_entry_impl(self.0.check)
+        self.next_entry_impl(self.check)
     }
 }
 
@@ -342,7 +338,7 @@ impl<'de> Iterator for ArrayJsonIter<'de> {
     type Item = Result<LazyValue<'de>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0.next_elem_impl(self.0.check)
+        self.next_elem_impl(self.check)
     }
 }
 
