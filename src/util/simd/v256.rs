@@ -28,15 +28,16 @@ where
 
     #[inline(always)]
     fn bitmask(self) -> Self::BitMask {
-        cfg_if::cfg_if! {
-            if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
-                use std::arch::aarch64::uint8x16_t;
-                let(v0, v1) = self.0;
-                unsafe { super::neon::to_bitmask32(v0.0, v1.0) }
-            } else {
-                combine_u16(self.0.0.bitmask().as_primitive(), self.0.1.bitmask().as_primitive())
-            }
+        #[cfg(target_arch = "aarch64")]
+        if super::neon::is_supported() {
+            let (v0, v1) = self.0;
+            return unsafe { super::neon::to_bitmask32(v0.0, v1.0) };
         }
+
+        combine_u16(
+            self.0 .0.bitmask().as_primitive(),
+            self.0 .1.bitmask().as_primitive(),
+        )
     }
 
     #[inline(always)]

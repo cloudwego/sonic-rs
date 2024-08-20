@@ -604,9 +604,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
 
         // check invalid utf8 with allow space here
         let index = self.parser.read().index();
-        self.parser
-            .read()
-            .validate_utf8((start, index))?;
+        self.parser.read().validate_utf8((start, index))?;
 
         match value {
             Ok(value) => Ok(value),

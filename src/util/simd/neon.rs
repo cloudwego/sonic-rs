@@ -1,9 +1,24 @@
 use std::{
     arch::aarch64::*,
     ops::{BitAnd, BitOr, BitOrAssign},
+    sync::Once,
 };
 
 use super::{bits::NeonBits, Mask, Simd};
+
+#[inline]
+pub fn is_supported() -> bool {
+    unsafe {
+        static INIT: Once = Once::new();
+        static mut SUPPORTED: bool = false;
+
+        INIT.call_once(|| {
+            SUPPORTED = std::is_aarch64_feature_detected!("neon");
+        });
+
+        SUPPORTED
+    }
+}
 
 #[derive(Debug)]
 #[repr(transparent)]
