@@ -186,7 +186,7 @@ pub trait Formatter {
     {
         let buf = writer.reserve_with(value.len() * 6 + 32 + 3)?;
         let cnt = format_string(value, buf, need_quote);
-        unsafe { writer.flush_len(cnt) };
+        unsafe { writer.flush_len(cnt)? };
         Ok(())
     }
 
