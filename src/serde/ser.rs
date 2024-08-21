@@ -1317,3 +1317,26 @@ where
     };
     Ok(string)
 }
+
+#[cfg(test)]
+mod test {
+    use std::io;
+
+    use crate::{json, writer::BufferedWriter};
+
+    #[test]
+    fn behaves_equal() {
+        let object = json!({
+            "hello": "world",
+            "this_is_considered": "fast"
+        });
+
+        let mut cursor: io::Cursor<Vec<u8>> = io::Cursor::new(Vec::new());
+        let writer = BufferedWriter::new(&mut cursor);
+        crate::to_writer(writer, &object).unwrap();
+
+        let vec = crate::to_vec(&object).unwrap();
+
+        assert_eq!(vec, cursor.into_inner());
+    }
+}
