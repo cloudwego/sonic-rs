@@ -65,7 +65,7 @@ macro_rules! dispatch {
                     }
                 }
             } else if #[cfg(target_arch = "aarch64")] {
-                match self {
+                match $self {
                     Self::Neon(val) => {
                         val.$($stuff)*
                     },
@@ -74,7 +74,7 @@ macro_rules! dispatch {
                     }
                 }
             } else {
-                let Self::Scalar(val) = self;
+                let Self::Scalar(val) = $self;
                 val.$($stuff)*
             }
         }
@@ -98,7 +98,7 @@ where
                     (true, false) => Self::Sse2(inner::Parser::new(read)),
                 }
             } else if #[cfg(target_arch = "aarch64")] {
-                if is_aarch64_feature_detected!("neon") {
+                if std::arch::is_aarch64_feature_detected!("neon") {
                     Self::Neon(inner::Parser::new(read))
                 } else {
                     Self::Scalar(inner::Parser::new(read))

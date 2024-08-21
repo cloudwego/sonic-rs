@@ -13,7 +13,7 @@ pub fn is_supported() -> bool {
         static mut SUPPORTED: bool = false;
 
         INIT.call_once(|| {
-            SUPPORTED = std::is_aarch64_feature_detected!("neon");
+            SUPPORTED = std::arch::is_aarch64_feature_detected!("neon");
         });
 
         SUPPORTED
