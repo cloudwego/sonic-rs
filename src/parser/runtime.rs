@@ -89,16 +89,17 @@ where
     pub fn new(read: R) -> Self {
         cfg_if::cfg_if! {
             if #[cfg(target_arch = "x86_64")] {
-                let has_sse2 = is_x86_feature_detected!("sse2");
-                let has_avx2 = is_x86_feature_detected!("avx2");
+                use crate::util::simd::{avx2, sse2};
 
-                match (has_sse2, has_avx2) {
+                match (sse2::is_supported(), avx2::is_supported()) {
                     (false, false) => Self::Scalar(inner::Parser::new(read)),
                     (_, true) => Self::Avx2(inner::Parser::new(read)),
                     (true, false) => Self::Sse2(inner::Parser::new(read)),
                 }
             } else if #[cfg(target_arch = "aarch64")] {
-                if std::arch::is_aarch64_feature_detected!("neon") {
+                use crate::util::simd::neon;
+
+                if neon::is_supported() {
                     Self::Neon(inner::Parser::new(read))
                 } else {
                     Self::Scalar(inner::Parser::new(read))

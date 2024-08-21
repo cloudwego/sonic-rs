@@ -1,10 +1,25 @@
 use std::{
     arch::x86_64::*,
     ops::{BitAnd, BitOr, BitOrAssign},
+    sync::Once,
 };
 
 use super::{Mask, Simd};
 use crate::impl_lanes;
+
+#[inline]
+pub fn is_supported() -> bool {
+    unsafe {
+        static INIT: Once = Once::new();
+        static mut SUPPORTED: bool = false;
+
+        INIT.call_once(|| {
+            SUPPORTED = std::arch::is_x86_feature_detected!("sse2");
+        });
+
+        SUPPORTED
+    }
+}
 
 #[derive(Debug)]
 #[repr(transparent)]
