@@ -308,7 +308,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     {
         let shared = self.parser.get_shared_inc_count();
         let mut val = Value::new_null(shared.data_ptr());
-        let val = if self.parser.read.index() == 0 {
+        let mut val = if self.parser.read.index() == 0 {
             // get n to check trailing characters in later
             let n = val.parse_with_padding(self.parser.read.as_u8_slice())?;
             self.parser.read.eat(n);
@@ -321,10 +321,10 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         };
 
         // deserialize `Value` must be root node
-        debug_assert!(val.is_static() || val.is_root());
-        if !val.shared_parts().is_null() {
+        if !val.is_scalar() {
             std::mem::forget(shared);
         }
+        val.mark_root();
 
         let val = ManuallyDrop::new(val);
         // #Safety

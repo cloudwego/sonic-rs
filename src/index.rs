@@ -66,7 +66,7 @@ impl<I: Index> std::ops::IndexMut<I> for Value {
     ///
     /// ```
     /// # use sonic_rs::json;
-    /// #
+    /// # use sonic_rs::object;
     /// let mut data = json!({ "x": 0, "z": null });
     ///
     /// // replace an existing key
@@ -84,11 +84,14 @@ impl<I: Index> std::ops::IndexMut<I> for Value {
     /// //insert an key in a null value
     /// data["z"]["zz"] = json!("insert in null");
     ///
+    /// data["z"]["zz1"] = object!{}.into();
+    ///
+    ///
     /// assert_eq!(data, json!({
     ///   "x": 1,
     ///   "y": [true, 2, 3],
     ///   "a": { "b": {"c": {"d": true}}},
-    ///    "z": {"zz": "insert in null"}
+    ///    "z": {"zz": "insert in null", "zz1": {}}
     /// }));
     /// ```
     #[inline]
@@ -182,6 +185,7 @@ macro_rules! impl_str_index {
                         if shared.is_null() {
                             shared = Shared::new_ptr();
                             *v = Value::new_object(shared, 8);
+                            v.mark_root();
                         } else {
                             unsafe { std::ptr::write(v, Value::new_object(shared, DEFAULT_OBJ_CAP)) };
                         }
@@ -282,3 +286,4 @@ where
         (**self).as_key()
     }
 }
+
