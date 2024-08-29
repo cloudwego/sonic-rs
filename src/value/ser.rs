@@ -781,7 +781,7 @@ mod test {
 
     use serde::{Deserialize, Serialize};
 
-    use crate::{to_value, JsonValueTrait, Value};
+    use crate::{to_value, Value};
 
     #[derive(Debug, serde::Serialize, Hash, Default, Eq, PartialEq)]
     struct User {
@@ -836,7 +836,10 @@ mod test {
     }
 
     #[test]
+    #[cfg(not(feature = "arbitrary_precision"))]
     fn test_to_value2() {
+        use crate::prelude::*;
+
         let mut value = Value::default();
 
         let args = CommonArgs {
