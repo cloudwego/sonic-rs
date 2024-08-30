@@ -8,32 +8,36 @@ use sonic_rs::{
     to_object_iter_unchecked, value::JsonContainerTrait, JsonNumberTrait, JsonValueTrait, Value,
 };
 
-macro_rules! test_struct {
-    ($ty:ty, $data:expr) => {
-        match serde_json::from_slice::<$ty>($data) {
-            Ok(jv) => {
-                let sv = sonic_rs::from_slice::<$ty>($data).expect(&format!(
-                    "parse valid json {:?} failed for type {}",
-                    $data,
-                    stringify!($ty)
-                ));
-                assert_eq!(sv, jv);
+macro_rules! test_type {
+    ($data:expr, $($ty:ty),+) => {
+        $(
+            {
+                match serde_json::from_slice::<$ty>($data) {
+                    Ok(jv) => {
+                        let sv: $ty = sonic_rs::from_slice::<$ty>($data).expect(&format!(
+                            "parse valid json {:?} failed for type {}",
+                            $data,
+                            stringify!($ty)
+                        ));
+                        assert_eq!(sv, jv);
 
-                // fuzz the struct to_string
-                let sout = sonic_rs::to_string(&sv).unwrap();
-                let jout = serde_json::to_string(&jv).unwrap();
-                let sv = sonic_rs::from_str::<$ty>(&sout).unwrap();
-                let jv = serde_json::from_str::<$ty>(&jout).unwrap();
-                assert_eq!(sv, jv);
+                        // Fuzz the struct to_string
+                        let sout = sonic_rs::to_string(&sv).unwrap();
+                        let jout = serde_json::to_string(&jv).unwrap();
+                        let sv: $ty = sonic_rs::from_str::<$ty>(&sout).unwrap();
+                        let jv: $ty = serde_json::from_str::<$ty>(&jout).unwrap();
+                        assert_eq!(sv, jv);
+                    }
+                    Err(_) => {
+                        let _ = sonic_rs::from_slice::<$ty>($data).expect_err(&format!(
+                            "parse invalid json {:?} wrong for type {}",
+                            $data,
+                            stringify!($ty)
+                        ));
+                    }
+                }
             }
-            Err(_) => {
-                let _ = sonic_rs::from_slice::<$ty>($data).expect_err(&format!(
-                    "parse invalid json {:?} wrong for type {}",
-                    $data,
-                    stringify!($ty)
-                ));
-            }
-        }
+        )*
     };
 }
 
@@ -99,13 +103,9 @@ fuzz_target!(|data: &[u8]| {
         }
     }
 
-    test_struct!(TestStruct, data);
-    test_struct!(Foo, data);
-    test_struct!(Enum, data);
-    test_struct!(String, data);
-    test_struct!(f64, data);
-    test_struct!(u64, data);
-    test_struct!(i64, data);
+    test_type!(
+        data, TestStruct, Enum, Foo, String, f64, u8, u16, u32, u64, u128, i8, i16, i32, i64, i128
+    );
 });
 
 fn compare_lazyvalue(jv: &JValue, sv: &sonic_rs::LazyValue) {
