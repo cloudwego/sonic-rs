@@ -268,13 +268,13 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         match self.parser.read().peek() {
             Some(b'0') => {
                 buf.push('0');
+                self.parser.read().eat(1);
                 // There can be only one leading '0'.
                 if let Some(ch) = self.parser.read().peek() {
                     if ch.is_ascii_digit() {
                         return Err(self.parser.error(ErrorCode::InvalidNumber));
                     }
                 }
-                self.parser.read().eat(1);
                 Ok(())
             }
             Some(c) if c.is_ascii_digit() => {
@@ -308,7 +308,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     {
         let shared = self.parser.get_shared_inc_count();
         let mut val = Value::new_null(shared.data_ptr());
-        let val = if self.parser.read().index() == 0 {
+        let mut val = if self.parser.read().index() == 0 {
             // get n to check trailing characters in later
             let n = val.parse_with_padding(self.parser.read().as_u8_slice())?;
             self.parser.read().eat(n);
@@ -321,10 +321,10 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         };
 
         // deserialize `Value` must be root node
-        debug_assert!(val.is_static() || val.is_root());
-        if !val.shared_parts().is_null() {
+        if !val.is_scalar() {
             std::mem::forget(shared);
         }
+        val.mark_root();
 
         let val = ManuallyDrop::new(val);
         // #Safety

@@ -1194,6 +1194,7 @@ impl Value {
 
     #[inline]
     pub(crate) fn grow<T>(&mut self, capacity: usize) {
+        assert!(self.is_array() || self.is_object());
         if self.is_static() {
             self.mark_shared(Shared::new_ptr());
             self.mark_root();
@@ -1367,7 +1368,6 @@ impl Value {
         parser.parse_value(&mut visitor)?;
         self.data = visitor.nodes()[0].data;
         self.meta = visitor.nodes()[0].meta;
-        self.mark_root();
         Ok(parser.read().index())
     }
 
@@ -1388,7 +1388,6 @@ impl Value {
         parser.parse_value_without_padding(&mut visitor)?;
         self.data = visitor.nodes()[0].data;
         self.meta = visitor.nodes()[0].meta;
-        self.mark_root();
         Ok(())
     }
 
@@ -1414,6 +1413,10 @@ impl Value {
 
     fn str(&self) -> &str {
         unsafe { &*(self.data.sval) }
+    }
+
+    pub(crate) fn is_scalar(&self) -> bool {
+        self.meta.tag() < STRING
     }
 
     pub(crate) fn str_len(&self) -> usize {

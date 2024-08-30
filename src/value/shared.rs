@@ -116,28 +116,3 @@ impl Drop for SharedCtxGuard {
         set_shared(self.old);
     }
 }
-
-pub(crate) struct CheckCtxGuard {
-    is_root: bool,
-}
-
-impl CheckCtxGuard {
-    /// assign `new_shared` into SharedCtx
-    pub(crate) fn new() -> Self {
-        let old = get_shared();
-        if old.is_null() {
-            set_shared(Shared::new_ptr());
-            Self { is_root: true }
-        } else {
-            Self { is_root: false }
-        }
-    }
-}
-
-impl Drop for CheckCtxGuard {
-    fn drop(&mut self) {
-        if self.is_root {
-            set_shared(std::ptr::null());
-        }
-    }
-}

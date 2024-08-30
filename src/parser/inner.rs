@@ -2176,7 +2176,10 @@ where
             b'"' => {
                 let mut scratch = Vec::new();
                 match self.parse_str_impl(&mut scratch) {
-                    Ok(s) => de::Error::invalid_type(Unexpected::Str(&s), exp),
+                    Ok(s) if std::str::from_utf8(s.as_bytes()).is_ok() => {
+                        de::Error::invalid_type(Unexpected::Str(&s), exp)
+                    }
+                    Ok(s) => de::Error::invalid_type(Unexpected::Bytes(s.as_bytes()), exp),
                     Err(err) => return err,
                 }
             }

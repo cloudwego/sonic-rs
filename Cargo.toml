@@ -1,6 +1,6 @@
 [package]
 name = "sonic-rs"
-version = "0.3.11"
+version = "0.3.12"
 authors = ["Volo Team <volo@cloudwego.io>"]
 edition = "2021"
 description = "Sonic-rs is a fast Rust JSON library based on SIMD"
@@ -18,7 +18,7 @@ cfg-if = "1.0"
 serde = { version = "1.0", features = ["rc", "derive"] }
 itoa = "1.0"
 ryu = "1.0"
-faststr = "0.2"
+faststr = { version = "0.2", features = ["serde"] }
 smallvec = "1.11"
 bumpalo = "3.13"
 bytes = "1.4"

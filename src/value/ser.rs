@@ -12,7 +12,6 @@ use crate::{
     serde::ser::key_must_be_str_or_num,
     util::arc::Arc,
     value::node::Value,
-    JsonValueTrait,
 };
 
 /// Convert a `T` into `sonic_rs::Value` which can represent any valid JSON data.
@@ -64,16 +63,13 @@ pub fn to_value<T>(value: &T) -> Result<Value>
 where
     T: ?Sized + Serialize,
 {
-    let shared = Arc::new(Shared::new());
-    let mut value = to_value_in(
-        unsafe { NonNull::new_unchecked(shared.data_ptr() as *mut _) },
-        value,
-    )?;
-    if value.is_number() {
+    let shared = Shared::new_ptr();
+    let mut value = to_value_in(unsafe { NonNull::new_unchecked(shared as *mut _) }, value)?;
+    if value.is_scalar() {
         value.mark_shared(std::ptr::null());
+        std::mem::drop(unsafe { Arc::from_raw(shared) });
     } else {
         value.mark_root();
-        std::mem::forget(shared);
     }
     Ok(value)
 }
@@ -783,7 +779,9 @@ where
 mod test {
     use std::collections::HashMap;
 
-    use super::*;
+    use serde::{Deserialize, Serialize};
+
+    use crate::{to_value, Value};
 
     #[derive(Debug, serde::Serialize, Hash, Default, Eq, PartialEq)]
     struct User {
@@ -824,5 +822,39 @@ mod test {
         let got = to_value(&map);
         println!("{:?}", got);
         assert!(got.is_err());
+    }
+
+    #[derive(Default, Clone, Serialize, Deserialize, Debug)]
+    pub struct CommonArgs {
+        pub app_name: Option<String>,
+    }
+
+    #[derive(Default, Clone, Serialize, Deserialize, Debug)]
+    struct Foo {
+        a: i64,
+        b: Vec<Value>,
+    }
+
+    #[test]
+    #[cfg(not(feature = "arbitrary_precision"))]
+    fn test_to_value2() {
+        use crate::prelude::*;
+
+        let mut value = Value::default();
+
+        let args = CommonArgs {
+            app_name: Some("test".to_string()),
+        };
+        let foo: Foo =
+            crate::from_str(r#"{"a": 1, "b":[123, "a", {}, [], {"a":null}, ["b"], 1.23]}"#)
+                .unwrap();
+
+        value["arg"] = to_value(&args).unwrap_or_default();
+        value["bool"] = to_value(&true).unwrap_or_default();
+        value["foo"] = to_value(&foo).unwrap_or_default();
+        value["arr"] = to_value(&[1, 2, 3]).unwrap_or_default();
+        value["arr"][2] = to_value(&args).unwrap_or_default();
+
+        assert_eq!(value["arr"][2]["app_name"].as_str(), Some("test"));
     }
 }
