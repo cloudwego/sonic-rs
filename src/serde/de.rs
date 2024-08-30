@@ -268,13 +268,13 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         match self.parser.read.peek() {
             Some(b'0') => {
                 buf.push('0');
+                self.parser.read.eat(1);
                 // There can be only one leading '0'.
                 if let Some(ch) = self.parser.read.peek() {
                     if ch.is_ascii_digit() {
                         return Err(self.parser.error(ErrorCode::InvalidNumber));
                     }
                 }
-                self.parser.read.eat(1);
                 Ok(())
             }
             Some(c) if c.is_ascii_digit() => {
