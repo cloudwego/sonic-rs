@@ -13,7 +13,7 @@ fn main() {
     let nodes = unsafe { sonic_rs::get_many_unchecked(json, &tree) };
 
     // the node order is as the order of `add_path`
-    for val in nodes.unwrap() {
+    for val in nodes {
         println!("{}", val.as_ref().as_ref().unwrap().as_raw_str());
         // 123
         // "found"

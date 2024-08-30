@@ -2110,14 +2110,16 @@ where
         &mut self,
         tree: &PointerTree,
         is_safe: bool,
-    ) -> Result<Vec<Rc<Result<LazyValue<'de>>>>> {
+    ) -> Vec<Rc<Result<LazyValue<'de>>>> {
         let mut strbuf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);
         let mut remain = tree.size();
         let mut out = Vec::with_capacity(tree.size());
         out.resize(tree.size(), Rc::new(Ok(LazyValue::default())));
         let cur = &tree.root;
-        self.get_many_rec(cur, &mut out, &mut strbuf, &mut remain, is_safe)?;
-        Ok(out)
+        if let Err(err) = self.get_many_rec(cur, &mut out, &mut strbuf, &mut remain, is_safe) {
+            out.fill(Rc::new(Err(err)));
+        }
+        out
     }
 
     #[inline]

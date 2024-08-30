@@ -212,7 +212,7 @@ where
 pub unsafe fn get_many_unchecked<'de, Input>(
     json: Input,
     tree: &PointerTree,
-) -> Result<Vec<Rc<Result<LazyValue<'de>>>>>
+) -> Vec<Rc<Result<LazyValue<'de>>>>
 where
     Input: JsonInput<'de>,
 {
@@ -421,22 +421,21 @@ where
 /// assert_eq!(nodes[0].as_raw_str(), "123");
 /// assert_eq!(nodes[1].as_raw_str(), "\"found\"");
 /// ```
-pub fn get_many<'de, Input>(
-    json: Input,
-    tree: &PointerTree,
-) -> Result<Vec<Rc<Result<LazyValue<'de>>>>>
+pub fn get_many<'de, Input>(json: Input, tree: &PointerTree) -> Vec<Rc<Result<LazyValue<'de>>>>
 where
     Input: JsonInput<'de>,
 {
     let slice = json.to_u8_slice();
     let reader = Read::new(slice, false);
     let mut parser = Parser::new(reader);
-    let nodes = parser.get_many(tree, true);
+    let mut nodes = parser.get_many(tree, true);
 
     // validate the utf-8 if slice
     let index = parser.read.index();
     if json.need_utf8_valid() {
-        from_utf8(&slice[..index])?;
+        if let Err(err) = from_utf8(&slice[..index]) {
+            nodes.fill(Rc::new(Err(err)));
+        }
     }
     nodes
 }
@@ -624,8 +623,8 @@ mod test {
         );
 
         let tree = build_tree();
-        test_many_ok(unsafe { get_many_unchecked(&json, &tree).unwrap() });
-        test_many_ok(get_many(&json, &tree).unwrap());
+        test_many_ok(unsafe { get_many_unchecked(&json, &tree) });
+        test_many_ok(get_many(&json, &tree));
 
         fn test_many_ok(many: Vec<Rc<Result<LazyValue<'_>>>>) {
             assert_eq!(
