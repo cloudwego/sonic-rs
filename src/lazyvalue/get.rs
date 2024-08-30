@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use bytes::Bytes;
 use faststr::FastStr;
 
@@ -210,7 +212,7 @@ where
 pub unsafe fn get_many_unchecked<'de, Input>(
     json: Input,
     tree: &PointerTree,
-) -> Result<Vec<LazyValue<'de>>>
+) -> Result<Vec<Rc<Result<LazyValue<'de>>>>>
 where
     Input: JsonInput<'de>,
 {
@@ -419,21 +421,24 @@ where
 /// assert_eq!(nodes[0].as_raw_str(), "123");
 /// assert_eq!(nodes[1].as_raw_str(), "\"found\"");
 /// ```
-pub fn get_many<'de, Input>(json: Input, tree: &PointerTree) -> Result<Vec<LazyValue<'de>>>
+pub fn get_many<'de, Input>(
+    json: Input,
+    tree: &PointerTree,
+) -> Result<Vec<Rc<Result<LazyValue<'de>>>>>
 where
     Input: JsonInput<'de>,
 {
     let slice = json.to_u8_slice();
     let reader = Read::new(slice, false);
     let mut parser = Parser::new(reader);
-    let nodes = parser.get_many(tree, true)?;
+    let nodes = parser.get_many(tree, true);
 
     // validate the utf-8 if slice
     let index = parser.read.index();
     if json.need_utf8_valid() {
         from_utf8(&slice[..index])?;
     }
-    Ok(nodes)
+    nodes
 }
 
 #[cfg(test)]
@@ -622,18 +627,24 @@ mod test {
         test_many_ok(unsafe { get_many_unchecked(&json, &tree).unwrap() });
         test_many_ok(get_many(&json, &tree).unwrap());
 
-        fn test_many_ok(many: Vec<LazyValue<'_>>) {
-            assert_eq!(many[0].as_raw_str(), "\"hello, world!\"");
+        fn test_many_ok(many: Vec<Rc<Result<LazyValue<'_>>>>) {
             assert_eq!(
-                many[1].as_raw_str(),
+                many[0].as_ref().as_ref().unwrap().as_raw_str(),
+                "\"hello, world!\""
+            );
+            assert_eq!(
+                many[1].as_ref().as_ref().unwrap().as_raw_str(),
                 "{\n                        \"a_b_c\":\"hello, world!\"\n                    }"
             );
-            assert_eq!(many[2].as_raw_str(), "1");
-            assert_eq!(many[3].as_raw_str(), "{\n                    \"a_b\":{\n                        \"a_b_c\":\"hello, world!\"\n                    },\n                    \"a_a\": [0, 1, 2]\n                }");
-            assert_eq!(many[4].as_raw_str(), many[3].as_raw_str());
-            assert_eq!(many[5].as_raw_str(), "true");
+            assert_eq!(many[2].as_ref().as_ref().unwrap().as_raw_str(), "1");
+            assert_eq!(many[3].as_ref().as_ref().unwrap().as_raw_str(), "{\n                    \"a_b\":{\n                        \"a_b_c\":\"hello, world!\"\n                    },\n                    \"a_a\": [0, 1, 2]\n                }");
+            assert_eq!(
+                many[4].as_ref().as_ref().unwrap().as_raw_str(),
+                many[3].as_ref().as_ref().unwrap().as_raw_str()
+            );
+            assert_eq!(many[5].as_ref().as_ref().unwrap().as_raw_str(), "true");
             // we have strip the leading or trailing spaces
-            assert_eq!(many[6].as_raw_str(), "{\n                \"b\": [0, 1, true],\n                \"a\": {\n                    \"a_b\":{\n                        \"a_b_c\":\"hello, world!\"\n                    },\n                    \"a_a\": [0, 1, 2]\n                }\n            }");
+            assert_eq!(many[6].as_ref().as_ref().unwrap().as_raw_str(), "{\n                \"b\": [0, 1, true],\n                \"a\": {\n                    \"a_b\":{\n                        \"a_b_c\":\"hello, world!\"\n                    },\n                    \"a_a\": [0, 1, 2]\n                }\n            }");
         }
     }
 }

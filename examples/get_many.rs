@@ -14,7 +14,7 @@ fn main() {
 
     // the node order is as the order of `add_path`
     for val in nodes.unwrap() {
-        println!("{}", val.as_raw_str());
+        println!("{}", val.as_ref().as_ref().unwrap().as_raw_str());
         // 123
         // "found"
     }

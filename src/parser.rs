@@ -1,6 +1,7 @@
 use std::{
     num::NonZeroU8,
     ops::Deref,
+    rc::Rc,
     slice::{from_raw_parts, from_raw_parts_mut},
     str::from_utf8_unchecked,
 };
@@ -1811,7 +1812,7 @@ where
     fn get_many_rec(
         &mut self,
         node: &PointerTreeNode,
-        out: &mut Vec<LazyValue<'de>>,
+        out: &mut Vec<Rc<Result<LazyValue<'de>>>>,
         strbuf: &mut Vec<u8>,
         remain: &mut usize,
         is_safe: bool,
@@ -1829,34 +1830,33 @@ where
 
         // need write to out, record the start position
         let start = self.read.index();
-        let slice: &'de [u8];
 
         let mut status = ParseStatus::None;
-        match &node.children {
-            PointerTreeInner::Empty => {
-                status = self.skip_one()?.1;
-            }
+        let get_result = match &node.children {
+            PointerTreeInner::Empty => self.skip_one().map(|r| status = r.1),
             PointerTreeInner::Index(midxs) => {
                 if is_safe {
-                    self.get_many_index(midxs, strbuf, out, remain)?
+                    self.get_many_index(midxs, strbuf, out, remain)
                 } else {
-                    self.get_many_index_unchecked(midxs, strbuf, out, remain)?
+                    self.get_many_index_unchecked(midxs, strbuf, out, remain)
                 }
             }
             PointerTreeInner::Key(mkeys) => {
                 if is_safe {
-                    self.get_many_keys(mkeys, strbuf, out, remain)?
+                    self.get_many_keys(mkeys, strbuf, out, remain)
                 } else {
-                    self.get_many_keys_unchecked(mkeys, strbuf, out, remain)?
+                    self.get_many_keys_unchecked(mkeys, strbuf, out, remain)
                 }
             }
         };
 
         if !node.order.is_empty() {
-            slice = self.read.slice_unchecked(start, self.read.index());
-            let lv = LazyValue::new(slice.into(), status == ParseStatus::HasEscaped)?;
+            let get_result = Rc::new(get_result.and_then(|()| {
+                let slice = self.read.slice_unchecked(start, self.read.index());
+                LazyValue::new(slice.into(), status == ParseStatus::HasEscaped)
+            }));
             for p in &node.order {
-                out[*p] = lv.clone();
+                out[*p] = get_result.clone();
             }
             *remain -= node.order.len();
         }
@@ -1868,7 +1868,7 @@ where
         &mut self,
         mkeys: &MultiKey,
         strbuf: &mut Vec<u8>,
-        out: &mut Vec<LazyValue<'de>>,
+        out: &mut Vec<Rc<Result<LazyValue<'de>>>>,
         remain: &mut usize,
     ) -> Result<()> {
         debug_assert!(strbuf.is_empty());
@@ -1931,7 +1931,7 @@ where
         &mut self,
         mkeys: &MultiKey,
         strbuf: &mut Vec<u8>,
-        out: &mut Vec<LazyValue<'de>>,
+        out: &mut Vec<Rc<Result<LazyValue<'de>>>>,
         remain: &mut usize,
     ) -> Result<()> {
         debug_assert!(strbuf.is_empty());
@@ -1997,7 +1997,7 @@ where
         &mut self,
         midx: &MultiIndex,
         strbuf: &mut Vec<u8>,
-        out: &mut Vec<LazyValue<'de>>,
+        out: &mut Vec<Rc<Result<LazyValue<'de>>>>,
         remain: &mut usize,
     ) -> Result<()> {
         match self.skip_space() {
@@ -2058,7 +2058,7 @@ where
         &mut self,
         midx: &MultiIndex,
         strbuf: &mut Vec<u8>,
-        out: &mut Vec<LazyValue<'de>>,
+        out: &mut Vec<Rc<Result<LazyValue<'de>>>>,
         remain: &mut usize,
     ) -> Result<()> {
         match self.skip_space() {
@@ -2110,11 +2110,11 @@ where
         &mut self,
         tree: &PointerTree,
         is_safe: bool,
-    ) -> Result<Vec<LazyValue<'de>>> {
+    ) -> Result<Vec<Rc<Result<LazyValue<'de>>>>> {
         let mut strbuf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);
         let mut remain = tree.size();
-        let mut out: Vec<LazyValue<'de>> = Vec::with_capacity(tree.size());
-        out.resize(tree.size(), LazyValue::default());
+        let mut out = Vec::with_capacity(tree.size());
+        out.resize(tree.size(), Rc::new(Ok(LazyValue::default())));
         let cur = &tree.root;
         self.get_many_rec(cur, &mut out, &mut strbuf, &mut remain, is_safe)?;
         Ok(out)
