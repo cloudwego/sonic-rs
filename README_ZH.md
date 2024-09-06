@@ -14,9 +14,9 @@
 sonic-rs 是一个基于 SIMD 的高性能 JSON 库。它参考了其他开源库如 [sonic_cpp](https://github.com/bytedance/sonic-cpp)，[serde_json](https://github.com/serde-rs/json)，[sonic](https://github.com/bytedance/sonic)，[simdjson](https://github.com/simdjson/simdjson)，[rust-std](https://github.com/rust-lang/rust/tree/master/library/core/src/num) 等。
 
 
-***对于 Golang 用户迁移 Rust 使用 `sonic_rs`, 请参考 [for_Golang_user_zh.md](docs/for_Golang_user_zh.md)***
+***对于 Golang 用户迁移 Rust 使用 `sonic_rs`, 请参考 [for_Golang_user_zh.md](https://github.com/cloudwego/sonic-rs/blob/main/docs/for_Golang_user_zh.md)***
 
-***对于 用户从 `serde_json` 迁移 `sonic_rs`, 请参考 [serdejson_compatibility](docs/serdejson_compatibility.md)***
+***对于 用户从 `serde_json` 迁移 `sonic_rs`, 请参考 [serdejson_compatibility](https://github.com/cloudwego/sonic-rs/blob/main/docs/serdejson_compatibility.md)***
 
 ## ***要求/注意事项***
 
@@ -454,6 +454,11 @@ sonic-rs 默认使用和 Rust 标准库一致的浮点数精度，无需像 `ser
 Thanks the following open-source libraries. sonic-rs has some references to other open-source libraries like [sonic_cpp](https://github.com/bytedance/sonic-cpp), [serde_json](https://github.com/serde-rs/json), [sonic](https://github.com/bytedance/sonic), [simdjson](https://github.com/simdjson/simdjson), [yyjson](https://github.com/ibireme/yyjson), [rust-std](https://github.com/rust-lang/rust/tree/master/library/core/src/num) and so on.
 
 我们为了性能重写了来自 sonic-cpp/sonic/simdjson/yyjson 的许多 SIMD 算法。我们重用了来自 serde_json 的反/序列化代码，并修改了必要的部分以与 serde 高度兼容。我们重用了来自 rust-std 的部分浮点解析代码，使其结构更准确。
+
+参考论文:
+1. [Parsing Gigabytes of JSON per Second](https://arxiv.org/abs/1902.08318)
+2. [JSONSki: streaming semi-structured data with bit-parallel fast-forwarding](https://dl.acm.org/doi/10.1145/3503222.3507719)
+
 
 ## 如何贡献
 

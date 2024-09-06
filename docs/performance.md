@@ -4,7 +4,7 @@ This document will introduce some performance optimization details of sonic-rs (
 
 ## Get fields from JSON/parsing JSON on-demand
 
-The on-demand parsing algorithm focuses on skipping unnecessary fields, and the challenge lies in skipping JSON containers, including JSON Objects and JSON Arrays. This is because we need to pay attention to the brackets in the JSON string, such as `{ "key": "value {}"}`. We utilize the SIMD instructions to calculate the bitmap of the string, and then by counting the number of brackets, we can skip the entire JSON container.
+The on-demand parsing algorithm focuses on skipping unnecessary fields, and the challenge lies in skipping JSON containers, including JSON Objects and JSON Arrays. This is because we need to pay attention to the brackets in the JSON string, such as `{ "key": "value {}"}`. We utilize the SIMD instructions to calculate the bitmap of the string, and then by counting the number of brackets, we can skip the entire JSON container. Reference the paper [JSONSki](https://dl.acm.org/doi/10.1145/3503222.3507719).
 
 The overall algorithm is as follows:
 
@@ -118,7 +118,7 @@ In addition, we also optimize for compact JSON and cases where there's only one 
 
 ## Float number parsing using SIMD
 
-Parsing floating-point numbers is one of the most time-consuming operations in JSON parsing. For 16-length number strings, we can directly use SIMD instructions for parsing, as it can read ASCII number characters and accumulate them step by step. Refer to ‎[simd_str2int](https://github.com/cloudwego/sonic-rs/blob/main/src/util/arch/x86_64.rs#L115) for the specific algorithm. This algorithm comes from [sonic-cpp](https://github.com/bytedance/sonic-cpp/blob/master/include/sonic/internal/arch/sse/str2int.h).
+Parsing floating-point numbers is one of the most time-consuming operations in JSON parsing. For 16-length number strings, we can directly use SIMD instructions for parsing, as it can read ASCII number characters and accumulate them step by step. Refer to [simd_str2int](https://github.com/cloudwego/sonic-rs/blob/main/src/util/arch/x86_64.rs#L115) for the specific algorithm. This algorithm comes from [sonic-cpp](https://github.com/bytedance/sonic-cpp/blob/master/include/sonic/internal/arch/sse/str2int.h).
 
 When parsing floating-point numbers, we only need to consider 17 significant digit bits for 64-bit floating-point numbers according to the IEEE754 specification. Thus, in this function, we employ a switch table to decrease unnecessary SIMD instructions.
 

@@ -16,14 +16,10 @@
 
   建议使用 `sonic_rs::Value` 替换，性能更优。
 
-  ***如果 JSON 中有重复的key，建议使用 `serde_json::Value`, 因为 `sonic_rs::Value` 中没有建立哈希表***
-
-  ***即使使用 `serde_json::Value`, 也可以使用 `sonic_rs::from_str/from_slice` 进行解析，性能相比原生会更好一些***
-
 - 使用 `gjson.Get` 或 `jsonparser.Get` 等API:
   gjson/jsonparser get API 本身未做严格的JSON 校验，因此可以使用 `sonic_rs::get_unchecked` 进行平替。 sonic_rs get API 会返回一个 `Result<LazyValue>`. 如果没有找到该字段，会报错。
   
-  `LazyValue` 可以用 `as_bool, as_str`等将 JSON 进一步***解析成对应的类型**。
+  `LazyValue` 可以用 `as_bool, as_str`等将 JSON 进一步**解析成对应的类型**。
   
   如果只需要拿到原始的raw JSON, ***不做解析***，请使用 `as_raw_str, as_raw_faststr` 等 API. 参考例子: [get_from.rs](../examples/get_from.rs)
 
