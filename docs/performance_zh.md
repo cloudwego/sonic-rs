@@ -4,7 +4,7 @@
 
 ## 按需解析
 
-如何实现一个性能更好的按需解析算法。按需解析的性能关键在于跳过不需要的字段，其中难点在于如何跳过 JSON container， 包括 JSON Object 和 JSON array，因为我们需要注意 JSON 字符串中的括号，例如 `"{ "key": "value {}"}`。 我们利用了 simd 指令计算字符串的bitmap，然后通过计算括号的数量来跳过整个JSON container。
+如何实现一个性能更好的按需解析算法。按需解析的性能关键在于跳过不需要的字段，其中难点在于如何跳过 JSON container， 包括 JSON Object 和 JSON array，因为我们需要注意 JSON 字符串中的括号，例如 `"{ "key": "value {}"}`。 我们利用了 simd 指令计算字符串的bitmap，然后通过计算括号的数量来跳过整个JSON container。参考论文 [JSONSki](https://dl.acm.org/doi/10.1145/3503222.3507719).
 
 整体算法如下：
 
@@ -122,7 +122,7 @@ JSON 规范中的空格字符有: ` `, `\n`, '\r', '\t`. 利用 SIMD 指令跳�
 ```
 
 
-对于长度为16的数字字符串，是可以直接使用 SIMD 指令进行解析，读取 ascii 数字字符并且逐步累加的。 具体算法可以参考‎[simd_str2int](https://github.com/cloudwego/sonic-rs/blob/main/src/util/arch/x86_64.rs#L115)。这个算法来源于 [sonic-cpp](https://github.com/bytedance/sonic-cpp/blob/master/include/sonic/internal/arch/sse/str2int.h). 在解析浮点数时，按照 IEEE754 规范，对于64 位浮点数，我们只需要关注17位有效数字。因此，在这个函数里面使用了一个 switch table 来减少不必要的 SIMD 指令。
+对于长度为16的数字字符串，是可以直接使用 SIMD 指令进行解析，读取 ascii 数字字符并且逐步累加的。 具体算法可以参考[simd_str2int](https://github.com/cloudwego/sonic-rs/blob/main/src/util/arch/x86_64.rs#L115)。这个算法来源于 [sonic-cpp](https://github.com/bytedance/sonic-cpp/blob/master/include/sonic/internal/arch/sse/str2int.h). 在解析浮点数时，按照 IEEE754 规范，对于64 位浮点数，我们只需要关注17位有效数字。因此，在这个函数里面使用了一个 switch table 来减少不必要的 SIMD 指令。
 
 
 ## 使用 SIMD 序列化 JSON string

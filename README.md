@@ -13,9 +13,9 @@ English | [中文](README_ZH.md)
 
 A fast Rust JSON library based on SIMD. It has some references to other open-source libraries like [sonic_cpp](https://github.com/bytedance/sonic-cpp), [serde_json](https://github.com/serde-rs/json), [sonic](https://github.com/bytedance/sonic), [simdjson](https://github.com/simdjson/simdjson), [rust-std](https://github.com/rust-lang/rust/tree/master/library/core/src/num) and more.
 
-***For Golang users to use `sonic_rs`, please see [for_Golang_user.md](docs/for_Golang_user.md)***
+***For Golang users to use `sonic_rs`, please see [for_Golang_user.md](https://github.com/cloudwego/sonic-rs/blob/main/docs/for_Golang_user.md)***
 
-***For users to migrate from `serde_json` to `sonic_rs`, can see [serdejson_compatibility](docs/serdejson_compatibility.md)***
+***For users to migrate from `serde_json` to `sonic_rs`, can see [serdejson_compatibility](https://github.com/cloudwego/sonic-rs/blob/main/docs/serdejson_compatibility.md)***
 
 ## Requirements/Notes
 
@@ -462,6 +462,11 @@ If you want to achieve lossless precision when parsing floating-point numbers, s
 Thanks the following open-source libraries. sonic-rs has some references to other open-source libraries like [sonic_cpp](https://github.com/bytedance/sonic-cpp), [serde_json](https://github.com/serde-rs/json), [sonic](https://github.com/bytedance/sonic), [simdjson](https://github.com/simdjson/simdjson), [yyjson](https://github.com/ibireme/yyjson), [rust-std](https://github.com/rust-lang/rust/tree/master/library/core/src/num) and so on.
 
 We rewrote many SIMD algorithms from sonic-cpp/sonic/simdjson/yyjson for performance. We reused the de/ser codes and modified necessary parts from serde_json to make high compatibility with `serde`. We reused part codes about floating parsing from rust-std to make it more accurate.
+
+Referenced papers:
+1. [Parsing Gigabytes of JSON per Second](https://arxiv.org/abs/1902.08318)
+2. [JSONSki: streaming semi-structured data with bit-parallel fast-forwarding](https://dl.acm.org/doi/10.1145/3503222.3507719)
+
 
 ## Contributing
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for information on contributing to sonic-rs.

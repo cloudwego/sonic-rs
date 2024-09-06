@@ -17,7 +17,7 @@ This document shows key roadmap of `sonic-rs` development. It may help users kno
 
 0. ~~make sonic-rs support stable Rust~~
 
-1. optimize the performance in aarch64 (WIP: 50%)
+1. ~~optimize the performance in aarch64 (WIP: 50%)~~
 
 2. runtime CPU detection
 
