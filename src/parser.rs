@@ -1808,20 +1808,6 @@ where
         self.skip_one()
     }
 
-    pub(crate) fn get_many(
-        &mut self,
-        tree: &PointerTree,
-        is_safe: bool,
-    ) -> Result<Vec<LazyValue<'de>>> {
-        let mut strbuf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);
-        let mut remain = tree.size();
-        let mut out: Vec<LazyValue<'de>> = Vec::with_capacity(tree.size());
-        out.resize(tree.size(), LazyValue::default());
-        let cur = &tree.root;
-        self.get_many_rec(cur, &mut out, &mut strbuf, &mut remain, is_safe)?;
-        Ok(out)
-    }
-
     fn get_many_rec(
         &mut self,
         node: &PointerTreeNode,
@@ -2108,6 +2094,20 @@ where
         } else {
             Ok(())
         }
+    }
+
+    pub(crate) fn get_many(
+        &mut self,
+        tree: &PointerTree,
+        is_safe: bool,
+    ) -> Result<Vec<LazyValue<'de>>> {
+        let mut strbuf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);
+        let mut remain = tree.size();
+        let mut out: Vec<LazyValue<'de>> = Vec::with_capacity(tree.size());
+        out.resize(tree.size(), LazyValue::default());
+        let cur = &tree.root;
+        self.get_many_rec(cur, &mut out, &mut strbuf, &mut remain, is_safe)?;
+        Ok(out)
     }
 
     #[inline]
