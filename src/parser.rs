@@ -1808,74 +1808,6 @@ where
         self.skip_one()
     }
 
-    #[inline]
-    pub(crate) fn get_shared_inc_count(&mut self) -> Arc<Shared> {
-        if self.shared.is_none() {
-            self.shared = Some(Arc::new(Shared::new()));
-        }
-        unsafe { self.shared.as_ref().unwrap_unchecked().clone() }
-    }
-
-    #[cold]
-    pub(crate) fn peek_invalid_type(&mut self, peek: u8, exp: &dyn Expected) -> Error {
-        let err = match peek {
-            b'n' => {
-                if let Err(err) = self.parse_literal("ull") {
-                    return err;
-                }
-                de::Error::invalid_type(Unexpected::Unit, exp)
-            }
-            b't' => {
-                if let Err(err) = self.parse_literal("rue") {
-                    return err;
-                }
-                de::Error::invalid_type(Unexpected::Bool(true), exp)
-            }
-            b'f' => {
-                if let Err(err) = self.parse_literal("alse") {
-                    return err;
-                }
-                de::Error::invalid_type(Unexpected::Bool(false), exp)
-            }
-            c @ b'-' | c @ b'0'..=b'9' => match self.parse_number(c) {
-                Ok(n) => n.invalid_type(exp),
-                Err(err) => return err,
-            },
-            b'"' => {
-                let mut scratch = Vec::new();
-                match self.parse_str_impl(&mut scratch) {
-                    Ok(s) if std::str::from_utf8(s.as_bytes()).is_ok() => {
-                        de::Error::invalid_type(Unexpected::Str(&s), exp)
-                    }
-                    Ok(s) => de::Error::invalid_type(Unexpected::Bytes(s.as_bytes()), exp),
-                    Err(err) => return err,
-                }
-            }
-            // for correctness, we will parse the whole object or array.
-            b'[' => {
-                self.read.backward(1);
-                match self.skip_one() {
-                    Ok(_) => de::Error::invalid_type(Unexpected::Seq, exp),
-                    Err(err) => return err,
-                }
-            }
-            b'{' => {
-                self.read.backward(1);
-                match self.skip_one() {
-                    Ok(_) => de::Error::invalid_type(Unexpected::Map, exp),
-                    Err(err) => return err,
-                }
-            }
-            _ => self.error(ErrorCode::InvalidJsonValue),
-        };
-        self.fix_position(err)
-    }
-}
-
-impl<'de, R> Parser<R>
-where
-    R: Reader<'de>,
-{
     pub(crate) fn get_many(
         &mut self,
         tree: &PointerTree,
@@ -2176,6 +2108,69 @@ where
         } else {
             Ok(())
         }
+    }
+
+    #[inline]
+    pub(crate) fn get_shared_inc_count(&mut self) -> Arc<Shared> {
+        if self.shared.is_none() {
+            self.shared = Some(Arc::new(Shared::new()));
+        }
+        unsafe { self.shared.as_ref().unwrap_unchecked().clone() }
+    }
+
+    #[cold]
+    pub(crate) fn peek_invalid_type(&mut self, peek: u8, exp: &dyn Expected) -> Error {
+        let err = match peek {
+            b'n' => {
+                if let Err(err) = self.parse_literal("ull") {
+                    return err;
+                }
+                de::Error::invalid_type(Unexpected::Unit, exp)
+            }
+            b't' => {
+                if let Err(err) = self.parse_literal("rue") {
+                    return err;
+                }
+                de::Error::invalid_type(Unexpected::Bool(true), exp)
+            }
+            b'f' => {
+                if let Err(err) = self.parse_literal("alse") {
+                    return err;
+                }
+                de::Error::invalid_type(Unexpected::Bool(false), exp)
+            }
+            c @ b'-' | c @ b'0'..=b'9' => match self.parse_number(c) {
+                Ok(n) => n.invalid_type(exp),
+                Err(err) => return err,
+            },
+            b'"' => {
+                let mut scratch = Vec::new();
+                match self.parse_str_impl(&mut scratch) {
+                    Ok(s) if std::str::from_utf8(s.as_bytes()).is_ok() => {
+                        de::Error::invalid_type(Unexpected::Str(&s), exp)
+                    }
+                    Ok(s) => de::Error::invalid_type(Unexpected::Bytes(s.as_bytes()), exp),
+                    Err(err) => return err,
+                }
+            }
+            // for correctness, we will parse the whole object or array.
+            b'[' => {
+                self.read.backward(1);
+                match self.skip_one() {
+                    Ok(_) => de::Error::invalid_type(Unexpected::Seq, exp),
+                    Err(err) => return err,
+                }
+            }
+            b'{' => {
+                self.read.backward(1);
+                match self.skip_one() {
+                    Ok(_) => de::Error::invalid_type(Unexpected::Map, exp),
+                    Err(err) => return err,
+                }
+            }
+            _ => self.error(ErrorCode::InvalidJsonValue),
+        };
+        self.fix_position(err)
     }
 }
 
