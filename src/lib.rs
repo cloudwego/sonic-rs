@@ -46,8 +46,8 @@ pub use crate::serde::{
 };
 #[doc(inline)]
 pub use crate::value::{
-    from_value, to_value, Array, JsonContainerTrait, JsonType, JsonValueMutTrait, JsonValueTrait,
-    Object, Value, ValueRef,
+    from_value, get::get_by_schema, to_value, Array, JsonContainerTrait, JsonType,
+    JsonValueMutTrait, JsonValueTrait, Object, Value, ValueRef,
 };
 
 pub mod prelude;

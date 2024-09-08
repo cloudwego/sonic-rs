@@ -32,7 +32,7 @@ use crate::{
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
     value::{shared::Shared, visitor::JsonVisitor},
-    JsonType, LazyValue,
+    JsonType, JsonValueMutTrait, LazyValue,
 };
 
 pub(crate) const DEFAULT_KEY_BUF_CAPACITY: usize = 128;
@@ -1808,6 +1808,88 @@ where
         self.skip_one()
     }
 
+    #[inline]
+    pub(crate) fn get_shared_inc_count(&mut self) -> Arc<Shared> {
+        if self.shared.is_none() {
+            self.shared = Some(Arc::new(Shared::new()));
+        }
+        unsafe { self.shared.as_ref().unwrap_unchecked().clone() }
+    }
+
+    #[cold]
+    pub(crate) fn peek_invalid_type(&mut self, peek: u8, exp: &dyn Expected) -> Error {
+        let err = match peek {
+            b'n' => {
+                if let Err(err) = self.parse_literal("ull") {
+                    return err;
+                }
+                de::Error::invalid_type(Unexpected::Unit, exp)
+            }
+            b't' => {
+                if let Err(err) = self.parse_literal("rue") {
+                    return err;
+                }
+                de::Error::invalid_type(Unexpected::Bool(true), exp)
+            }
+            b'f' => {
+                if let Err(err) = self.parse_literal("alse") {
+                    return err;
+                }
+                de::Error::invalid_type(Unexpected::Bool(false), exp)
+            }
+            c @ b'-' | c @ b'0'..=b'9' => match self.parse_number(c) {
+                Ok(n) => n.invalid_type(exp),
+                Err(err) => return err,
+            },
+            b'"' => {
+                let mut scratch = Vec::new();
+                match self.parse_str_impl(&mut scratch) {
+                    Ok(s) if std::str::from_utf8(s.as_bytes()).is_ok() => {
+                        de::Error::invalid_type(Unexpected::Str(&s), exp)
+                    }
+                    Ok(s) => de::Error::invalid_type(Unexpected::Bytes(s.as_bytes()), exp),
+                    Err(err) => return err,
+                }
+            }
+            // for correctness, we will parse the whole object or array.
+            b'[' => {
+                self.read.backward(1);
+                match self.skip_one() {
+                    Ok(_) => de::Error::invalid_type(Unexpected::Seq, exp),
+                    Err(err) => return err,
+                }
+            }
+            b'{' => {
+                self.read.backward(1);
+                match self.skip_one() {
+                    Ok(_) => de::Error::invalid_type(Unexpected::Map, exp),
+                    Err(err) => return err,
+                }
+            }
+            _ => self.error(ErrorCode::InvalidJsonValue),
+        };
+        self.fix_position(err)
+    }
+}
+
+impl<'de, R> Parser<R>
+where
+    R: Reader<'de>,
+{
+    pub(crate) fn get_many(
+        &mut self,
+        tree: &PointerTree,
+        is_safe: bool,
+    ) -> Result<Vec<LazyValue<'de>>> {
+        let mut strbuf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);
+        let mut remain = tree.size();
+        let mut out: Vec<LazyValue<'de>> = Vec::with_capacity(tree.size());
+        out.resize(tree.size(), LazyValue::default());
+        let cur = &tree.root;
+        self.get_many_rec(cur, &mut out, &mut strbuf, &mut remain, is_safe)?;
+        Ok(out)
+    }
+
     fn get_many_rec(
         &mut self,
         node: &PointerTreeNode,
@@ -1983,16 +2065,6 @@ where
         }
     }
 
-    pub(crate) fn remain_str(&self) -> &'de str {
-        as_str(self.remain_u8_slice())
-    }
-
-    pub(crate) fn remain_u8_slice(&self) -> &'de [u8] {
-        let reader = &self.read;
-        let start = reader.index();
-        reader.slice_unchecked(start, start + reader.remain())
-    }
-
     fn get_many_index_unchecked(
         &mut self,
         midx: &MultiIndex,
@@ -2105,81 +2177,72 @@ where
             Ok(())
         }
     }
+}
 
-    pub(crate) fn get_many(
-        &mut self,
-        tree: &PointerTree,
-        is_safe: bool,
-    ) -> Result<Vec<LazyValue<'de>>> {
+impl<'de, R> Parser<R>
+where
+    R: Reader<'de>,
+{
+    pub fn get_by_schema(&mut self, schema: &mut crate::Value) -> Result<()> {
         let mut strbuf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);
-        let mut remain = tree.size();
-        let mut out: Vec<LazyValue<'de>> = Vec::with_capacity(tree.size());
-        out.resize(tree.size(), LazyValue::default());
-        let cur = &tree.root;
-        self.get_many_rec(cur, &mut out, &mut strbuf, &mut remain, is_safe)?;
-        Ok(out)
+        self.get_by_schema_rec(schema, &mut strbuf)
     }
 
-    #[inline]
-    pub(crate) fn get_shared_inc_count(&mut self) -> Arc<Shared> {
-        if self.shared.is_none() {
-            self.shared = Some(Arc::new(Shared::new()));
+    fn get_by_schema_rec(&mut self, schema: &mut crate::Value, strbuf: &mut Vec<u8>) -> Result<()> {
+        let ch = self.skip_space_peek();
+        if ch.is_none() {
+            return perr!(self, EofWhileParsing);
         }
-        unsafe { self.shared.as_ref().unwrap_unchecked().clone() }
-    }
 
-    #[cold]
-    pub(crate) fn peek_invalid_type(&mut self, peek: u8, exp: &dyn Expected) -> Error {
-        let err = match peek {
-            b'n' => {
-                if let Err(err) = self.parse_literal("ull") {
-                    return err;
-                }
-                de::Error::invalid_type(Unexpected::Unit, exp)
-            }
-            b't' => {
-                if let Err(err) = self.parse_literal("rue") {
-                    return err;
-                }
-                de::Error::invalid_type(Unexpected::Bool(true), exp)
-            }
-            b'f' => {
-                if let Err(err) = self.parse_literal("alse") {
-                    return err;
-                }
-                de::Error::invalid_type(Unexpected::Bool(false), exp)
-            }
-            c @ b'-' | c @ b'0'..=b'9' => match self.parse_number(c) {
-                Ok(n) => n.invalid_type(exp),
-                Err(err) => return err,
-            },
-            b'"' => {
-                let mut scratch = Vec::new();
-                match self.parse_str_impl(&mut scratch) {
-                    Ok(s) if std::str::from_utf8(s.as_bytes()).is_ok() => {
-                        de::Error::invalid_type(Unexpected::Str(&s), exp)
+        let mut should_change = true;
+        let start = self.read.index();
+
+        match (schema.as_object_mut(), self.skip_space_peek()) {
+            (Some(object), Some(b'{')) => {
+                // deal with the empty object
+                match self.get_next_token([b'"', b'}'], 1) {
+                    Some(b'"') => {}
+                    Some(b'}') => {
+                        should_change = false;
                     }
-                    Ok(s) => de::Error::invalid_type(Unexpected::Bytes(s.as_bytes()), exp),
-                    Err(err) => return err,
+                    None => return perr!(self, EofWhileParsing),
+                    Some(_) => unreachable!(),
+                }
+
+                if should_change {
+                    loop {
+                        let key = self.parse_str_impl(strbuf)?;
+                        self.parse_object_clo()?;
+                        // This could be slow
+                        if let Some(val) = object.get_mut(&key.deref()) {
+                            should_change = false;
+                            self.get_by_schema_rec(val, strbuf)?;
+                        } else {
+                            self.skip_one()?;
+                        }
+
+                        match self.skip_space() {
+                            Some(b',') => match self.skip_space() {
+                                Some(b'"') => continue,
+                                _ => return perr!(self, ExpectObjectKeyOrEnd),
+                            },
+                            Some(b'}') => break,
+                            Some(_) => return perr!(self, ExpectedObjectCommaOrEnd),
+                            None => return perr!(self, EofWhileParsing),
+                        }
+                    }
                 }
             }
-            // for correctness, we will parse the whole object or array.
-            b'[' => {
-                self.read.backward(1);
-                match self.skip_one() {
-                    Ok(_) => de::Error::invalid_type(Unexpected::Seq, exp),
-                    Err(err) => return err,
-                }
+            _ => {
+                self.skip_one()?;
             }
-            b'{' => {
-                self.read.backward(1);
-                match self.skip_one() {
-                    Ok(_) => de::Error::invalid_type(Unexpected::Map, exp),
-                    Err(err) => return err,
-                }
-            }
-            _ => self.error(ErrorCode::InvalidJsonValue),
-        };
-        self.fix_position(err)
+        }
+
+        let end = self.read.index();
+        if should_change && start < end {
+            let slice = self.read.slice_unchecked(start, end);
+            *schema = crate::from_slice(slice)?;
+        }
+        Ok(())
     }
 }
