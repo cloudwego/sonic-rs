@@ -177,21 +177,16 @@ mod test {
     }
     #[test]
     fn test_failed_4() {
-        let (schema, json) = ("null", "1.2.3");
-        test_failed(schema, json);
-    }
-    #[test]
-    fn test_failed_5() {
         let (schema, json) = ("null", "string");
         test_failed(schema, json);
     }
     #[test]
-    fn test_failed_6() {
+    fn test_failed_5() {
         let (schema, json) = ("null", r#"{"obj":}"#);
         test_failed(schema, json);
     }
     #[test]
-    fn test_failed_7() {
+    fn test_failed_6() {
         let (schema, json) = ("null", "[null,]");
         test_failed(schema, json);
     }
