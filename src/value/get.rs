@@ -2,6 +2,51 @@ use crate::{
     parser::Parser, reader::Reader, util::utf8::from_utf8, value::Value, JsonInput, Read, Result,
 };
 
+/// get_by_schema returns new Value from the given schema and json data
+///
+/// This function can be used to query json data on demand.
+///
+/// If a key path, for example \["b", "b1"\] exists in the schema, but does not exist in the data,
+/// then the data will be filled with the corresponding default value in the schema.
+///
+/// If a key path does'not exists in the schema, but exists in the data, then the
+/// value in the schema will be replaced with the corresponding value in the data.
+///
+/// # Examples
+/// ```
+/// let schema = json!({
+///     "a": null, // default value is `null`
+///     "b": {
+///         "b1": {},
+///         "b2": "default string" // default value is string
+///     },
+///     "c": [], // default value is []
+/// });
+///
+/// let data = r#"
+/// {
+///     "a": {},
+///     "b": {
+///         "b1": 123
+///     },
+///     "c": [1, 2, 3],
+///     "d": "balabala..."
+/// }"#;
+///
+/// // parse json data by schem, we can parse into the schema value inplace
+/// let got = sonic_rs::get_by_schema(data, schema).unwrap();
+/// assert_eq!(
+///     got,
+///     json!({
+///         "a": {},
+///         "b": {
+///             "b1": 123,
+///             "b2": "default string"
+///         },
+///         "c": [1, 2, 3]
+///     })
+/// );
+/// ```
 pub fn get_by_schema<'de, Input: JsonInput<'de>>(json: Input, mut schema: Value) -> Result<Value> {
     let slice = json.to_u8_slice();
     let reader = Read::new(slice, false);
