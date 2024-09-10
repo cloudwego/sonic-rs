@@ -2198,9 +2198,7 @@ where
                 // deal with the empty object
                 match self.get_next_token([b'"', b'}'], 1) {
                     Some(b'"') => {}
-                    Some(b'}') => {
-                        should_change = false;
-                    }
+                    Some(b'}') => return Ok(()),
                     None => return perr!(self, EofWhileParsing),
                     Some(_) => unreachable!(),
                 }
@@ -2210,26 +2208,24 @@ where
                     key_values.insert(key, value);
                 }
 
-                if should_change {
-                    loop {
-                        let key = self.parse_str_impl(strbuf)?;
-                        self.parse_object_clo()?;
-                        if let Some(val) = key_values.get_mut(key.deref()) {
-                            should_change = false;
-                            self.get_by_schema_rec(val, strbuf)?;
-                        } else {
-                            self.skip_one()?;
-                        }
+                loop {
+                    let key = self.parse_str_impl(strbuf)?;
+                    self.parse_object_clo()?;
+                    if let Some(val) = key_values.get_mut(key.deref()) {
+                        should_change = false;
+                        self.get_by_schema_rec(val, strbuf)?;
+                    } else {
+                        self.skip_one()?;
+                    }
 
-                        match self.skip_space() {
-                            Some(b',') => match self.skip_space() {
-                                Some(b'"') => continue,
-                                _ => return perr!(self, ExpectObjectKeyOrEnd),
-                            },
-                            Some(b'}') => break,
-                            Some(_) => return perr!(self, ExpectedObjectCommaOrEnd),
-                            None => return perr!(self, EofWhileParsing),
-                        }
+                    match self.skip_space() {
+                        Some(b',') => match self.skip_space() {
+                            Some(b'"') => continue,
+                            _ => return perr!(self, ExpectObjectKeyOrEnd),
+                        },
+                        Some(b'}') => break,
+                        Some(_) => return perr!(self, ExpectedObjectCommaOrEnd),
+                        None => return perr!(self, EofWhileParsing),
                     }
                 }
             }
