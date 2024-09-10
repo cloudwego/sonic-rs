@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     num::NonZeroU8,
     ops::Deref,
     slice::{from_raw_parts, from_raw_parts_mut},
@@ -2204,12 +2205,16 @@ where
                     Some(_) => unreachable!(),
                 }
 
+                let mut key_values = HashMap::new();
+                for (key, value) in object.iter_mut() {
+                    key_values.insert(key, value);
+                }
+
                 if should_change {
                     loop {
                         let key = self.parse_str_impl(strbuf)?;
                         self.parse_object_clo()?;
-                        // This could be slow
-                        if let Some(val) = object.get_mut(&key.deref()) {
+                        if let Some(val) = key_values.get_mut(key.deref()) {
                             should_change = false;
                             self.get_by_schema_rec(val, strbuf)?;
                         } else {
