@@ -1,6 +1,6 @@
 # A quick guide to migrate from serde_json
 
-The goal of sonic-rs is performance and easiness (more APIs and ALLINONE) to use. Otherwise, reconmend to use `serde_json`.
+The goal of sonic-rs is performance and easiness (more APIs and ALLINONE) to use. Otherwise, recommended to use `serde_json`.
 
 Just replace as follows:
 

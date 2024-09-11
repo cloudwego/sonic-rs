@@ -245,10 +245,10 @@ impl<'a> Reader<'a> for Read<'a> {
         }
     }
 
-    fn validate_utf8(&mut self, allowd_space: (usize, usize)) -> Result<()> {
-        if self.next_invalid_utf8 < allowd_space.0 {
+    fn validate_utf8(&mut self, allowed_space: (usize, usize)) -> Result<()> {
+        if self.next_invalid_utf8 < allowed_space.0 {
             Err(invalid_utf8(self.slice, self.next_invalid_utf8))
-        } else if self.next_invalid_utf8 < allowd_space.1 {
+        } else if self.next_invalid_utf8 < allowed_space.1 {
             // this space is allowed, should update the next invalid utf8 position
             self.next_invalid_utf8 = match from_utf8(&self.slice[self.index..]) {
                 Ok(_) => usize::MAX,

@@ -14,11 +14,7 @@ Corresponding API references:
 
 - Parsing into Golang `interface{}/any` or sonic-go `ast.Node`:
 
- It is recommended to replace it with `sonic_rs::Value` for better performance.
-
-  ***if the json has duplicated keys, pls use `serde_json::Value`, because `sonic_rs::Value` not maintain a hashmap inner***
-
-  ***even though use `serde_json::Value`, still can be parsed use `sonic_rs::from_str/from_slice`***
+  It is recommended to replace it with `sonic_rs::Value` for better performance.
 
 - Using `gjson.Get` or `jsonparser.Get` APIs:
 
