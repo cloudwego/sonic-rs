@@ -1,10 +1,25 @@
 use std::{
     arch::x86_64::*,
     ops::{BitAnd, BitOr, BitOrAssign},
+    sync::Once,
 };
 
 use super::{Mask, Simd};
 use crate::impl_lanes;
+
+#[inline]
+pub fn is_supported() -> bool {
+    unsafe {
+        static INIT: Once = Once::new();
+        static mut SUPPORTED: bool = false;
+
+        INIT.call_once(|| {
+            SUPPORTED = std::arch::is_x86_feature_detected!("sse2");
+        });
+
+        SUPPORTED
+    }
+}
 
 #[derive(Debug)]
 #[repr(transparent)]
@@ -56,9 +71,9 @@ impl Simd for Simd128i {
 #[repr(transparent)]
 pub struct Mask128(__m128i);
 
-impl_lanes!(Simd128u, 16);
+impl_lanes!([impl Simd128u] 16);
 
-impl_lanes!(Mask128, 16);
+impl_lanes!([impl Mask128] 16);
 
 impl Mask for Mask128 {
     type BitMask = u16;

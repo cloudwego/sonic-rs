@@ -265,12 +265,12 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     }
 
     fn scan_integer128(&mut self, buf: &mut String) -> Result<()> {
-        match self.parser.read.peek() {
+        match self.parser.read().peek() {
             Some(b'0') => {
                 buf.push('0');
-                self.parser.read.eat(1);
+                self.parser.read().eat(1);
                 // There can be only one leading '0'.
-                if let Some(ch) = self.parser.read.peek() {
+                if let Some(ch) = self.parser.read().peek() {
                     if ch.is_ascii_digit() {
                         return Err(self.parser.error(ErrorCode::InvalidNumber));
                     }
@@ -279,9 +279,9 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
             }
             Some(c) if c.is_ascii_digit() => {
                 buf.push(c as char);
-                self.parser.read.eat(1);
-                while let c @ b'0'..=b'9' = self.parser.read.peek().unwrap_or_default() {
-                    self.parser.read.eat(1);
+                self.parser.read().eat(1);
+                while let c @ b'0'..=b'9' = self.parser.read().peek().unwrap_or_default() {
+                    self.parser.read().eat(1);
                     buf.push(c as char);
                 }
                 Ok(())
@@ -308,10 +308,10 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     {
         let shared = self.parser.get_shared_inc_count();
         let mut val = Value::new_null(shared.data_ptr());
-        let mut val = if self.parser.read.index() == 0 {
+        let mut val = if self.parser.read().index() == 0 {
             // get n to check trailing characters in later
-            let n = val.parse_with_padding(self.parser.read.as_u8_slice())?;
-            self.parser.read.eat(n);
+            let n = val.parse_with_padding(self.parser.read().as_u8_slice())?;
+            self.parser.read().eat(n);
             val
         } else {
             // deserialize some json parts into `Value`, not use padding buffer, avoid the memory
@@ -344,25 +344,25 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     {
         let raw = match self.parser.skip_space_peek() {
             Some(c @ b'-' | c @ b'0'..=b'9') => {
-                let start = self.parser.read.index();
-                self.parser.read.eat(1);
+                let start = self.parser.read().index();
+                self.parser.read().eat(1);
                 self.parser.skip_number(c)?;
-                let end = self.parser.read.index();
-                as_str(self.parser.read.slice_unchecked(start, end))
+                let end = self.parser.read().index();
+                as_str(self.parser.read().slice_unchecked(start, end))
             }
             Some(b'"') => {
-                self.parser.read.eat(1);
-                let start = self.parser.read.index();
-                match self.parser.read.next() {
+                self.parser.read().eat(1);
+                let start = self.parser.read().index();
+                match self.parser.read().next() {
                     Some(c @ b'-' | c @ b'0'..=b'9') => {
                         self.parser.skip_number(c)?;
                     }
                     _ => return Err(self.parser.error(ErrorCode::InvalidNumber)),
                 }
-                let end = self.parser.read.index();
-                let raw = as_str(self.parser.read.slice_unchecked(start, end));
+                let end = self.parser.read().index();
+                let raw = as_str(self.parser.read().slice_unchecked(start, end));
                 // match the right quote
-                if self.parser.read.next() != Some(b'"') {
+                if self.parser.read().next() != Some(b'"') {
                     return Err(self.parser.error(ErrorCode::InvalidNumber));
                 }
                 raw
@@ -485,7 +485,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         match self.parser.skip_space_peek() {
             Some(b'-') => {
                 buf.push('-');
-                self.parser.read.eat(1);
+                self.parser.read().eat(1);
             }
             Some(_) => {}
             None => {
@@ -589,23 +589,23 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
             return Err(self.parser.error(ErrorCode::EofWhileParsing));
         };
 
-        let start = self.parser.read.index();
+        let start = self.parser.read().index();
         let value = match peek {
             b'"' => match tri!(self.parser.parse_string_raw(&mut self.scratch)) {
                 Reference::Borrowed(b) => visitor.visit_borrowed_bytes(b),
                 Reference::Copied(b) => visitor.visit_bytes(b),
             },
             b'[' => {
-                self.parser.read.backward(1);
+                self.parser.read().backward(1);
                 self.deserialize_seq(visitor)
             }
             _ => Err(self.peek_invalid_type(peek, &visitor)),
         };
 
         // check invalid utf8 with allow space here
-        self.parser
-            .read
-            .validate_utf8((start, self.parser.read.index()))?;
+        let index = self.parser.read().index();
+        self.parser.read().validate_utf8((start, index))?;
+
         match value {
             Ok(value) => Ok(value),
             Err(err) => Err(self.parser.fix_position(err)),
@@ -628,7 +628,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
     {
         match self.parser.skip_space_peek() {
             Some(b'n') => {
-                self.parser.read.eat(1);
+                self.parser.read().eat(1);
                 tri!(self.parser.parse_literal("ull"));
                 visitor.visit_none()
             }
@@ -815,7 +815,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
     {
         match self.parser.skip_space_peek() {
             Some(b'{') => {
-                self.parser.read.eat(1);
+                self.parser.read().eat(1);
                 let value = {
                     let _ = DepthGuard::guard(self);
                     tri!(visitor.visit_enum(VariantAccess::new(self)))
@@ -871,7 +871,7 @@ impl<'de, 'a, R: Reader<'de> + 'a> de::SeqAccess<'de> for SeqAccess<'a, R> {
         match self.de.parser.skip_space_peek() {
             Some(b']') => Ok(None), // we will check the ending brace after `visit_seq`
             Some(b',') if !self.first => {
-                self.de.parser.read.eat(1);
+                self.de.parser.read().eat(1);
                 Ok(Some(tri!(seed.deserialize(&mut *self.de))))
             }
             Some(_) => {
@@ -879,7 +879,7 @@ impl<'de, 'a, R: Reader<'de> + 'a> de::SeqAccess<'de> for SeqAccess<'a, R> {
                     self.first = false;
                     Ok(Some(tri!(seed.deserialize(&mut *self.de))))
                 } else {
-                    self.de.parser.read.eat(1); // makes the error position is correct
+                    self.de.parser.read().eat(1); // makes the error position is correct
                     Err(self.de.parser.error(ErrorCode::ExpectedArrayCommaOrEnd))
                 }
             }
@@ -912,11 +912,11 @@ impl<'de, 'a, R: Reader<'de> + 'a> de::MapAccess<'de> for MapAccess<'a, R> {
                 return Ok(None);
             }
             Some(b',') if !self.first => {
-                self.de.parser.read.eat(1);
+                self.de.parser.read().eat(1);
                 self.de.parser.skip_space()
             }
             Some(b) => {
-                self.de.parser.read.eat(1);
+                self.de.parser.read().eat(1);
                 if self.first {
                     self.first = false;
                     Some(b)
@@ -1094,7 +1094,7 @@ macro_rules! deserialize_numeric_key {
             V: de::Visitor<'de>,
         {
             let value = tri!(self.de.deserialize_number(visitor));
-            if self.de.parser.read.next() != Some(b'"') {
+            if self.de.parser.read().next() != Some(b'"') {
                 return Err(self.de.parser.error(ErrorCode::ExpectedQuote));
             }
 
@@ -1107,14 +1107,14 @@ macro_rules! deserialize_numeric_key {
         where
             V: de::Visitor<'de>,
         {
-            match self.de.parser.read.peek() {
+            match self.de.parser.read().peek() {
                 Some(b'0'..=b'9' | b'-') => {}
                 _ => return Err(self.de.parser.error(ErrorCode::ExpectedNumericKey)),
             }
 
             let value = tri!(self.de.$delegate(visitor));
 
-            if self.de.parser.read.next() != Some(b'"') {
+            if self.de.parser.read().next() != Some(b'"') {
                 return Err(self.de.parser.error(ErrorCode::ExpectedQuote));
             }
 
@@ -1131,14 +1131,14 @@ where
     where
         V: de::Visitor<'de>,
     {
-        match self.de.parser.read.peek() {
+        match self.de.parser.read().peek() {
             Some(b'0'..=b'9' | b'-') => {}
             _ => return Err(self.de.parser.error(ErrorCode::ExpectedNumericKey)),
         }
 
         let value = tri!(self.de.deserialize_number(visitor));
 
-        if self.de.parser.read.next() != Some(b'"') {
+        if self.de.parser.read().next() != Some(b'"') {
             return Err(self.de.parser.error(ErrorCode::ExpectedQuote));
         }
 
@@ -1181,7 +1181,7 @@ where
     where
         V: de::Visitor<'de>,
     {
-        let mut value = match self.de.parser.read.next() {
+        let mut value = match self.de.parser.read().next() {
             Some(b't') => {
                 tri!(self.de.parser.parse_literal("rue"));
                 visitor.visit_bool(true)
@@ -1194,7 +1194,7 @@ where
             Some(peek) => Err(self.de.peek_invalid_type(peek, &visitor)),
         };
 
-        if self.de.parser.read.next() != Some(b'"') {
+        if self.de.parser.read().next() != Some(b'"') {
             value = Err(self.de.parser.error(ErrorCode::ExpectedQuote));
         }
 
@@ -1231,7 +1231,7 @@ where
     where
         V: de::Visitor<'de>,
     {
-        self.de.parser.read.backward(1);
+        self.de.parser.read().backward(1);
         self.de.deserialize_enum(name, variants, visitor)
     }
 
@@ -1240,7 +1240,7 @@ where
     where
         V: de::Visitor<'de>,
     {
-        self.de.parser.read.backward(1);
+        self.de.parser.read().backward(1);
         self.de.deserialize_bytes(visitor)
     }
 
@@ -1249,7 +1249,7 @@ where
     where
         V: de::Visitor<'de>,
     {
-        self.de.parser.read.backward(1);
+        self.de.parser.read().backward(1);
         self.de.deserialize_bytes(visitor)
     }
 
@@ -1272,7 +1272,7 @@ where
     tri!(de.parser.parse_trailing());
 
     // check invalid utf8
-    tri!(de.parser.read.check_utf8_final());
+    tri!(de.parser.read().check_utf8_final());
     Ok(value)
 }
 
