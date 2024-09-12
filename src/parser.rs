@@ -2187,42 +2187,47 @@ where
             return perr!(self, EofWhileParsing);
         }
 
-        let mut should_change = true;
+        let mut should_replace = true;
         let start = self.read.index();
 
-        match (schema.as_object_mut(), self.skip_space_peek()) {
+        match (schema.as_object_mut(), ch) {
             (Some(object), Some(b'{')) => {
-                // deal with the empty object
-                match self.get_next_token([b'"', b'}'], 1) {
-                    Some(b'"') => {}
-                    Some(b'}') => return Ok(()),
-                    None => return perr!(self, EofWhileParsing),
-                    Some(_) => unreachable!(),
-                }
-
                 let mut key_values = HashMap::new();
                 for (key, value) in object.iter_mut() {
                     key_values.insert(key, value);
                 }
 
-                loop {
-                    let key = self.parse_str_impl(strbuf)?;
-                    self.parse_object_clo()?;
-                    if let Some(val) = key_values.get_mut(key.deref()) {
-                        should_change = false;
-                        self.get_by_schema_rec(val, strbuf)?;
-                    } else {
-                        self.skip_one()?;
+                // We should replace the schema object if the object is empty
+                should_replace = key_values.is_empty();
+                if should_replace {
+                    self.skip_one()?;
+                } else {
+                    // deal with the empty object
+                    match self.get_next_token([b'"', b'}'], 1) {
+                        Some(b'"') => {}
+                        Some(b'}') => return Ok(()),
+                        None => return perr!(self, EofWhileParsing),
+                        Some(_) => unreachable!(),
                     }
 
-                    match self.skip_space() {
-                        Some(b',') => match self.skip_space() {
-                            Some(b'"') => continue,
-                            _ => return perr!(self, ExpectObjectKeyOrEnd),
-                        },
-                        Some(b'}') => break,
-                        Some(_) => return perr!(self, ExpectedObjectCommaOrEnd),
-                        None => return perr!(self, EofWhileParsing),
+                    loop {
+                        let key = self.parse_str_impl(strbuf)?;
+                        self.parse_object_clo()?;
+                        if let Some(val) = key_values.get_mut(key.deref()) {
+                            self.get_by_schema_rec(val, strbuf)?;
+                        } else {
+                            self.skip_one()?;
+                        }
+
+                        match self.skip_space() {
+                            Some(b',') => match self.skip_space() {
+                                Some(b'"') => continue,
+                                _ => return perr!(self, ExpectObjectKeyOrEnd),
+                            },
+                            Some(b'}') => break,
+                            Some(_) => return perr!(self, ExpectedObjectCommaOrEnd),
+                            None => return perr!(self, EofWhileParsing),
+                        }
                     }
                 }
             }
@@ -2232,7 +2237,7 @@ where
         }
 
         let end = self.read.index();
-        if should_change && start < end {
+        if should_replace && start < end {
             let slice = self.read.slice_unchecked(start, end);
             *schema = crate::from_slice(slice)?;
         }

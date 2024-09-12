@@ -205,6 +205,26 @@ mod test {
     }
 
     #[test]
+    fn test_success_7() {
+        let (schema, json, expected) = (
+            r#"{"a":1, "b":[1], "c": {"d":1}}"#,
+            r#"{"o":2, "p":[2], "c":{"k":1}}"#,
+            r#"{"a":1,"b":[1],"c":{"d":1}}"#,
+        );
+        test_success(schema, json, expected);
+    }
+
+    #[test]
+    fn test_success_8() {
+        let (schema, json, expected) = (
+            r#"{"a":1, "b":[1], "c": {}}"#,
+            r#"{"o":2, "b":[2], "c":{"k":1}}"#,
+            r#"{"a":1,"b":[2],"c":{"k":1}}"#,
+        );
+        test_success(schema, json, expected);
+    }
+
+    #[test]
     fn test_failed_1() {
         let (schema, json) = ("null", "nul");
         test_failed(schema, json);
