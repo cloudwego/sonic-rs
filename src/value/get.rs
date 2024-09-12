@@ -227,33 +227,38 @@ mod test {
 
     #[test]
     fn test_failed_1() {
-        let (schema, json) = ("null", "nul");
+        let (schema, json) = ("{}", "nul");
         test_failed(schema, json);
     }
 
     #[test]
     fn test_failed_2() {
-        let (schema, json) = ("null", "fals");
+        let (schema, json) = ("{}", "fals");
         test_failed(schema, json);
     }
     #[test]
     fn test_failed_3() {
-        let (schema, json) = ("null", "tru");
+        let (schema, json) = ("{}", "tru");
         test_failed(schema, json);
     }
     #[test]
     fn test_failed_4() {
-        let (schema, json) = ("null", "string");
+        let (schema, json) = ("{}", "string");
         test_failed(schema, json);
     }
     #[test]
     fn test_failed_5() {
-        let (schema, json) = ("null", r#"{"obj":}"#);
+        let (schema, json) = ("{}", r#"{"obj":}"#);
         test_failed(schema, json);
     }
     #[test]
     fn test_failed_6() {
-        let (schema, json) = ("null", "[null,]");
+        let (schema, json) = ("{}", "[null,]");
+        test_failed(schema, json);
+    }
+    #[test]
+    fn test_failed_7() {
+        let (schema, json) = ("true", "{}");
         test_failed(schema, json);
     }
 }

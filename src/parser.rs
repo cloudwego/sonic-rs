@@ -33,7 +33,7 @@ use crate::{
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
     value::{shared::Shared, visitor::JsonVisitor},
-    JsonType, JsonValueMutTrait, LazyValue,
+    JsonType, JsonValueMutTrait, JsonValueTrait, LazyValue,
 };
 
 pub(crate) const DEFAULT_KEY_BUF_CAPACITY: usize = 128;
@@ -2177,6 +2177,13 @@ where
     R: Reader<'de>,
 {
     pub fn get_by_schema(&mut self, schema: &mut crate::Value) -> Result<()> {
+        if !schema.is_object() {
+            return perr!(
+                self,
+                Message(std::borrow::Cow::Borrowed("The schema must be an object"))
+            );
+        }
+
         let mut strbuf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);
         self.get_by_schema_rec(schema, &mut strbuf)
     }
