@@ -14,6 +14,7 @@ use crate::{
 ///
 /// # Examples
 /// ```
+/// use sonic_rs::json;
 /// let schema = json!({
 ///     "a": null, // default value is `null`
 ///     "b": {
