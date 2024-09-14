@@ -261,4 +261,9 @@ mod test {
         let (schema, json) = ("true", "{}");
         test_failed(schema, json);
     }
+    #[test]
+    fn test_failed_8() {
+        let (schema, json) = (r#"{"a": 1}"#, "{123}");
+        test_failed(schema, json);
+    }
 }

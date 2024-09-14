@@ -1943,11 +1943,12 @@ where
         }
 
         // deal with the empty object
-        match self.get_next_token([b'"', b'}'], 1) {
+        match self.skip_space() {
             Some(b'"') => {}
-            Some(b'}') => return perr!(self, GetInEmptyObject),
-            None => return perr!(self, EofWhileParsing),
-            Some(_) => unreachable!(),
+            Some(b'}') => return Ok(()),
+            _ => {
+                return perr!(self, ExpectObjectKeyOrEnd);
+            }
         }
 
         let mut visited = 0;
@@ -2209,12 +2210,13 @@ where
                 if should_replace {
                     self.skip_one()?;
                 } else {
-                    // deal with the empty object
-                    match self.get_next_token([b'"', b'}'], 1) {
+                    self.read.eat(1);
+                    match self.skip_space() {
                         Some(b'"') => {}
                         Some(b'}') => return Ok(()),
-                        None => return perr!(self, EofWhileParsing),
-                        Some(_) => unreachable!(),
+                        _ => {
+                            return perr!(self, ExpectObjectKeyOrEnd);
+                        }
                     }
 
                     loop {
