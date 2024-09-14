@@ -1945,7 +1945,7 @@ where
         // deal with the empty object
         match self.skip_space() {
             Some(b'"') => {}
-            Some(b'}') => return Ok(()),
+            Some(b'}') => return perr!(self, GetInEmptyObject),
             _ => {
                 return perr!(self, ExpectObjectKeyOrEnd);
             }
