@@ -3,9 +3,9 @@ use std::{
     slice::{from_raw_parts, from_raw_parts_mut},
 };
 
-#[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
+#[cfg(not(all(target_feature = "neon", target_arch = "aarch64", not(miri))))]
 use crate::util::simd::u8x32;
-#[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
+#[cfg(all(target_feature = "neon", target_arch = "aarch64", not(miri)))]
 use crate::util::simd::{bits::NeonBits, u8x16};
 use crate::{
     error::ErrorCode::{
@@ -37,7 +37,7 @@ pub(crate) struct StringBlock<B: BitMask> {
     pub(crate) unescaped_bits: B,
 }
 
-#[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
+#[cfg(not(all(target_feature = "neon", target_arch = "aarch64", not(miri))))]
 impl StringBlock<u32> {
     pub(crate) const LANES: usize = 32;
 
@@ -51,7 +51,7 @@ impl StringBlock<u32> {
     }
 }
 
-#[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
+#[cfg(all(target_feature = "neon", target_arch = "aarch64", not(miri)))]
 impl StringBlock<NeonBits> {
     pub(crate) const LANES: usize = 16;
 
@@ -108,9 +108,9 @@ pub(crate) unsafe fn load<V: Simd>(ptr: *const u8) -> V {
 pub(crate) unsafe fn parse_string_inplace(
     src: &mut *mut u8,
 ) -> std::result::Result<usize, ErrorCode> {
-    #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
+    #[cfg(all(target_feature = "neon", target_arch = "aarch64", not(miri)))]
     let mut block: StringBlock<NeonBits>;
-    #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
+    #[cfg(not(all(target_feature = "neon", target_arch = "aarch64", not(miri))))]
     let mut block: StringBlock<u32>;
 
     let sdst = *src;
@@ -513,17 +513,17 @@ fn check_cross_page(ptr: *const u8, step: usize) -> bool {
 pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool) -> usize {
     assert!(dst.len() >= value.len() * 6 + 32 + 3);
 
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon", not(miri)))]
     let mut v: u8x16;
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon", not(miri))))]
     let mut v: u8x32;
 
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon", not(miri)))]
     const LANES: usize = 16;
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon", not(miri))))]
     const LANES: usize = 32;
 
-    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon", not(miri)))]
     #[inline]
     fn escaped_mask(v: u8x16) -> NeonBits {
         let x1f = u8x16::splat(0x1f); // 0x00 ~ 0x20
@@ -533,7 +533,7 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
         v.bitmask()
     }
 
-    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
+    #[cfg(not(all(target_arch = "aarch64", target_feature = "neon", not(miri))))]
     #[inline]
     fn escaped_mask(v: u8x32) -> u32 {
         let x1f = u8x32::splat(0x1f); // 0x00 ~ 0x20

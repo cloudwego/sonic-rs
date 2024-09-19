@@ -1,5 +1,6 @@
 use crate::error::{Error, ErrorCode, Result};
 
+#[cfg(not(miri))]
 #[inline(always)]
 pub(crate) fn from_utf8(data: &[u8]) -> Result<&str> {
     match simdutf8::basic::from_utf8(data) {
@@ -8,6 +9,18 @@ pub(crate) fn from_utf8(data: &[u8]) -> Result<&str> {
             // slow path, get the correct position of the first invalid utf-8 character
             from_utf8_compat(data)
         }
+    }
+}
+
+#[cfg(miri)]
+pub(crate) fn from_utf8(data: &[u8]) -> Result<&str> {
+    match std::str::from_utf8(data) {
+        Ok(ret) => Ok(ret),
+        Err(err) => Err(Error::syntax(
+            ErrorCode::InvalidUTF8,
+            data,
+            err.valid_up_to(),
+        )),
     }
 }
 

@@ -18,7 +18,7 @@ cfg_if::cfg_if! {
     if #[cfg(target_feature = "sse2")] {
         mod sse2;
         use self::sse2::*;
-    } else if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
+    } else if #[cfg(all(target_feature="neon", target_arch="aarch64", not(miri)))] {
         pub(crate) mod neon;
         use self::neon::*;
     } else {

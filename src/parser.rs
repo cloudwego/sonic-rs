@@ -11,7 +11,7 @@ use serde::de::{self, Expected, Unexpected};
 use smallvec::SmallVec;
 
 use super::reader::{Reader, Reference};
-#[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
+#[cfg(all(target_feature = "neon", target_arch = "aarch64", not(miri)))]
 use crate::util::simd::bits::NeonBits;
 use crate::{
     error::{
@@ -836,9 +836,9 @@ where
         &mut self,
         buf: &'own mut Vec<u8>,
     ) -> Result<Reference<'de, 'own, [u8]>> {
-        #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
+        #[cfg(all(target_feature = "neon", target_arch = "aarch64", not(miri)))]
         let mut block: StringBlock<NeonBits>;
-        #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
+        #[cfg(not(all(target_feature = "neon", target_arch = "aarch64", not(miri))))]
         let mut block: StringBlock<u32>;
 
         self.parse_escaped_char(buf)?;
@@ -910,9 +910,9 @@ where
     ) -> Result<Reference<'de, 'own, [u8]>> {
         // now reader is start after `"`, so we can directly skipstring
         let start = self.read.index();
-        #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
+        #[cfg(all(target_feature = "neon", target_arch = "aarch64", not(miri)))]
         let mut block: StringBlock<NeonBits>;
-        #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
+        #[cfg(not(all(target_feature = "neon", target_arch = "aarch64", not(miri))))]
         let mut block: StringBlock<u32>;
 
         while let Some(chunk) = self.read.peek_n(StringBlock::LANES) {

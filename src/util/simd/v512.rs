@@ -26,7 +26,7 @@ impl Mask for Mask512 {
     #[inline(always)]
     fn bitmask(self) -> Self::BitMask {
         cfg_if::cfg_if! {
-            if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
+            if #[cfg(all(target_feature="neon", target_arch="aarch64", not(miri)))] {
                 use std::arch::aarch64::uint8x16_t;
                 let (v0, v1) = self.0;
                 let (m0, m1) = v0.0;

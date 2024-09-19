@@ -16,6 +16,8 @@ pub struct Mask128([u8; 16]);
 
 impl Simd for Simd128i {
     const LANES: usize = 16;
+
+    type Element = i8;
     type Mask = Mask128;
 
     unsafe fn loadu(ptr: *const u8) -> Self {
@@ -38,8 +40,8 @@ impl Simd for Simd128i {
         Mask128(mask)
     }
 
-    fn splat(value: u8) -> Self {
-        Self([value as i8; Self::LANES])
+    fn splat(value: i8) -> Self {
+        Self([value; Self::LANES])
     }
 
     fn le(&self, rhs: &Self) -> Self::Mask {
@@ -61,6 +63,8 @@ impl Simd for Simd128i {
 
 impl Simd for Simd128u {
     const LANES: usize = 16;
+
+    type Element = u8;
     type Mask = Mask128;
 
     unsafe fn loadu(ptr: *const u8) -> Self {
