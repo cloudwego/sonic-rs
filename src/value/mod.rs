@@ -10,6 +10,7 @@ pub mod shared;
 mod tryfrom;
 #[macro_use]
 mod macros;
+pub mod get;
 pub mod object;
 mod partial_eq;
 mod ser;

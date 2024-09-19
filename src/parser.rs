@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     num::NonZeroU8,
     ops::Deref,
     slice::{from_raw_parts, from_raw_parts_mut},
@@ -32,7 +33,7 @@ use crate::{
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
     value::{shared::Shared, visitor::JsonVisitor},
-    JsonType, LazyValue,
+    JsonType, JsonValueMutTrait, JsonValueTrait, LazyValue,
 };
 
 pub(crate) const DEFAULT_KEY_BUF_CAPACITY: usize = 128;
@@ -1942,11 +1943,12 @@ where
         }
 
         // deal with the empty object
-        match self.get_next_token([b'"', b'}'], 1) {
+        match self.skip_space() {
             Some(b'"') => {}
             Some(b'}') => return perr!(self, GetInEmptyObject),
-            None => return perr!(self, EofWhileParsing),
-            Some(_) => unreachable!(),
+            _ => {
+                return perr!(self, ExpectObjectKeyOrEnd);
+            }
         }
 
         let mut visited = 0;
@@ -1981,16 +1983,6 @@ where
         } else {
             Ok(())
         }
-    }
-
-    pub(crate) fn remain_str(&self) -> &'de str {
-        as_str(self.remain_u8_slice())
-    }
-
-    pub(crate) fn remain_u8_slice(&self) -> &'de [u8] {
-        let reader = &self.read;
-        let start = reader.index();
-        reader.slice_unchecked(start, start + reader.remain())
     }
 
     fn get_many_index_unchecked(
@@ -2181,5 +2173,86 @@ where
             _ => self.error(ErrorCode::InvalidJsonValue),
         };
         self.fix_position(err)
+    }
+}
+
+impl<'de, R> Parser<R>
+where
+    R: Reader<'de>,
+{
+    pub fn get_by_schema(&mut self, schema: &mut crate::Value) -> Result<()> {
+        if !schema.is_object() {
+            return perr!(
+                self,
+                Message(std::borrow::Cow::Borrowed("The schema must be an object"))
+            );
+        }
+
+        let mut strbuf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);
+        self.get_by_schema_rec(schema, &mut strbuf)
+    }
+
+    fn get_by_schema_rec(&mut self, schema: &mut crate::Value, strbuf: &mut Vec<u8>) -> Result<()> {
+        let ch = self.skip_space_peek();
+        if ch.is_none() {
+            return perr!(self, EofWhileParsing);
+        }
+
+        let mut should_replace = true;
+        let start = self.read.index();
+
+        match (schema.as_object_mut(), ch) {
+            (Some(object), Some(b'{')) => {
+                let mut key_values = HashMap::new();
+                for (key, value) in object.iter_mut() {
+                    key_values.insert(key, value);
+                }
+
+                // We should replace the schema object if the object is empty
+                should_replace = key_values.is_empty();
+                if should_replace {
+                    self.skip_one()?;
+                } else {
+                    self.read.eat(1);
+                    match self.skip_space() {
+                        Some(b'"') => {}
+                        Some(b'}') => return Ok(()),
+                        _ => {
+                            return perr!(self, ExpectObjectKeyOrEnd);
+                        }
+                    }
+
+                    loop {
+                        let key = self.parse_str_impl(strbuf)?;
+                        self.parse_object_clo()?;
+                        if let Some(val) = key_values.get_mut(key.deref()) {
+                            self.get_by_schema_rec(val, strbuf)?;
+                        } else {
+                            self.skip_one()?;
+                        }
+
+                        match self.skip_space() {
+                            Some(b',') => match self.skip_space() {
+                                Some(b'"') => continue,
+                                _ => return perr!(self, ExpectObjectKeyOrEnd),
+                            },
+                            Some(b'}') => break,
+                            Some(_) => return perr!(self, ExpectedObjectCommaOrEnd),
+                            None => return perr!(self, EofWhileParsing),
+                        }
+                    }
+                }
+            }
+            _ => {
+                self.skip_one()?;
+            }
+        }
+
+        let end = self.read.index();
+        if should_replace && start < end {
+            let slice = self.read.slice_unchecked(start, end);
+            *schema = crate::from_slice(slice)?;
+        }
+        Ok(())
     }
 }
