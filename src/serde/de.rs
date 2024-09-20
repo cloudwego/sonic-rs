@@ -1370,3 +1370,16 @@ where
 {
     from_trait(Read::new(s.as_bytes(), false))
 }
+
+/// Deserialize an instance of type `T` from a Reader
+pub fn from_reader<R, T>(mut reader: R) -> Result<T>
+where
+    R: std::io::Read,
+    T: de::DeserializeOwned,
+{
+    let mut data = Vec::new();
+    if let Err(e) = reader.read_to_end(&mut data) {
+        return Err(Error::io(e));
+    };
+    from_slice(data.as_slice())
+}
