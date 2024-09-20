@@ -1,3 +1,5 @@
+use std::fs::File;
+
 use sonic_rs::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -8,6 +10,7 @@ struct Person {
 }
 
 fn main() {
+    // parse a string
     let data = r#"{
   "name": "Xiaoming",
   "age": 18,
@@ -16,6 +19,14 @@ fn main() {
   ]
 }"#;
     let p: Person = sonic_rs::from_str(data).unwrap();
+    assert_eq!(p.age, 18);
+    assert_eq!(p.name, "Xiaoming");
+    let out = sonic_rs::to_string_pretty(&p).unwrap();
+    assert_eq!(out, data);
+
+    // parse a file reader
+    let p: Person =
+        sonic_rs::from_reader(File::open("examples/testdata/person.json").unwrap()).unwrap();
     assert_eq!(p.age, 18);
     assert_eq!(p.name, "Xiaoming");
     let out = sonic_rs::to_string_pretty(&p).unwrap();

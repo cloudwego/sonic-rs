@@ -1,7 +1,7 @@
 //! Deserialize JSON data to a Rust data structure.
 
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
-use std::{marker::PhantomData, mem::ManuallyDrop, ptr::slice_from_raw_parts};
+use std::{io, marker::PhantomData, mem::ManuallyDrop, ptr::slice_from_raw_parts};
 
 use serde::{
     de::{self, Expected, Unexpected},
@@ -1302,4 +1302,17 @@ where
     T: de::Deserialize<'a>,
 {
     from_trait(Read::new(s.as_bytes(), false))
+}
+
+/// Deserialize an instance of type `T` from a Reader
+pub fn from_reader<R, T>(mut reader: R) -> Result<T>
+where
+    R: io::Read,
+    T: de::DeserializeOwned,
+{
+    let mut data = Vec::new();
+    if let Err(e) = reader.read_to_end(&mut data) {
+        return Err(Error::io(e));
+    };
+    from_slice(data.as_slice())
 }

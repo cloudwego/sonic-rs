@@ -163,7 +163,6 @@ impl From<Error> for std::io::Error {
 pub enum Category {
     /// The error was caused by a failure to read or write bytes on an I/O
     /// stream.
-    /// TODO: support stream reader in the future
     Io,
 
     /// The error was caused by input that was not syntactically valid JSON.
