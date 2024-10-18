@@ -1,84 +1,56 @@
 [package]
-name = "sonic-rs"
-version = "0.3.13"
-authors = ["Volo Team <volo@cloudwego.io>"]
-edition = "2021"
-description = "Sonic-rs is a fast Rust JSON library based on SIMD"
-repository = "https://github.com/cloudwego/sonic-rs"
+authors       = ["Volo Team <volo@cloudwego.io>"]
+categories    = ["encoding", "parser-implementations"]
+description   = "Sonic-rs is a fast Rust JSON library based on SIMD"
 documentation = "https://docs.rs/sonic-rs"
-license = "Apache-2.0"
-readme = "README.md"
-keywords = ["json", "simd", "serde", "serialization"]
-categories = ["encoding", "parser-implementations"]
+edition       = "2021"
+keywords      = ["json", "simd", "serde", "serialization"]
+license       = "Apache-2.0"
+name          = "sonic-rs"
+readme        = "README.md"
+repository    = "https://github.com/cloudwego/sonic-rs"
+version       = "0.3.13"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-cfg-if = "1.0"
-serde = { version = "1.0", features = ["rc", "derive"] }
-itoa = "1.0"
-ryu = "1.0"
-faststr = { version = "0.2", features = ["serde"] }
-smallvec = "1.11"
-bumpalo = "3.13"
-bytes = "1.4"
-thiserror = "1.0"
-simdutf8 = "0.1"
+bumpalo     = "3.13"
+bytes       = "1.4"
+cfg-if      = "1.0"
+faststr     = { version = "0.2", features = ["serde"] }
+itoa        = "1.0"
 parking_lot = "0.12"
+ryu         = "1.0"
+serde       = { version = "1.0", features = ["rc", "derive"] }
+simdutf8    = "0.1"
+smallvec    = "1.11"
+thiserror   = "1.0"
 
 
 [target.'cfg(not(target_env = "msvc"))'.dev-dependencies]
-jemallocator =  "0.5"
+jemallocator = "0.5"
 
 [dev-dependencies]
-serde_json = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
-simd-json = "0.13"
-core_affinity = "0.8"
-criterion = { version = "0.5", features = ["html_reports"] }
-gjson = "0.8"
+encoding_rs  = "0.8"
 serde_derive = "1.0"
-encoding_rs = "0.8"
+serde_json   = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
 # This schema are used in benches and copied from https://github.com/serde-rs/json-benchmark
-schema = { path = "benches/schema" }
-paste = "1.0"
+bytes       = { version = "1.4", features = ["serde"] }
+chrono      = { version = "0.4", features = ["serde"] }
+paste       = "1.0"
+schema      = { path = "./benchmarks/benches/schema" }
 serde_bytes = "0.11"
-bytes = {version = "1.4", features = ["serde"]}
-chrono = { version = "0.4", features = ["serde"] }
 
 [profile.release]
-opt-level = 3
-debug = false
-rpath = false
-lto = true
+codegen-units    = 1
+debug            = true
 debug-assertions = false
-codegen-units = 1
-panic = 'unwind'
-incremental = false
-overflow-checks = false
-
-[[bench]]
-name = "deserialize_struct"
-harness = false
-
-[[bench]]
-name = "deserialize_value"
-harness = false
-
-[[bench]]
-name = "serialize_struct"
-harness = false
-
-[[bench]]
-name = "serialize_value"
-harness = false
-
-[[bench]]
-name = "get_from"
-harness = false
-
-[[bench]]
-name = "value_operator"
-harness = false
+incremental      = false
+lto              = true
+opt-level        = 3
+overflow-checks  = false
+panic            = 'unwind'
+rpath            = false
 
 [features]
 default = []
