@@ -1,0 +1,66 @@
+[package]
+edition = "2021"
+name    = "json_benchmarks"
+version = "0.1.0"
+
+[dependencies]
+
+
+[profile.release]
+codegen-units    = 1
+debug            = true
+debug-assertions = false
+incremental      = false
+lto              = true
+opt-level        = 3
+overflow-checks  = false
+panic            = 'unwind'
+rpath            = false
+
+
+[target.'cfg(not(target_env = "msvc"))'.dev-dependencies]
+jemallocator = "0.5"
+
+[dev-dependencies]
+core_affinity = "0.8"
+criterion     = { version = "0.5", features = ["html_reports"] }
+encoding_rs   = "0.8"
+gjson         = "0.8"
+serde         = { version = "1.0", features = ["rc", "derive"] }
+serde_derive  = "1.0"
+serde_json    = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
+simd-json     = "0.14"
+sonic-rs      = { path = "../" }
+# This schema are used in benches and copied from https://github.com/serde-rs/json-benchmark
+bytes       = { version = "1.4", features = ["serde"] }
+chrono      = { version = "0.4", features = ["serde"] }
+paste       = "1.0"
+schema      = { path = "benches/schema" }
+serde_bytes = "0.11"
+
+[[bench]]
+harness = false
+name    = "deserialize_struct"
+
+[[bench]]
+harness = false
+name    = "deserialize_value"
+
+[[bench]]
+harness = false
+name    = "serialize_struct"
+
+[[bench]]
+harness = false
+name    = "serialize_value"
+
+[[bench]]
+harness = false
+name    = "get_from"
+
+[[bench]]
+harness = false
+name    = "value_operator"
+
+[features]
+default = []

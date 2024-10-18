@@ -42,9 +42,28 @@ fn sonic_rs_from_slice_unchecked(data: &[u8]) {
 //     }
 // }
 
-// fn sonic_rs_to_serdejson_value(data: &[u8]) {
-//     let _: serde_json::Value = sonic_rs::from_slice(data).unwrap();
-// }
+fn sonic_rs_to_serdejson_value(data: &[u8]) {
+    let _: serde_json::Value = sonic_rs::from_slice(data).unwrap();
+}
+
+fn sonic_rs_to_simdjson_value(data: &[u8]) {
+    let _: simd_json::OwnedValue = sonic_rs::from_slice(data).unwrap();
+}
+
+fn sonic_rs_to_newvalue(data: &[u8]) {
+    let mut value = sonic_rs::NewValue::Null;
+    value.parse_with_padding(data).unwrap();
+}
+
+fn sonic_rs_to_newvalue2(data: &[u8]) {
+    let mut value = sonic_rs::NewValue2::Null;
+    value.parse_with_padding(data).unwrap();
+}
+
+fn sonic_rs_to_newvalue2_without(data: &[u8]) {
+    let mut value = sonic_rs::NewValue2::Null;
+    value.parse_without_padding(data).unwrap();
+}
 
 macro_rules! bench_file {
     ($name:ident) => {
@@ -86,6 +105,66 @@ macro_rules! bench_file {
                     BatchSize::SmallInput,
                 )
             });
+
+            group.bench_with_input(
+                "sonic_rs_to_serde_json_value::from_slice_unchecked",
+                &vec,
+                |b, data| {
+                    b.iter_batched(
+                        || data,
+                        |bytes| sonic_rs_to_serdejson_value(&bytes),
+                        BatchSize::SmallInput,
+                    )
+                },
+            );
+
+            group.bench_with_input(
+                "sonic_rs_to_simd_json_value::from_slice_unchecked",
+                &vec,
+                |b, data| {
+                    b.iter_batched(
+                        || data,
+                        |bytes| sonic_rs_to_simdjson_value(&bytes),
+                        BatchSize::SmallInput,
+                    )
+                },
+            );
+
+            group.bench_with_input(
+                "sonic_rs_to_newvalue::from_slice_unchecked",
+                &vec,
+                |b, data| {
+                    b.iter_batched(
+                        || data,
+                        |bytes| sonic_rs_to_newvalue(&bytes),
+                        BatchSize::SmallInput,
+                    )
+                },
+            );
+
+            group.bench_with_input(
+                "sonic_rs_to_newvalue2::from_slice_unchecked",
+                &vec,
+                |b, data| {
+                    b.iter_batched(
+                        || data,
+                        |bytes| sonic_rs_to_newvalue2(&bytes),
+                        BatchSize::SmallInput,
+                    )
+                },
+            );
+
+            group.bench_with_input(
+                "sonic_rs_to_newvalue2_without::from_slice_unchecked",
+                &vec,
+                |b, data| {
+                    b.iter_batched(
+                        || data,
+                        |bytes| sonic_rs_to_newvalue2_without(&bytes),
+                        BatchSize::SmallInput,
+                    )
+                },
+            );
 
             // group.bench_with_input("sonic_rs::skip_one", &vec, |b, data| {
             //     b.iter_batched(

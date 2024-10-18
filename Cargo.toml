@@ -26,10 +26,6 @@ simdutf8    = "0.1"
 smallvec    = "1.11"
 thiserror   = "1.0"
 
-
-[target.'cfg(not(target_env = "msvc"))'.dev-dependencies]
-jemallocator = "0.5"
-
 [dev-dependencies]
 encoding_rs  = "0.8"
 serde_derive = "1.0"

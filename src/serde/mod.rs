@@ -267,7 +267,7 @@ mod test {
     fn read_file(path: &str, vec: &mut Vec<u8>) {
         use std::io::Read;
         let root = env!("CARGO_MANIFEST_DIR").to_owned();
-        std::fs::File::open(root + "/benches/testdata/" + path)
+        std::fs::File::open(root + "/benchmarks/benches/testdata/" + path)
             .unwrap()
             .read_to_end(vec)
             .unwrap();
