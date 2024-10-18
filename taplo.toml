@@ -1,0 +1,5 @@
+[formatting]
+align_comments = true
+align_entries  = true
+indent_string  = "    "
+reorder_keys   = true
