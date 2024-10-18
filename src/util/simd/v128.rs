@@ -15,6 +15,7 @@ pub struct Simd128u([u8; 16]);
 pub struct Mask128([u8; 16]);
 
 impl Simd for Simd128i {
+    type Element = i8;
     const LANES: usize = 16;
     type Mask = Mask128;
 
@@ -38,7 +39,7 @@ impl Simd for Simd128i {
         Mask128(mask)
     }
 
-    fn splat(value: u8) -> Self {
+    fn splat(value: i8) -> Self {
         Self([value as i8; Self::LANES])
     }
 
@@ -60,6 +61,7 @@ impl Simd for Simd128i {
 }
 
 impl Simd for Simd128u {
+    type Element = u8;
     const LANES: usize = 16;
     type Mask = Mask128;
 
