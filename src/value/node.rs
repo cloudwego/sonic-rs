@@ -422,7 +422,10 @@ impl MetaNode {
 }
 
 impl super::value_trait::JsonValueTrait for Value {
-    type ValueType<'v> = &'v Value where Self: 'v;
+    type ValueType<'v>
+        = &'v Value
+    where
+        Self: 'v;
 
     #[inline]
     fn get_type(&self) -> JsonType {
@@ -1903,7 +1906,7 @@ mod test {
     #[test]
     fn test_node_from_files3() {
         use std::fs::DirEntry;
-        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/benches/testdata/";
+        let path = env!("CARGO_MANIFEST_DIR").to_string() + "/benchmarks/benches/testdata/";
         println!("dir is {}", path);
 
         let mut files: Vec<DirEntry> = std::fs::read_dir(path)
