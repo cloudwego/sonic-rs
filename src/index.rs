@@ -41,7 +41,6 @@ where
     /// // use pointer for retrieving nested values
     /// assert_eq!(data.pointer(&pointer!["x", "y", 0]).unwrap(), &json!("z"));
     /// ```
-
     #[inline]
     fn index(&self, index: I) -> &Value {
         static NULL: Value = Value::new();

@@ -50,8 +50,6 @@ macro_rules! check_digit {
     };
 }
 
-const DEFAULT_U8: u8 = 0_u8;
-
 #[inline(always)]
 fn parse_exponent(data: &[u8], index: &mut usize) -> Result<i32, ErrorCode> {
     let mut exponent: i32 = 0;

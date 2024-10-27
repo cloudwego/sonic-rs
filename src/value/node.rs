@@ -1613,11 +1613,6 @@ impl<'a> DocumentVisitor<'a> {
     }
 
     #[inline(always)]
-    fn shared(&self) -> *const Shared {
-        self.shared
-    }
-
-    #[inline(always)]
     fn nodes(&mut self) -> &mut Vec<ManuallyDrop<Value>> {
         unsafe { self.nodes.as_mut() }
     }

@@ -51,7 +51,7 @@ impl<'de> From<&'de String> for JsonSlice<'de> {
     }
 }
 
-impl<'de> From<String> for JsonSlice<'de> {
+impl From<String> for JsonSlice<'_> {
     fn from(value: String) -> Self {
         JsonSlice::FastStr(FastStr::new(value))
     }

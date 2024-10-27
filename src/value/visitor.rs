@@ -7,22 +7,27 @@ pub(crate) trait JsonVisitor<'de> {
         false
     }
 
+    #[allow(dead_code)]
     fn visit_u64(&mut self, _val: u64) -> bool {
         false
     }
 
+    #[allow(dead_code)]
     fn visit_i64(&mut self, _val: i64) -> bool {
         false
     }
 
+    #[allow(dead_code)]
     fn visit_f64(&mut self, _val: f64) -> bool {
         false
     }
 
+    #[allow(dead_code)]
     fn visit_raw_number(&mut self, _val: &str) -> bool {
         false
     }
 
+    #[allow(dead_code)]
     fn visit_borrowed_raw_number(&mut self, _val: &str) -> bool {
         false
     }
@@ -51,10 +56,12 @@ pub(crate) trait JsonVisitor<'de> {
         false
     }
 
+    #[allow(dead_code)]
     fn visit_key(&mut self, _key: &str) -> bool {
         false
     }
 
+    #[allow(dead_code)]
     fn visit_borrowed_key(&mut self, _key: &'de str) -> bool {
         false
     }
