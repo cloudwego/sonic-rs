@@ -133,21 +133,6 @@ pub(crate) struct ArcInner<T> {
     refcnt: atomic::AtomicUsize,
 }
 
-impl<T> ArcInner<T> {
-    #[inline]
-    pub(crate) fn new(data: T) -> Self {
-        Self {
-            refcnt: atomic::AtomicUsize::new(1),
-            data,
-        }
-    }
-
-    #[inline]
-    pub(crate) fn data(&self) -> &T {
-        &self.data
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;

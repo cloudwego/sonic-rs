@@ -1,5 +1,5 @@
 #![cfg_attr(not(doctest), doc = include_str!("../README.md"))]
-#![allow(dead_code)]
+#![allow(clippy::needless_lifetimes)]
 #![doc(test(attr(warn(unused))))]
 
 mod error;

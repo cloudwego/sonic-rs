@@ -373,7 +373,7 @@ pub(crate) struct SerializeTupleVariant {
     vec: Value,
 }
 
-/// Serializing Rust into `Value`. We has special handling for `Number`, `RawNumber` and `RawValue`.
+/// Serializing Rust into `Value`. We has special handling for `Number`, `RawNumber`.
 pub(crate) struct SerializeMap {
     map: MapInner,
     shared: NonNull<Shared>,
@@ -385,9 +385,6 @@ enum MapInner {
         next_key: Option<Value>, // object key is value
     },
     RawNumber {
-        out_value: Option<Value>,
-    },
-    RawValue {
         out_value: Option<Value>,
     },
 }
@@ -481,7 +478,6 @@ impl serde::ser::SerializeMap for SerializeMap {
                 Ok(())
             }
             MapInner::RawNumber { .. } => unreachable!(),
-            MapInner::RawValue { .. } => unreachable!(),
         }
     }
 
@@ -499,7 +495,6 @@ impl serde::ser::SerializeMap for SerializeMap {
                 Ok(())
             }
             MapInner::RawNumber { .. } => unreachable!(),
-            MapInner::RawValue { .. } => unreachable!(),
         }
     }
 
@@ -507,7 +502,6 @@ impl serde::ser::SerializeMap for SerializeMap {
         match self.map {
             MapInner::Object { object, .. } => Ok(object),
             MapInner::RawNumber { .. } => unreachable!(),
-            MapInner::RawValue { .. } => unreachable!(),
         }
     }
 }
@@ -724,9 +718,6 @@ impl serde::ser::SerializeStruct for SerializeMap {
             MapInner::RawNumber { out_value: _ } => {
                 todo!()
             }
-            MapInner::RawValue { out_value: _ } => {
-                todo!()
-            }
         }
     }
 
@@ -735,9 +726,6 @@ impl serde::ser::SerializeStruct for SerializeMap {
             MapInner::Object { .. } => serde::ser::SerializeMap::end(self),
             MapInner::RawNumber { out_value, .. } => {
                 Ok(out_value.expect("number value was not emitted"))
-            }
-            MapInner::RawValue { out_value, .. } => {
-                Ok(out_value.expect("raw value was not emitted"))
             }
         }
     }

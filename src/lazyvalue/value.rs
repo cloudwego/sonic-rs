@@ -179,7 +179,10 @@ impl<'a> Hash for LazyValue<'a> {
 }
 
 impl<'a> JsonValueTrait for LazyValue<'a> {
-    type ValueType<'v> = LazyValue<'v> where Self: 'v;
+    type ValueType<'v>
+        = LazyValue<'v>
+    where
+        Self: 'v;
 
     fn as_bool(&self) -> Option<bool> {
         match self.raw.as_ref() {

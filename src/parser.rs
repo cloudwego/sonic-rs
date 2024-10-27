@@ -32,7 +32,7 @@ use crate::{
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
     value::{shared::Shared, visitor::JsonVisitor},
-    JsonType, LazyValue,
+    LazyValue,
 };
 
 pub(crate) const DEFAULT_KEY_BUF_CAPACITY: usize = 128;
@@ -220,22 +220,6 @@ where
         }
     }
 
-    #[inline(always)]
-    fn parse_string<V>(&mut self, visitor: &mut V, strbuf: &mut Vec<u8>) -> Result<()>
-    where
-        V: JsonVisitor<'de>,
-    {
-        let ok = match self.parse_str_impl(strbuf)? {
-            Reference::Borrowed(s) => visitor.visit_borrowed_str(s),
-            Reference::Copied(s) => visitor.visit_str(s),
-        };
-        if !ok {
-            perr!(self, UnexpectedVisitType)
-        } else {
-            Ok(())
-        }
-    }
-
     // TODO: optimize me, avoid clone twice.
     #[inline(always)]
     fn parse_string_owned<V>(&mut self, visitor: &mut V, strbuf: &mut Vec<u8>) -> Result<()>
@@ -358,19 +342,6 @@ where
     }
 
     #[inline(always)]
-    fn parse_key<V>(&mut self, visitor: &mut V, strbuf: &mut Vec<u8>) -> Result<()>
-    where
-        V: JsonVisitor<'de>,
-    {
-        let ok = match self.parse_str_impl(strbuf)? {
-            Reference::Borrowed(s) => visitor.visit_borrowed_key(s),
-            Reference::Copied(s) => visitor.visit_key(s),
-        };
-        check_visit!(self, ok);
-        Ok(())
-    }
-
-    #[inline(always)]
     fn parse_object<V>(&mut self, visitor: &mut V) -> Result<()>
     where
         V: JsonVisitor<'de>,
@@ -439,19 +410,6 @@ where
             }
         } else {
             perr!(self, EofWhileParsing)
-        }
-    }
-
-    #[inline]
-    pub(crate) fn get_json_type(&mut self) -> Result<JsonType> {
-        match self.skip_space_peek() {
-            Some(b'-') | Some(b'0'..=b'9') => Ok(JsonType::Number),
-            Some(b'"') => Ok(JsonType::String),
-            Some(b'{') => Ok(JsonType::Object),
-            Some(b'[') => Ok(JsonType::Array),
-            Some(b't') | Some(b'f') => Ok(JsonType::Boolean),
-            Some(b'n') => Ok(JsonType::Null),
-            _ => perr!(self, EofWhileParsing),
         }
     }
 
@@ -1762,10 +1720,6 @@ where
         Ok(())
     }
 
-    pub(crate) fn get_from(&mut self, path: &JsonPointer) -> Result<(&'de [u8], ParseStatus)> {
-        self.get_from_with_iter(path.iter())
-    }
-
     pub(crate) fn get_from_with_iter<P: IntoIterator>(
         &mut self,
         path: P,
@@ -1983,10 +1937,12 @@ where
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn remain_str(&self) -> &'de str {
         as_str(self.remain_u8_slice())
     }
 
+    #[cfg(test)]
     pub(crate) fn remain_u8_slice(&self) -> &'de [u8] {
         let reader = &self.read;
         let start = reader.index();
