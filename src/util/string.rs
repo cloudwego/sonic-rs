@@ -1,6 +1,7 @@
 use std::{
     mem::MaybeUninit,
     slice::{from_raw_parts, from_raw_parts_mut},
+    str::from_utf8_unchecked,
 };
 
 #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
@@ -16,6 +17,11 @@ use crate::{
         unicode::handle_unicode_codepoint_mut,
     },
 };
+
+#[inline(always)]
+pub unsafe fn str_from_raw_parts<'a>(ptr: *const u8, len: usize) -> &'a str {
+    from_utf8_unchecked(from_raw_parts(ptr, len))
+}
 
 pub const ESCAPED_TAB: [u8; 256] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,

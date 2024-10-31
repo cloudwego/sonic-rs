@@ -1,13 +1,12 @@
 //! Represents a parsed JSON object.
 use std::marker::PhantomData;
 
-use super::{
-    node::replace_value,
-    shared::{Shared, SharedCtxGuard},
-    value_trait::JsonValueTrait,
+use super::{node::ValueMut, value_trait::JsonValueTrait};
+use crate::{
+    serde::tri,
+    util::reborrow::DormantMutRef,
+    value::node::{Value, ValueRefInner},
 };
-use crate::{serde::tri, util::reborrow::DormantMutRef, value::node::Value};
-
 /// Represents the JSON object. The inner implement is a key-value array. Its order is as same as
 /// origin JSON.
 ///
@@ -38,13 +37,33 @@ use crate::{serde::tri, util::reborrow::DormantMutRef, value::node::Value};
 /// ```
 /// If you care about that, recommend to use `HashMap` or `BTreeMap` instead. The parse performance
 /// is slower than `Object`.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 #[repr(transparent)]
 pub struct Object(pub(crate) Value);
 
 impl Default for Object {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl PartialEq for Object {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
+
+        for (k, v) in self.iter() {
+            if let Some(other_v) = other.get(&k) {
+                if v != other_v {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -77,22 +96,14 @@ impl Object {
     /// assert_eq!(obj["arr2"], "hello world");
     /// ```
     #[inline]
-    pub const fn new() -> Object {
-        let value = Value {
-            meta: super::node::Meta::new(super::node::OBJECT, std::ptr::null()),
-            data: super::node::Data {
-                achildren: std::ptr::null_mut(),
-            },
-        };
-        Object(value)
+    pub fn new() -> Object {
+        Object(Value::new_object())
     }
 
     /// Create a new empty object with capacity.
     #[inline]
     pub fn with_capacity(capacity: usize) -> Self {
-        let mut v = Self::new();
-        v.0.reserve::<Pair>(capacity);
-        v
+        Object(Value::new_object_with(capacity))
     }
 
     /// Clear the object, make it as empty but keep the allocated memory.
@@ -230,7 +241,11 @@ impl Object {
     /// assert_eq!(obj.len(), 5);
     /// ```
     #[inline]
-    pub fn insert<K: AsRef<str>, V: Into<Value>>(&mut self, key: &K, value: V) -> Option<Value> {
+    pub fn insert<K: AsRef<str> + ?Sized, V: Into<Value>>(
+        &mut self,
+        key: &K,
+        value: V,
+    ) -> Option<Value> {
         match self.entry(key) {
             Entry::Occupied(mut entry) => Some(entry.insert(value)),
             Entry::Vacant(entry) => {
@@ -306,7 +321,12 @@ impl Object {
     /// ```
     #[inline]
     pub fn iter(&self) -> Iter<'_> {
-        Iter(self.0.iter::<Pair>())
+        Iter(
+            self.0
+                .as_pair_slice()
+                .expect("iter() should not used in non-object")
+                .iter(),
+        )
     }
 
     /// Returns an mutable iterator over  the key-value pairs of the object.
@@ -327,7 +347,11 @@ impl Object {
     /// ```
     #[inline]
     pub fn iter_mut(&mut self) -> IterMut<'_> {
-        IterMut(self.0.iter_mut::<Pair>())
+        if let ValueMut::Object(obj) = self.0.as_mut() {
+            IterMut(obj.iter_mut())
+        } else {
+            unreachable!("should not used in array")
+        }
     }
 
     /// Gets the given key's corresponding entry in the object for in-place manipulation.
@@ -354,18 +378,12 @@ impl Object {
     /// assert_eq!(obj.get(&"10"), None);
     /// ```
     #[inline]
-    pub fn entry<'a, Q: AsRef<str>>(&'a mut self, key: &Q) -> Entry<'a> {
-        let (obj, mut dormant_obj) = DormantMutRef::new(self);
+    pub fn entry<'a, Q: AsRef<str> + ?Sized>(&'a mut self, key: &Q) -> Entry<'a> {
+        let (obj, dormant_obj) = DormantMutRef::new(self);
         match obj.0.get_key_mut(key.as_ref()) {
             None => {
                 // check flat
-                let obj_re = unsafe { dormant_obj.reborrow() };
-                if obj_re.0.is_static() {
-                    obj_re.0.mark_shared(Shared::new_ptr());
-                    obj_re.0.mark_root();
-                }
-                let shared = obj_re.0.shared();
-                let key = Value::copy_str(key.as_ref(), shared);
+                let key = Value::copy_str(key.as_ref());
                 Entry::Vacant(VacantEntry {
                     key,
                     dormant_obj,
@@ -398,26 +416,10 @@ impl Object {
     where
         F: FnMut(&str, &mut Value) -> bool,
     {
-        if self.is_empty() {
-            return;
-        }
-        let start: *mut Pair = unsafe { self.0.children_mut_ptr::<Pair>() };
-        let mut cur = start;
-        for (k, v) in self.0.iter_mut::<Pair>() {
-            let key = k.as_str().unwrap();
-            if f(key, v) {
-                if !std::ptr::eq(k, cur as *mut Value) {
-                    unsafe { std::ptr::copy_nonoverlapping((k as *mut Value).cast(), cur, 1) };
-                }
-                cur = unsafe { cur.add(1) };
-            } else {
-                // drop the old value
-                v.take();
-            }
-        }
-        unsafe {
-            let new_len = cur.offset_from(start) as usize;
-            self.0.set_len(new_len);
+        if let ValueMut::Object(s) = self.0.as_mut() {
+            s.retain_mut(|(k, v)| f(k.as_str().unwrap(), v))
+        } else {
+            unreachable!("should not used in array")
         }
     }
 
@@ -555,12 +557,9 @@ impl<'a> OccupiedEntry<'a> {
     /// ```
     #[inline]
     pub fn insert<T: Into<Value>>(&mut self, val: T) -> Value {
-        let obj = unsafe { self.dormant_obj.reborrow() };
-        let val = {
-            let _ = SharedCtxGuard::assign(obj.0.shared_parts());
-            val.into()
-        };
-        replace_value(self.handle, val)
+        let old = self.handle.take();
+        *self.handle = val.into();
+        old
     }
 
     /// Takes the value out of the entry, and returns it.
@@ -637,11 +636,7 @@ impl<'a> VacantEntry<'a> {
     pub fn insert<T: Into<Value>>(self, val: T) -> &'a mut Value {
         let obj = unsafe { self.dormant_obj.awaken() };
         obj.reserve(1);
-        let val = {
-            let _ = SharedCtxGuard::assign(obj.0.shared_parts());
-            val.into()
-        };
-        let pair = obj.0.append_pair((self.key, val));
+        let pair = obj.0.append_pair((self.key, val.into()));
         &mut pair.1
     }
 
@@ -790,10 +785,7 @@ impl<'a> Entry<'a> {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(mut entry) => {
                 let obj = unsafe { entry.dormant_obj.reborrow() };
-                let value = {
-                    let _ = SharedCtxGuard::assign(obj.0.shared_parts());
-                    default(entry.key())
-                };
+                let value = default(entry.key());
                 entry.insert(value)
             }
         }
@@ -995,24 +987,24 @@ mod test {
 
     #[test]
     fn test_value_object() {
-        let mut val = crate::from_str::<Value>(r#"{"a": 123, "b": "hello"}"#);
+        let mut val = crate::from_str::<Value>(r#"{"a": 123, "b": "hello"}"#).unwrap();
         let obj = val.as_object_mut().unwrap();
 
         for i in 0..3 {
             // push static node
-            let new_node = Value::new_u64(i, std::ptr::null());
+            let new_node = Value::new_u64(i);
             obj.insert(&"c", new_node);
             assert_eq!(obj["c"], i);
 
             // push node with new allocator
             let mut new_node = Array::default();
-            new_node.push(Value::new_u64(i, std::ptr::null()));
+            new_node.push(Value::new_u64(i));
             obj.insert(&"d", new_node);
             assert_eq!(obj["d"][0], i);
 
             // push node with self allocator
-            let mut new_node = Array::new_in(obj.0.shared_clone());
-            new_node.push(Value::new_u64(i, std::ptr::null()));
+            let mut new_node = Array::new();
+            new_node.push(Value::new_u64(i));
             obj.insert(&"e", new_node);
             assert_eq!(obj["e"][0], i);
         }

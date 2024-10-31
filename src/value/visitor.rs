@@ -1,4 +1,8 @@
 pub(crate) trait JsonVisitor<'de> {
+    fn visit_dom_start(&mut self) -> bool {
+        false
+    }
+
     fn visit_null(&mut self) -> bool {
         false
     }
@@ -63,6 +67,14 @@ pub(crate) trait JsonVisitor<'de> {
 
     #[allow(dead_code)]
     fn visit_borrowed_key(&mut self, _key: &'de str) -> bool {
+        false
+    }
+
+    fn visit_raw_str(&mut self, _value: &str, _raw: &mut [u8]) -> bool {
+        false
+    }
+
+    fn visit_dom_end(&mut self) -> bool {
         false
     }
 }

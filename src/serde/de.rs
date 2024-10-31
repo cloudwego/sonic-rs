@@ -1,7 +1,7 @@
 //! Deserialize JSON data to a Rust data structure.
 
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
-use std::{marker::PhantomData, mem::ManuallyDrop, ptr::slice_from_raw_parts};
+use std::{marker::PhantomData, mem::ManuallyDrop, ptr::slice_from_raw_parts, sync::Arc};
 
 use serde::{
     de::{self, Expected, Unexpected},
@@ -17,7 +17,7 @@ use crate::{
     parser::{as_str, ParseStatus, Parser},
     reader::{Read, Reader, Reference},
     util::num::ParserNumber,
-    value::node::Value,
+    value::{node::Value, shared::Shared},
     JsonInput,
 };
 
@@ -30,6 +30,7 @@ pub struct Deserializer<R> {
     pub(crate) parser: Parser<R>,
     scratch: Vec<u8>,
     remaining_depth: u8,
+    shared: Option<Arc<Shared>>, // the shared allocator for `Value`
 }
 
 // some functions only used for struct visitors.
@@ -40,6 +41,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
             parser: Parser::new(read),
             scratch: Vec::new(),
             remaining_depth: MAX_ALLOWED_DEPTH,
+            shared: Option::None,
         }
     }
 
@@ -306,25 +308,25 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     where
         V: de::Visitor<'de>,
     {
-        let shared = self.parser.get_shared_inc_count();
-        let mut val = Value::new_null(shared.data_ptr());
-        let mut val = if self.parser.read.index() == 0 {
+        let mut val = Value::new();
+        let val = if self.parser.read.index() == 0 {
             // get n to check trailing characters in later
             let n = val.parse_with_padding(self.parser.read.as_u8_slice())?;
             self.parser.read.eat(n);
             val
         } else {
+            let shared = unsafe {
+                if self.shared.is_none() {
+                    self.shared = Some(Arc::new(Shared::default()));
+                }
+                let shared = self.shared.as_mut().unwrap();
+                &mut *(Arc::as_ptr(shared) as *mut _)
+            };
             // deserialize some json parts into `Value`, not use padding buffer, avoid the memory
             // copy
-            val.parse_without_padding(&mut self.parser)?;
+            val.parse_without_padding(shared, &mut self.parser)?;
             val
         };
-
-        // deserialize `Value` must be root node
-        if !val.is_scalar() {
-            std::mem::forget(shared);
-        }
-        val.mark_root();
 
         let val = ManuallyDrop::new(val);
         // #Safety
