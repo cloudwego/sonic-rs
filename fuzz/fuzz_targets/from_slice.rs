@@ -54,6 +54,9 @@ fuzz_target!(|data: &[u8]| {
             let sv2: Value = from_str(&sout).unwrap();
             let eq = compare_value(&jv2, &sv2);
 
+            // compre use raw
+            fuzz_use_raw(data, &sv);
+
             if jv.is_object() && eq {
                 for ret in to_object_iter(data) {
                     let (k, lv) = ret.unwrap();
@@ -99,7 +102,8 @@ fuzz_target!(|data: &[u8]| {
             }
         }
         Err(_) => {
-            let _ = from_slice::<Value>(data).unwrap_err();
+            let _ = from_slice::<Value>(data)
+                .expect_err(&format!("parse invalid json {:?} failed", data));
         }
     }
 
@@ -112,6 +116,16 @@ fn compare_lazyvalue(jv: &JValue, sv: &sonic_rs::LazyValue) {
     let out = sv.as_raw_str().as_bytes();
     let sv2: sonic_rs::Value = sonic_rs::from_slice(out).unwrap();
     compare_value(jv, &sv2);
+}
+
+fn fuzz_use_raw(json: &[u8], sv: &sonic_rs::Value) {
+    use sonic_rs::{Deserialize, Deserializer, Value};
+    let json = unsafe { std::str::from_utf8_unchecked(json) };
+    let mut de = Deserializer::from_str(json).use_raw();
+    let value: Value = Deserialize::deserialize(&mut de).unwrap();
+    let out = sonic_rs::to_string(&value).unwrap();
+    let got: Value = sonic_rs::from_str(&out).unwrap();
+    assert_eq!(&got, sv);
 }
 
 fn compare_value(jv: &JValue, sv: &sonic_rs::Value) -> bool {

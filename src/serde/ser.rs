@@ -700,7 +700,10 @@ where
             Compound::Map { .. } => ser::SerializeMap::serialize_entry(self, key, value),
 
             Compound::RawValue { ser, .. } => {
-                if key == crate::serde::rawnumber::TOKEN || key == crate::lazyvalue::TOKEN {
+                if key == crate::serde::rawnumber::TOKEN
+                    || key == crate::lazyvalue::TOKEN
+                    || key == crate::value::Value::RAW_TOKEN
+                {
                     value.serialize(RawValueStrEmitter(ser))
                 } else {
                     Err(invalid_raw_value())
@@ -763,6 +766,7 @@ struct MapKeySerializer<'a, W: 'a, F: 'a> {
     ser: &'a mut Serializer<W, F>,
 }
 
+// TODO: fix the error info
 fn invalid_raw_value() -> Error {
     Error::ser_error(ErrorCode::InvalidJsonValue)
 }
@@ -778,7 +782,7 @@ macro_rules! quote {
             .formatter
             .begin_string(&mut $self.ser.writer)
             .map_err(Error::io));
-        tri!($value);
+        tri!($value.map_err(Error::io));
         return $self
             .ser
             .formatter
@@ -823,116 +827,83 @@ where
     type SerializeTupleStruct = Impossible<(), Error>;
     type SerializeTupleVariant = Impossible<(), Error>;
     type SerializeMap = Impossible<(), Error>;
-    type SerializeStruct = Impossible<(), Error>;
+    type SerializeStruct = Compound<'a, W, F>;
     type SerializeStructVariant = Impossible<(), Error>;
 
     fn serialize_bool(self, value: bool) -> Result<()> {
         quote!(
             self,
-            self.ser
-                .formatter
-                .write_bool(&mut self.ser.writer, value)
-                .map_err(Error::io)
+            self.ser.formatter.write_bool(&mut self.ser.writer, value)
         );
     }
 
     fn serialize_i8(self, value: i8) -> Result<()> {
         quote!(
             self,
-            self.ser
-                .formatter
-                .write_i8(&mut self.ser.writer, value)
-                .map_err(Error::io)
+            self.ser.formatter.write_i8(&mut self.ser.writer, value)
         );
     }
 
     fn serialize_i16(self, value: i16) -> Result<()> {
         quote!(
             self,
-            self.ser
-                .formatter
-                .write_i16(&mut self.ser.writer, value)
-                .map_err(Error::io)
+            self.ser.formatter.write_i16(&mut self.ser.writer, value)
         );
     }
 
     fn serialize_i32(self, value: i32) -> Result<()> {
         quote!(
             self,
-            self.ser
-                .formatter
-                .write_i32(&mut self.ser.writer, value)
-                .map_err(Error::io)
+            self.ser.formatter.write_i32(&mut self.ser.writer, value)
         );
     }
 
     fn serialize_i64(self, value: i64) -> Result<()> {
         quote!(
             self,
-            self.ser
-                .formatter
-                .write_i64(&mut self.ser.writer, value)
-                .map_err(Error::io)
+            self.ser.formatter.write_i64(&mut self.ser.writer, value)
         );
     }
 
     fn serialize_i128(self, value: i128) -> Result<()> {
         quote!(
             self,
-            self.ser
-                .formatter
-                .write_i128(&mut self.ser.writer, value)
-                .map_err(Error::io)
+            self.ser.formatter.write_i128(&mut self.ser.writer, value)
         );
     }
 
     fn serialize_u8(self, value: u8) -> Result<()> {
         quote!(
             self,
-            self.ser
-                .formatter
-                .write_u8(&mut self.ser.writer, value)
-                .map_err(Error::io)
+            self.ser.formatter.write_u8(&mut self.ser.writer, value)
         );
     }
 
     fn serialize_u16(self, value: u16) -> Result<()> {
         quote!(
             self,
-            self.ser
-                .formatter
-                .write_u16(&mut self.ser.writer, value)
-                .map_err(Error::io)
+            self.ser.formatter.write_u16(&mut self.ser.writer, value)
         );
     }
 
     fn serialize_u32(self, value: u32) -> Result<()> {
         quote!(
             self,
-            self.ser
-                .formatter
-                .write_u32(&mut self.ser.writer, value)
-                .map_err(Error::io)
+            self.ser.formatter.write_u32(&mut self.ser.writer, value)
         );
     }
 
     fn serialize_u64(self, value: u64) -> Result<()> {
         quote!(
             self,
-            self.ser
-                .formatter
-                .write_u64(&mut self.ser.writer, value)
-                .map_err(Error::io)
+            self.ser.formatter.write_u64(&mut self.ser.writer, value)
         );
     }
 
     fn serialize_u128(self, value: u128) -> Result<()> {
         quote!(
             self,
-            self.ser
-                .formatter
-                .write_u128(&mut self.ser.writer, value)
-                .map_err(Error::io)
+            self.ser.formatter.write_u128(&mut self.ser.writer, value)
         );
     }
 
@@ -940,11 +911,8 @@ where
         if value.is_finite() {
             quote!(
                 self,
-                self.ser
-                    .formatter
-                    .write_f32(&mut self.ser.writer, value)
-                    .map_err(Error::io)
-            );
+                self.ser.formatter.write_f32(&mut self.ser.writer, value)
+            )
         } else {
             Err(key_must_be_str_or_num(Unexpected::Other(
                 "NaN or Infinite f32",
@@ -956,10 +924,7 @@ where
         if value.is_finite() {
             quote!(
                 self,
-                self.ser
-                    .formatter
-                    .write_f64(&mut self.ser.writer, value)
-                    .map_err(Error::io)
+                self.ser.formatter.write_f64(&mut self.ser.writer, value)
             );
         } else {
             Err(key_must_be_str_or_num(Unexpected::Other(
@@ -1039,7 +1004,11 @@ where
     }
 
     fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
-        Err(key_must_be_str_or_num(Unexpected::Other(name)))
+        if name == crate::value::Value::RAW_TOKEN {
+            Ok(Compound::RawValue { ser: self.ser })
+        } else {
+            Err(key_must_be_str_or_num(Unexpected::Other(name)))
+        }
     }
 
     fn serialize_struct_variant(

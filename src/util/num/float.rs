@@ -89,18 +89,22 @@ pub trait RawFloat:
     /// This is only called in the fast-path algorithm, and therefore
     /// will not lose precision, since the value will always have
     /// only if the value is <= Self::MAX_MANTISSA_FAST_PATH.
+    #[allow(unused)]
     fn from_u64(v: u64) -> Self;
 
     /// Performs a raw transmutation from an integer.
     fn from_u64_bits(v: u64) -> Self;
 
     /// Get a small power-of-ten for fast-path multiplication.
+    #[allow(unused)]
     fn pow10_fast_path(exponent: usize) -> Self;
 
     /// Returns the category that this number falls into.
+    #[allow(unused)]
     fn classify(self) -> FpCategory;
 
     /// Returns the mantissa, exponent and sign as integers.
+    #[allow(unused)]
     fn integer_decode(self) -> (u64, i16, i8);
 }
 

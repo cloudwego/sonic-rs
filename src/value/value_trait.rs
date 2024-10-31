@@ -1,6 +1,4 @@
-#[cfg(feature = "arbitrary_precision")]
-use crate::RawNumber;
-use crate::{index::Index, JsonNumberTrait, Number};
+use crate::{index::Index, JsonNumberTrait, Number, RawNumber};
 
 /// JsonType is an enum that represents the type of a JSON value.
 ///
@@ -317,7 +315,6 @@ pub trait JsonValueTrait {
     fn as_number(&self) -> Option<Number>;
 
     /// Returns the [`RawNumber`] without precision loss if `self` is a `Number`.
-    #[cfg(feature = "arbitrary_precision")]
     fn as_raw_number(&self) -> Option<RawNumber>;
 
     /// Returns the str if `self` is a `string`.
@@ -507,7 +504,11 @@ pub trait JsonValueMutTrait {
 }
 
 impl<V: JsonValueTrait> JsonValueTrait for Option<V> {
-    type ValueType<'v> = V::ValueType<'v> where V:'v, Self: 'v;
+    type ValueType<'v>
+        = V::ValueType<'v>
+    where
+        V: 'v,
+        Self: 'v;
 
     fn as_bool(&self) -> Option<bool> {
         self.as_ref().and_then(|v| v.as_bool())
@@ -529,7 +530,6 @@ impl<V: JsonValueTrait> JsonValueTrait for Option<V> {
         self.as_ref().and_then(|v| v.as_number())
     }
 
-    #[cfg(feature = "arbitrary_precision")]
     fn as_raw_number(&self) -> Option<RawNumber> {
         self.as_ref().and_then(|v| v.as_raw_number())
     }
@@ -592,7 +592,11 @@ impl<V: JsonValueMutTrait> JsonValueMutTrait for Option<V> {
 }
 
 impl<V: JsonValueTrait, E> JsonValueTrait for Result<V, E> {
-    type ValueType<'v> = V::ValueType<'v> where V:'v, Self: 'v;
+    type ValueType<'v>
+        = V::ValueType<'v>
+    where
+        V: 'v,
+        Self: 'v;
 
     fn as_bool(&self) -> Option<bool> {
         self.as_ref().ok().and_then(|v| v.as_bool())
@@ -614,7 +618,6 @@ impl<V: JsonValueTrait, E> JsonValueTrait for Result<V, E> {
         self.as_ref().ok().and_then(|v| v.as_number())
     }
 
-    #[cfg(feature = "arbitrary_precision")]
     fn as_raw_number(&self) -> Option<RawNumber> {
         self.as_ref().ok().and_then(|v| v.as_raw_number())
     }
@@ -677,7 +680,11 @@ impl<V: JsonValueMutTrait, E> JsonValueMutTrait for Result<V, E> {
 }
 
 impl<V: JsonValueTrait> JsonValueTrait for &V {
-    type ValueType<'v> = V::ValueType<'v> where V:'v, Self: 'v;
+    type ValueType<'v>
+        = V::ValueType<'v>
+    where
+        V: 'v,
+        Self: 'v;
 
     fn as_bool(&self) -> Option<bool> {
         (*self).as_bool()
@@ -699,7 +706,6 @@ impl<V: JsonValueTrait> JsonValueTrait for &V {
         (*self).as_number()
     }
 
-    #[cfg(feature = "arbitrary_precision")]
     fn as_raw_number(&self) -> Option<RawNumber> {
         (*self).as_raw_number()
     }

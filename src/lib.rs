@@ -2,6 +2,7 @@
 #![allow(clippy::needless_lifetimes)]
 #![doc(test(attr(warn(unused))))]
 
+mod config;
 mod error;
 mod index;
 mod input;

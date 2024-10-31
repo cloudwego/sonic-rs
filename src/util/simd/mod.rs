@@ -1,17 +1,7 @@
+#[allow(unused_imports)]
+#[allow(unused)]
 pub mod bits;
 mod traits;
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! impl_lanes {
-    ($simd: ty, $lane: expr) => {
-        impl $simd {
-            pub const fn lanes() -> usize {
-                $lane
-            }
-        }
-    };
-}
 
 // pick v128 simd
 cfg_if::cfg_if! {
@@ -45,12 +35,12 @@ pub use self::traits::{BitMask, Mask, Simd};
 mod v512;
 use self::v512::*;
 
+#[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
 pub type u8x16 = Simd128u;
+
 pub type u8x32 = Simd256u;
 pub type u8x64 = Simd512u;
 
 pub type i8x32 = Simd256i;
 
-pub type m8x16 = Mask128;
 pub type m8x32 = Mask256;
-pub type m8x64 = Mask512;

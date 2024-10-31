@@ -15,8 +15,9 @@ impl PartialEq for Value {
         match self.as_ref2() {
             ValueRefInner::Null => other.is_null(),
             ValueRefInner::Bool(a) => other.as_bool().map_or(false, |b| a == b),
-            ValueRefInner::Number(a) => other.as_number().map_or(false, |b| a == b),
-            ValueRefInner::RawNum(a) => other.as_rawnum().map_or(false, |b| a == b),
+            ValueRefInner::Number(_) | ValueRefInner::RawNum(_) => {
+                other.as_number() == self.as_number()
+            }
             ValueRefInner::Str(a) => other.as_str().map_or(false, |b| a == b),
             ValueRefInner::Array(_) | ValueRefInner::EmptyArray => {
                 other.as_value_slice() == self.as_value_slice()
@@ -24,7 +25,6 @@ impl PartialEq for Value {
             ValueRefInner::Object(_) | ValueRefInner::EmptyObject => {
                 other.as_object() == self.as_object()
             }
-            _ => unreachable!(),
         }
     }
 }

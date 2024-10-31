@@ -1,7 +1,7 @@
 # Typo check: https://github.com/crate-ci/typos
 
 [files]
-extend-exclude = ["assets/", "benches/testdata/"]
+extend-exclude = ["assets/", "benchmarks/benches/testdata/"]
 
 [default.extend-words]
 alse = "alse"
