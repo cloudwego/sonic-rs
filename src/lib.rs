@@ -17,9 +17,9 @@ pub mod value;
 pub mod writer;
 
 // re-export FastStr
-pub use ::faststr::FastStr;
 // re-export the serde trait
 pub use ::serde::{Deserialize, Serialize};
+pub use faststr::FastStr;
 #[doc(inline)]
 pub use reader::Read;
 

@@ -2,16 +2,17 @@
 use std::{
     fmt::Debug,
     iter::FusedIterator,
-    ops::{Deref, DerefMut, Range, RangeBounds},
-    ptr::NonNull,
+    ops::{Deref, DerefMut, RangeBounds},
     slice::{from_raw_parts, from_raw_parts_mut},
 };
 
-use super::shared::{Shared, SharedCtxGuard};
+use super::node::ValueMut;
 use crate::{
     serde::tri,
-    util::{arc::Arc, range::range},
-    value::{node::Value, value_trait::JsonValueTrait},
+    value::{
+        node::{Value, ValueRefInner},
+        value_trait::JsonValueTrait,
+    },
 };
 
 /// Array represents a JSON array. Its APIs are likes `Array<Value>`.
@@ -32,8 +33,6 @@ use crate::{
 #[derive(Debug, Eq, PartialEq, Clone)]
 #[repr(transparent)]
 pub struct Array(pub(crate) Value);
-
-pub(crate) const DEFAULT_ARRAY_CAP: usize = 8;
 
 impl Array {
     /// Returns the inner [`Value`].
@@ -61,13 +60,7 @@ impl Array {
     /// ```
     #[inline]
     pub const fn new() -> Self {
-        let value = Value {
-            meta: super::node::Meta::new(super::node::ARRAY, std::ptr::null()),
-            data: super::node::Data {
-                achildren: std::ptr::null_mut(),
-            },
-        };
-        Array(value)
+        Array(Value::new_array())
     }
 
     /// Constructs a new, empty `Array` with at least the specified capacity.
@@ -234,23 +227,11 @@ impl Array {
     /// ```
     #[inline]
     pub fn split_off(&mut self, at: usize) -> Self {
-        let len = self.len();
-        assert!(at <= len, "at {} out of bounds(len: {})", at, len);
-
-        let mut arr = Self::new_in(self.0.shared_clone());
-        if at == len {
-            return arr;
+        if let ValueMut::Array(array) = self.0.as_mut() {
+            array.split_off(at).into()
+        } else {
+            panic!("Array::split_off: not an array");
         }
-        arr.reserve(len - at);
-
-        unsafe {
-            let src = self.as_mut_ptr().add(at);
-            let dst = arr.as_mut_ptr();
-            std::ptr::copy_nonoverlapping(src, dst, len - at);
-            self.set_len(at);
-            arr.set_len(len - at);
-        }
-        arr
     }
 
     /// Removes an element from the array and returns it.
@@ -320,31 +301,11 @@ impl Array {
     where
         F: FnMut(&mut Value) -> bool,
     {
-        if self.is_empty() {
-            return;
+        if let ValueMut::Array(mut array) = self.0.as_mut() {
+            array.retain_mut(f);
+        } else {
+            panic!("Array::retain_mut: not an array");
         }
-
-        let mut i = 0;
-        let mut j = 0;
-        let start = self.as_mut_ptr();
-        while i < self.len() {
-            unsafe {
-                let cur = start.add(i);
-                if !f(&mut *cur) {
-                    (*cur).take();
-                    i += 1;
-                    continue;
-                }
-
-                if i > j {
-                    std::ptr::copy_nonoverlapping(cur, start.add(j), 1);
-                }
-                i += 1;
-                j += 1;
-            }
-        }
-
-        unsafe { self.set_len(j) };
     }
 
     /// Shortens the array, keeping the first `len` elements and dropping
@@ -394,18 +355,10 @@ impl Array {
     /// [`drain`]: Array::drain
     #[inline]
     pub fn truncate(&mut self, len: usize) {
-        let old_len = self.len();
-        if len < old_len {
-            unsafe {
-                let mut v = self.as_mut_ptr().add(len);
-                let end = self.as_mut_ptr().add(old_len);
-
-                while v != end {
-                    (*v).take();
-                    v = v.add(1);
-                }
-            }
-            unsafe { self.set_len(len) };
+        if let ValueMut::Array(mut array) = self.0.as_mut() {
+            array.truncate(len);
+        } else {
+            panic!("Array::truncate: not an array");
         }
     }
 
@@ -427,12 +380,11 @@ impl Array {
     /// ```
     #[inline]
     pub fn push<T: Into<Value>>(&mut self, val: T) {
-        self.reserve(1);
-        let val = {
-            let _ = SharedCtxGuard::assign(self.0.shared());
-            val.into()
-        };
-        self.0.append_value(val);
+        if let ValueMut::Array(mut array) = self.0.as_mut() {
+            array.push(val.into());
+        } else {
+            panic!("Array::push: not an array");
+        }
     }
 
     /// Removes the last element from a array and returns it, or [`None`] if it is empty.
@@ -513,15 +465,19 @@ impl Array {
     /// arr2.push(Value::from("arr2"));
     /// arr2.append(&mut arr1);
     ///
-    /// assert_eq!(arr2, array![2, "arr2", "arr1", 1]);
+    /// assert_eq!(arr2, array![2, "arr2", 1, "arr1"]);
     /// assert!(arr1.is_empty());
     /// ```
     #[inline]
     pub fn append(&mut self, other: &mut Self) {
-        self.reserve(other.len());
-        while let Some(v) = other.pop() {
-            debug_assert!(v.is_root() || v.is_static());
-            self.push(v);
+        if let ValueMut::Array(array) = self.0.as_mut() {
+            if let ValueMut::Array(other_array) = other.0.as_mut() {
+                array.append(other_array);
+            } else {
+                panic!("Array::append: other is not an array");
+            }
+        } else {
+            panic!("Array::append: not an array");
         }
     }
 
@@ -561,19 +517,10 @@ impl Array {
     where
         R: RangeBounds<usize>,
     {
-        let len = self.len();
-        let Range { start, end } = range(r, ..len);
-
-        unsafe {
-            // set self.arr length's to start, to be safe in case Drain is leaked
-            self.set_len(start);
-            let range_slice = std::slice::from_raw_parts(self.as_ptr().add(start), end - start);
-            Drain {
-                tail_start: end,
-                tail_len: len - end,
-                iter: range_slice.iter(),
-                arr: NonNull::from(self),
-            }
+        if let ValueMut::Array(array) = self.0.as_mut() {
+            array.drain(r)
+        } else {
+            panic!("Array::drain: not an array");
         }
     }
 
@@ -603,19 +550,10 @@ impl Array {
     where
         R: RangeBounds<usize>,
     {
-        let range: Range<usize> = range(src, ..self.len());
-        if range.is_empty() {
-            return;
-        }
-
-        self.reserve(range.len());
-        unsafe {
-            let start = self.as_mut_ptr().add(range.start);
-            let end = self.as_mut_ptr().add(range.end);
-            let src = std::slice::from_raw_parts(start, end.offset_from(start) as usize);
-            for v in src.iter() {
-                self.0.append_value(v.clone_in(self.0.shared()));
-            }
+        if let ValueMut::Array(array) = self.0.as_mut() {
+            array.extend_from_within(src);
+        } else {
+            panic!("Array::extend_from_within: not an array");
         }
     }
 
@@ -644,25 +582,11 @@ impl Array {
     /// ```
     #[inline]
     pub fn insert<T: Into<Value>>(&mut self, index: usize, element: T) {
-        let element = {
-            let _ = SharedCtxGuard::assign(self.0.shared());
-            element.into()
-        };
-        self.0.insert_value(index, element);
-    }
-
-    #[inline]
-    pub(crate) fn new_in(shared: Arc<Shared>) -> Self {
-        let mut array = Array::default();
-        array.0.mark_shared(shared.data_ptr());
-        array.0.mark_root();
-        std::mem::forget(shared);
-        array
-    }
-
-    #[inline]
-    pub(crate) unsafe fn set_len(&mut self, new_len: usize) {
-        self.0.set_len(new_len);
+        if let ValueMut::Array(array) = self.0.as_mut() {
+            array.insert(index, element.into());
+        } else {
+            panic!("Array::insert: not an array");
+        }
     }
 }
 
@@ -676,21 +600,16 @@ impl Deref for Array {
     type Target = [Value];
 
     fn deref(&self) -> &Self::Target {
-        unsafe {
-            let start = self.0.data.achildren.add(Value::MEAT_NODE_COUNT);
-            let ptr = start as *const Value;
-            let len = self.0.len();
-            from_raw_parts(ptr, len)
-        }
+        self.0.as_value_slice().expect("Array::deref: not an array")
     }
 }
 
 impl DerefMut for Array {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe {
-            let ptr = self.0.data.achildren.add(Value::MEAT_NODE_COUNT);
-            let len = self.0.len();
-            from_raw_parts_mut(ptr, len)
+        if let ValueMut::Array(array) = self.0.as_mut() {
+            array
+        } else {
+            panic!("Array::deref_mut: not an array");
         }
     }
 }
@@ -699,38 +618,7 @@ impl DerefMut for Array {
 ///
 /// This `struct` is created by [`Array::drain`].
 /// See its documentation for more.
-pub struct Drain<'a> {
-    pub(super) tail_start: usize,
-    pub(super) tail_len: usize,
-    // the iter of remain slice
-    pub(super) iter: std::slice::Iter<'a, Value>,
-    // origin array
-    pub(super) arr: NonNull<Array>,
-}
-
-impl<'a> Drain<'a> {
-    /// Returns the remaining items of its iterator as a slice.
-    #[inline]
-    pub fn as_slice(&self) -> &'a [Value] {
-        self.iter.as_slice()
-    }
-}
-
-impl Iterator for Drain<'_> {
-    type Item = Value;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter
-            .next()
-            .map(|v| v.clone_in(unsafe { self.arr.as_ref().0.shared() }))
-    }
-
-    #[inline]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.iter.size_hint()
-    }
-}
+pub type Drain<'a> = std::vec::Drain<'a, Value>;
 
 use std::{
     ops::{Index, IndexMut},
@@ -763,18 +651,26 @@ pub struct IntoIter {
 
 impl IntoIter {
     pub fn as_mut_slice(&mut self) -> &mut [Value] {
-        unsafe {
-            let ptr = self.array.0.children_mut_ptr();
-            let len = self.array.0.len();
-            from_raw_parts_mut(ptr, len)
+        if let ValueMut::Array(array) = self.array.0.as_mut() {
+            unsafe {
+                let ptr = array.as_mut_ptr();
+                let len = array.len();
+                from_raw_parts_mut(ptr, len)
+            }
+        } else {
+            panic!("Array::as_mut_slice: not an array");
         }
     }
 
     pub fn as_slice(&self) -> &[Value] {
-        unsafe {
-            let ptr = self.array.0.children_ptr();
-            let len = self.array.0.len();
-            from_raw_parts(ptr, len)
+        if let ValueRefInner::Array(array) = self.array.0.as_ref2() {
+            unsafe {
+                let ptr = array.as_ptr();
+                let len = array.len();
+                from_raw_parts(ptr, len)
+            }
+        } else {
+            panic!("Array::as_slice: not an array");
         }
     }
 }
@@ -913,34 +809,34 @@ mod test {
 
     #[test]
     fn test_value_array() {
-        let mut val = crate::from_str::<Value>(r#"[1,2,3]"#);
+        let mut val = crate::from_str::<Value>(r#"[1,2,3]"#).unwrap();
         let array = val.as_array_mut().unwrap();
         assert_eq!(array.len(), 3);
 
         for i in 0..3 {
             // push static node
             let old_len = array.len();
-            let new_node = Value::new_u64(i, std::ptr::null());
+            let new_node = Value::new_u64(i);
             array.push(new_node);
             assert_eq!(array.len(), old_len + 1);
 
             // push node with new allocator
             let old_len = array.len();
             let mut new_node = Array::default();
-            new_node.push(Value::new_u64(i, std::ptr::null()));
+            new_node.push(Value::new_u64(i));
             array.push(new_node.0);
             assert_eq!(array.len(), old_len + 1);
 
             // push node with self allocator
             let old_len = array.len();
-            let mut new_node = Array::new_in(array.0.shared_clone());
-            new_node.push(Value::new_u64(i, std::ptr::null()));
+            let mut new_node = Array::new();
+            new_node.push(Value::new_u64(i));
             array.push(new_node.0);
             assert_eq!(array.len(), old_len + 1);
         }
 
         for (i, v) in array.iter_mut().enumerate() {
-            *v = Value::new_u64(i as u64, std::ptr::null());
+            *v = Value::new_u64(i as u64);
         }
 
         while !array.is_empty() {

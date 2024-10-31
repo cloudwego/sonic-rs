@@ -1,16 +1,13 @@
-use core::fmt::Display;
-use std::ptr::NonNull;
+use std::fmt::Display;
 
 use serde::{
     de::Unexpected,
     ser::{Impossible, Serialize},
 };
 
-use super::shared::Shared;
 use crate::{
     error::{Error, ErrorCode, Result},
     serde::ser::key_must_be_str_or_num,
-    util::arc::Arc,
     value::node::Value,
 };
 
@@ -63,41 +60,11 @@ pub fn to_value<T>(value: &T) -> Result<Value>
 where
     T: ?Sized + Serialize,
 {
-    let shared = Shared::new_ptr();
-    let mut value = to_value_in(unsafe { NonNull::new_unchecked(shared as *mut _) }, value)?;
-    if value.is_scalar() {
-        value.mark_shared(std::ptr::null());
-        std::mem::drop(unsafe { Arc::from_raw(shared) });
-    } else {
-        value.mark_root();
-    }
-    Ok(value)
+    value.serialize(Serializer)
 }
 
 // Not export this because it is mainly used in `json!`.
-pub(crate) struct Serializer(NonNull<Shared>);
-
-impl Serializer {
-    #[inline]
-    fn new_in(share: NonNull<Shared>) -> Self {
-        Self(share)
-    }
-
-    #[inline]
-    fn shared(&self) -> NonNull<Shared> {
-        self.0
-    }
-
-    #[inline]
-    fn shared_ptr(&self) -> *const Shared {
-        self.0.as_ptr()
-    }
-
-    #[inline]
-    fn shared_ref(&self) -> &Shared {
-        unsafe { self.0.as_ref() }
-    }
-}
+pub(crate) struct Serializer;
 
 use crate::serde::tri;
 
@@ -115,12 +82,12 @@ impl serde::Serializer for Serializer {
 
     #[inline]
     fn serialize_unit(self) -> Result<Value> {
-        Ok(Value::new_null(self.shared_ptr()))
+        Ok(Value::new_null())
     }
 
     #[inline]
     fn serialize_bool(self, value: bool) -> Result<Value> {
-        Ok(Value::new_bool(value, self.shared_ptr()))
+        Ok(Value::new_bool(value))
     }
 
     #[inline]
@@ -139,14 +106,14 @@ impl serde::Serializer for Serializer {
     }
 
     fn serialize_i64(self, value: i64) -> Result<Value> {
-        Ok(Value::new_i64(value, self.shared_ptr()))
+        Ok(Value::new_i64(value))
     }
 
     fn serialize_i128(self, value: i128) -> Result<Value> {
         if let Ok(value) = u64::try_from(value) {
-            Ok(Value::new_u64(value, self.shared_ptr()))
+            Ok(Value::new_u64(value))
         } else if let Ok(value) = i64::try_from(value) {
-            Ok(Value::new_i64(value, self.shared_ptr()))
+            Ok(Value::new_i64(value))
         } else {
             // FIXME: print i128 in error message
             Err(Error::ser_error(ErrorCode::NumberOutOfRange))
@@ -170,12 +137,12 @@ impl serde::Serializer for Serializer {
 
     #[inline]
     fn serialize_u64(self, value: u64) -> Result<Value> {
-        Ok(Value::new_u64(value, self.shared_ptr()))
+        Ok(Value::new_u64(value))
     }
 
     fn serialize_u128(self, value: u128) -> Result<Value> {
         if let Ok(value) = u64::try_from(value) {
-            Ok(Value::new_u64(value, self.shared_ptr()))
+            Ok(Value::new_u64(value))
         } else {
             Err(Error::ser_error(ErrorCode::NumberOutOfRange))
         }
@@ -184,7 +151,7 @@ impl serde::Serializer for Serializer {
     #[inline]
     fn serialize_f32(self, value: f32) -> Result<Value> {
         if value.is_finite() {
-            Ok(unsafe { Value::new_f64_unchecked(value as f64, self.shared_ptr()) })
+            Ok(unsafe { Value::new_f64_unchecked(value as f64) })
         } else {
             Err(key_must_be_str_or_num(Unexpected::Other(
                 "NaN or Infinite f32",
@@ -195,7 +162,7 @@ impl serde::Serializer for Serializer {
     #[inline]
     fn serialize_f64(self, value: f64) -> Result<Value> {
         if value.is_finite() {
-            Ok(unsafe { Value::new_f64_unchecked(value, self.shared_ptr()) })
+            Ok(unsafe { Value::new_f64_unchecked(value) })
         } else {
             Err(key_must_be_str_or_num(Unexpected::Other(
                 "NaN or Infinite f64",
@@ -205,19 +172,19 @@ impl serde::Serializer for Serializer {
 
     #[inline]
     fn serialize_char(self, value: char) -> Result<Value> {
-        Ok(Value::copy_str(&value.to_string(), self.shared_ref()))
+        Ok(Value::copy_str(&value.to_string()))
     }
 
     #[inline]
     fn serialize_str(self, value: &str) -> Result<Value> {
-        Ok(Value::copy_str(value, self.shared_ref()))
+        Ok(Value::copy_str(value))
     }
 
     // parse bytes as a array with u64
     fn serialize_bytes(self, value: &[u8]) -> Result<Value> {
-        let mut array = Value::new_array(self.shared_ptr(), value.len());
+        let mut array = Value::new_array_with(value.len());
         for b in value.iter() {
-            array.append_value(Value::new_u64((*b) as u64, self.shared_ptr()));
+            array.append_value(Value::new_u64((*b) as u64));
         }
         Ok(array)
     }
@@ -255,11 +222,8 @@ impl serde::Serializer for Serializer {
     where
         T: ?Sized + Serialize,
     {
-        let mut object = Value::new_object(self.shared_ptr(), 1);
-        let pair = (
-            Value::new_str(variant, self.shared_ptr()),
-            tri!(to_value_in(self.shared(), value)),
-        );
+        let mut object = Value::new_object_with(1);
+        let pair = (Value::from_static_str(variant), tri!(to_value(value)));
         object.append_pair(pair);
         Ok(object)
     }
@@ -280,8 +244,7 @@ impl serde::Serializer for Serializer {
     #[inline]
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
         Ok(SerializeVec {
-            shared: self.shared(),
-            vec: Value::new_array(self.shared_ptr(), len.unwrap_or_default()),
+            vec: Value::new_array_with(len.unwrap_or_default()),
         })
     }
 
@@ -308,9 +271,8 @@ impl serde::Serializer for Serializer {
         len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
         Ok(SerializeTupleVariant {
-            shared: self.shared(),
-            static_name: Value::new_str(variant, self.shared_ptr()),
-            vec: Value::new_array(self.shared_ptr(), len),
+            static_name: Value::from_static_str(variant),
+            vec: Value::new_array_with(len),
         })
     }
 
@@ -318,10 +280,9 @@ impl serde::Serializer for Serializer {
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap> {
         Ok(SerializeMap {
             map: MapInner::Object {
-                object: Value::new_object(self.shared_ptr(), len.unwrap_or_default()),
+                object: Value::new_object_with(len.unwrap_or_default()),
                 next_key: None,
             },
-            shared: self.shared(),
         })
     }
 
@@ -330,7 +291,6 @@ impl serde::Serializer for Serializer {
         match name {
             crate::serde::rawnumber::TOKEN => Ok(SerializeMap {
                 map: MapInner::RawNumber { out_value: None },
-                shared: self.shared(),
             }),
             _ => self.serialize_map(Some(len)),
         }
@@ -345,9 +305,8 @@ impl serde::Serializer for Serializer {
         len: usize,
     ) -> Result<Self::SerializeStructVariant> {
         Ok(SerializeStructVariant {
-            shared: self.shared(),
-            static_name: Value::new_str(variant, self.shared_ptr()),
-            object: Value::new_object(self.shared_ptr(), len),
+            static_name: Value::from_static_str(variant),
+            object: Value::new_object_with(len),
         })
     }
 
@@ -362,13 +321,11 @@ impl serde::Serializer for Serializer {
 
 /// Serializing Rust seq into `Value`.
 pub(crate) struct SerializeVec {
-    shared: NonNull<Shared>,
     vec: Value,
 }
 
 /// Serializing Rust tuple variant into `Value`.
 pub(crate) struct SerializeTupleVariant {
-    shared: NonNull<Shared>,
     static_name: Value,
     vec: Value,
 }
@@ -376,7 +333,6 @@ pub(crate) struct SerializeTupleVariant {
 /// Serializing Rust into `Value`. We has special handling for `Number`, `RawNumber`.
 pub(crate) struct SerializeMap {
     map: MapInner,
-    shared: NonNull<Shared>,
 }
 
 enum MapInner {
@@ -393,7 +349,6 @@ enum MapInner {
 pub(crate) struct SerializeStructVariant {
     static_name: Value,
     object: Value,
-    shared: NonNull<Shared>,
 }
 
 impl serde::ser::SerializeSeq for SerializeVec {
@@ -404,7 +359,7 @@ impl serde::ser::SerializeSeq for SerializeVec {
     where
         T: ?Sized + Serialize,
     {
-        self.vec.append_value(tri!(to_value_in(self.shared, value)));
+        self.vec.append_value(tri!(to_value(value)));
         Ok(())
     }
 
@@ -453,12 +408,12 @@ impl serde::ser::SerializeTupleVariant for SerializeTupleVariant {
     where
         T: ?Sized + Serialize,
     {
-        self.vec.append_value(tri!(to_value_in(self.shared, value)));
+        self.vec.append_value(tri!(to_value(value)));
         Ok(())
     }
 
     fn end(self) -> Result<Value> {
-        let mut object = Value::new_object(self.shared.as_ptr(), 1);
+        let mut object = Value::new_object_with(1);
         object.append_pair((self.static_name, self.vec));
         Ok(object)
     }
@@ -474,7 +429,7 @@ impl serde::ser::SerializeMap for SerializeMap {
     {
         match &mut self.map {
             MapInner::Object { next_key, .. } => {
-                *next_key = Some(tri!(key.serialize(MapKeySerializer(self.shared))));
+                *next_key = Some(tri!(key.serialize(MapKeySerializer)));
                 Ok(())
             }
             MapInner::RawNumber { .. } => unreachable!(),
@@ -491,7 +446,7 @@ impl serde::ser::SerializeMap for SerializeMap {
                 // Panic because this indicates a bug in the program rather than an
                 // expected failure.
                 let key = key.expect("serialize_value called before serialize_key");
-                object.append_pair((key, tri!(to_value_in(self.shared, value))));
+                object.append_pair((key, tri!(to_value(value))));
                 Ok(())
             }
             MapInner::RawNumber { .. } => unreachable!(),
@@ -507,13 +462,7 @@ impl serde::ser::SerializeMap for SerializeMap {
 }
 
 // Serialize the map key into a Value.
-struct MapKeySerializer(NonNull<Shared>);
-
-impl MapKeySerializer {
-    fn shared_ptr(&self) -> *const Shared {
-        self.0.as_ptr()
-    }
-}
+struct MapKeySerializer;
 
 fn float_key_must_be_finite() -> Error {
     Error::ser_error(ErrorCode::FloatMustBeFinite)
@@ -538,7 +487,7 @@ impl serde::Serializer for MapKeySerializer {
         _variant_index: u32,
         variant: &'static str,
     ) -> Result<Value> {
-        Ok(Value::new_str(variant, self.shared_ptr()))
+        Ok(Value::from_static_str(variant))
     }
 
     #[inline]
@@ -551,9 +500,9 @@ impl serde::Serializer for MapKeySerializer {
 
     fn serialize_bool(self, value: bool) -> Result<Value> {
         if value {
-            Ok(Value::new_str("true", self.shared_ptr()))
+            Ok(Value::from_static_str("true"))
         } else {
-            Ok(Value::new_str("false", self.shared_ptr()))
+            Ok(Value::from_static_str("false"))
         }
     }
 
@@ -613,8 +562,7 @@ impl serde::Serializer for MapKeySerializer {
 
     #[inline]
     fn serialize_str(self, value: &str) -> Result<Value> {
-        let shared = unsafe { self.0.as_ref() };
-        Ok(Value::copy_str(value, shared))
+        Ok(Value::copy_str(value))
     }
 
     fn serialize_bytes(self, _value: &[u8]) -> Result<Value> {
@@ -739,28 +687,16 @@ impl serde::ser::SerializeStructVariant for SerializeStructVariant {
     where
         T: ?Sized + Serialize,
     {
-        self.object.append_pair((
-            Value::new_str(key, self.shared.as_ptr()),
-            tri!(to_value_in(self.shared, value)),
-        ));
+        self.object
+            .append_pair((Value::from_static_str(key), tri!(to_value(value))));
         Ok(())
     }
 
     fn end(self) -> Result<Value> {
-        let mut object = Value::new_object(self.shared.as_ptr(), 1);
+        let mut object = Value::new_object_with(1);
         object.append_pair((self.static_name, self.object));
         Ok(object)
     }
-}
-
-#[doc(hidden)]
-#[inline]
-pub fn to_value_in<T>(shared: NonNull<Shared>, value: &T) -> Result<Value>
-where
-    T: ?Sized + Serialize,
-{
-    let serializer = Serializer::new_in(shared);
-    value.serialize(serializer)
 }
 
 #[cfg(test)]

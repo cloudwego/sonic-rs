@@ -3,8 +3,10 @@ use std::{
     ops::Deref,
     slice::{from_raw_parts, from_raw_parts_mut},
     str::from_utf8_unchecked,
+    sync::Arc,
 };
 
+use bumpalo::Bump;
 use faststr::FastStr;
 use serde::de::{self, Expected, Unexpected};
 use smallvec::SmallVec;
@@ -24,7 +26,6 @@ use crate::{
         JsonPointer, PointerTree,
     },
     util::{
-        arc::Arc,
         arch::{get_nonspace_bits, prefix_xor},
         num::{parse_number, ParserNumber},
         simd::{i8x32, m8x32, u8x32, u8x64, Mask, Simd},
@@ -142,10 +143,9 @@ fn skip_container_loop(
 
 pub(crate) struct Parser<R> {
     pub(crate) read: R,
-    error_index: usize,                     // mark the error position
-    nospace_bits: u64,                      // SIMD marked nospace bitmap
-    nospace_start: isize,                   // the start position of nospace_bits
-    pub(crate) shared: Option<Arc<Shared>>, // the shared allocator for `Value`
+    error_index: usize,   // mark the error position
+    nospace_bits: u64,    // SIMD marked nospace bitmap
+    nospace_start: isize, // the start position of nospace_bits
 }
 
 /// Records the parse status
@@ -165,7 +165,6 @@ where
             error_index: usize::MAX,
             nospace_bits: 0,
             nospace_start: -128,
-            shared: None,
         }
     }
 
@@ -193,6 +192,7 @@ where
             reason = EofWhileParsing;
             index = len;
         }
+        dbg!(crate::parser::as_str(self.read.as_u8_slice()));
         Error::syntax(reason, self.read.as_u8_slice(), index)
     }
 
@@ -226,11 +226,22 @@ where
     where
         V: JsonVisitor<'de>,
     {
-        let rs = self.parse_str_impl(strbuf)?;
-        if !visitor.visit_str(rs.as_ref()) {
-            perr!(self, UnexpectedVisitType)
-        } else {
-            Ok(())
+        if !self.cfg.use_raw {
+            let rs = self.parse_str_impl(strbuf)?;
+            return check_visit!(self, vis.visit_str(rs.as_ref()));
+        }
+
+        let start = self.read.index();
+        match self.parse_str_impl(strbuf)? {
+            Reference::Borrowed(s) => check_visit!(self, vis.visit_str(s)),
+            Reference::Copied(s) => unsafe {
+                // only record raw when has escaped chars
+                let end = self.read.index();
+                let raw = as_str(&self.read.as_u8_slice()[start - 1..end]);
+                let alloc = vis.allocator().unwrap();
+                let raw = RawStr::new_in(alloc, raw);
+                check_visit!(self, vis.visit_raw_str(s, raw))
+            },
         }
     }
 
@@ -489,14 +500,27 @@ where
             Some(b'{') => self.parse_object(visitor),
             Some(b'[') => self.parse_array(visitor),
             Some(first) => self.parse_literal_visit(first, visitor),
-            None => perr!(self, EofWhileParsing),
-        }
+            None => return perr!(self, EofWhileParsing),
+        }?;
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub(crate) fn parse_dom<V>(&mut self, visitor: &mut V) -> Result<()>
+    where
+        V: JsonVisitor<'de>,
+    {
+        check_visit!(self, visitor.visit_dom_start());
+        self.parse_value(visitor)?;
+        check_visit!(self, visitor.visit_dom_end());
+        Ok(())
     }
 
     pub(crate) fn parse_value_without_padding<V>(&mut self, visitor: &mut V) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
+        check_visit!(self, visitor.visit_dom_start());
         const COMMON_DEPTH: usize = 20;
         const ARR_MASK: u32 = 1u32 << 31;
         const OBJ_MASK: u32 = 0u32;
@@ -534,10 +558,24 @@ where
                     state = Fsm::ObjKey;
                 }
             }
-            c @ b'-' | c @ b'0'..=b'9' => return self.parse_number_visit(c, visitor),
-            b'"' => return self.parse_string_owned(visitor, &mut strbuf),
-            0 => return perr!(self, EofWhileParsing),
-            first => return self.parse_literal_visit(first, visitor),
+            c @ b'-' | c @ b'0'..=b'9' => {
+                self.parse_number_visit(c, visitor)?;
+                check_visit!(self, visitor.visit_dom_end());
+                return Ok(());
+            }
+            b'"' => {
+                self.parse_string_owned(visitor, &mut strbuf)?;
+                check_visit!(self, visitor.visit_dom_end());
+                return Ok(());
+            }
+            0 => {
+                return perr!(self, EofWhileParsing);
+            }
+            first => {
+                self.parse_literal_visit(first, visitor)?;
+                check_visit!(self, visitor.visit_dom_end());
+                return Ok(());
+            }
         }
 
         loop {
@@ -658,6 +696,7 @@ where
                         if depth.is_empty() {
                             // Note: we will not check trailing characters
                             // because get_from maybe returns all remaining bytes.
+                            check_visit!(self, visitor.visit_dom_end());
                             return Ok(());
                         }
                         // count after container value end
@@ -2074,14 +2113,6 @@ where
         let cur = &tree.root;
         self.get_many_rec(cur, &mut out, &mut strbuf, &mut remain, is_safe)?;
         Ok(out)
-    }
-
-    #[inline]
-    pub(crate) fn get_shared_inc_count(&mut self) -> Arc<Shared> {
-        if self.shared.is_none() {
-            self.shared = Some(Arc::new(Shared::new()));
-        }
-        unsafe { self.shared.as_ref().unwrap_unchecked().clone() }
     }
 
     #[cold]

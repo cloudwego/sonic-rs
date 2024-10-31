@@ -59,15 +59,15 @@ macro_rules! json {
     // Must be invoked as: json_internal!($($json)+)
     //////////////////////////////////////////////////////////////////////////
     (true) => {
-        $crate::Value::new_bool(true, std::ptr::null())
+        $crate::Value::new_bool(true)
     };
 
     (false) => {
-        $crate::Value::new_bool(false, std::ptr::null())
+        $crate::Value::new_bool(false)
     };
 
     (null) => {
-        $crate::Value::new_null(std::ptr::null())
+        $crate::Value::new_null()
     };
 
     ([]) => {
@@ -80,20 +80,7 @@ macro_rules! json {
 
     // Hide distracting implementation details from the generated rustdoc.
     ($($json:tt)+) => {
-        {
-            use $crate::JsonValueTrait;
-            let shared = unsafe { &*$crate::value::shared::Shared::new_ptr() };
-            let mut value = json_internal!(shared, $($json)+);
-            if value.is_number() {
-                unsafe {
-                    drop(Box::from_raw(shared as *const _ as *mut $crate::value::shared::Shared));
-                }
-                value.mark_shared(std::ptr::null());
-            } else {
-                value.mark_root();
-            }
-            value
-        }
+        json_internal!($($json)+)
     };
 }
 
@@ -119,9 +106,7 @@ macro_rules! array {
 
     ($($tt:tt)+) => {
         {
-            let shared = unsafe { &*$crate::value::shared::Shared::new_ptr() };
-            let mut value = json_internal!(shared, [$($tt)+]);
-            value.mark_root();
+            let value = json_internal!([$($tt)+]);
             value.into_array().expect("the literal is not a json array")
         }
     };
@@ -154,9 +139,7 @@ macro_rules! object {
 
     ($($tt:tt)+) => {
         {
-            let shared = unsafe { &*$crate::value::shared::Shared::new_ptr() };
-            let mut value = json_internal!(shared, {$($tt)+});
-            value.mark_root();
+            let value = json_internal!({$($tt)+});
             value.into_object().expect("the literal is not a json object")
         }
     };
@@ -173,57 +156,57 @@ macro_rules! json_internal {
     //////////////////////////////////////////////////////////////////////////
 
     // Done with trailing comma.
-    (@array $shared:expr, [$($elems:expr,)*]) => {
-        json_internal_array![$shared, $($elems)*]
+    (@array [$($elems:expr,)*]) => {
+        json_internal_array![$($elems)*]
     };
 
     // Done without trailing comma.
-    (@array $shared:expr, [$($elems:expr),*]) => {
-        json_internal_array![$shared, $($elems)*]
+    (@array [$($elems:expr),*]) => {
+        json_internal_array![$($elems)*]
     };
 
     // Next element is `null`.
-    (@array $shared:expr, [$($elems:expr,)*] null $($rest:tt)*) => {
-        json_internal!(@array  $shared, [$($elems,)* json_internal!($shared, null)] $($rest)*)
+    (@array [$($elems:expr,)*] null $($rest:tt)*) => {
+        json_internal!(@array  [$($elems,)* json_internal!(null)] $($rest)*)
     };
 
     // Next element is `true`.
-    (@array $shared:expr, [$($elems:expr,)*] true $($rest:tt)*) => {
-        json_internal!(@array $shared, [$($elems,)* json_internal!($shared, true)] $($rest)*)
+    (@array [$($elems:expr,)*] true $($rest:tt)*) => {
+        json_internal!(@array [$($elems,)* json_internal!(true)] $($rest)*)
     };
 
     // Next element is `false`.
-    (@array $shared:expr, [$($elems:expr,)*] false $($rest:tt)*) => {
-        json_internal!(@array $shared, [$($elems,)* json_internal!($shared, false)] $($rest)*)
+    (@array [$($elems:expr,)*] false $($rest:tt)*) => {
+        json_internal!(@array [$($elems,)* json_internal!(false)] $($rest)*)
     };
 
     // Next element is an array.
-    (@array $shared:expr, [$($elems:expr,)*] [$($array:tt)*] $($rest:tt)*) => {
-        json_internal!(@array $shared, [$($elems,)* json_internal!($shared, [$($array)*])] $($rest)*)
+    (@array [$($elems:expr,)*] [$($array:tt)*] $($rest:tt)*) => {
+        json_internal!(@array [$($elems,)* json_internal!([$($array)*])] $($rest)*)
     };
 
     // Next element is a map.
-    (@array $shared:expr, [$($elems:expr,)*] {$($map:tt)*} $($rest:tt)*) => {
-        json_internal!(@array  $shared, [$($elems,)* json_internal!($shared, {$($map)*})] $($rest)*)
+    (@array [$($elems:expr,)*] {$($map:tt)*} $($rest:tt)*) => {
+        json_internal!(@array  [$($elems,)* json_internal!({$($map)*})] $($rest)*)
     };
 
     // Next element is an expression followed by comma.
-    (@array $shared:expr, [$($elems:expr,)*] $next:expr, $($rest:tt)*) => {
-        json_internal!(@array $shared, [$($elems,)* json_internal!($shared, $next),] $($rest)*)
+    (@array [$($elems:expr,)*] $next:expr, $($rest:tt)*) => {
+        json_internal!(@array [$($elems,)* json_internal!($next),] $($rest)*)
     };
 
     // Last element is an expression with no trailing comma.
-    (@array $shared:expr, [$($elems:expr,)*] $last:expr) => {
-        json_internal!(@array $shared, [$($elems,)* json_internal!($shared, $last)])
+    (@array [$($elems:expr,)*] $last:expr) => {
+        json_internal!(@array [$($elems,)* json_internal!($last)])
     };
 
     // Comma after the most recent element.
-    (@array $shared:expr, [$($elems:expr),*] , $($rest:tt)*) => {
-        json_internal!(@array $shared, [$($elems,)*] $($rest)*)
+    (@array [$($elems:expr),*] , $($rest:tt)*) => {
+        json_internal!(@array [$($elems,)*] $($rest)*)
     };
 
     // Unexpected token after most recent element.
-    (@array $shared:expr, [$($elems:expr),*] $unexpected:tt $($rest:tt)*) => {
+    (@array [$($elems:expr),*] $unexpected:tt $($rest:tt)*) => {
         json_unexpected!($unexpected)
     };
 
@@ -238,102 +221,102 @@ macro_rules! json_internal {
     //////////////////////////////////////////////////////////////////////////
 
     // Done.
-    (@object $shared:expr, $object:ident () () ()) => {};
+    (@object $object:ident () () ()) => {};
 
     // Insert the current entry followed by trailing comma.
-    (@object $shared:expr, $object:ident [$($key:tt)+] ($value:expr) , $($rest:tt)*) => {
+    (@object $object:ident [$($key:tt)+] ($value:expr) , $($rest:tt)*) => {
         let key: &str = ($($key)+).as_ref();
-        let pair = ($crate::Value::copy_str(key, $shared), $value);
+        let pair = ($crate::Value::copy_str(key), $value);
         let _ = $object.append_pair(pair);
-        json_internal!(@object $shared, $object () ($($rest)*) ($($rest)*));
+        json_internal!(@object $object () ($($rest)*) ($($rest)*));
     };
 
     // Current entry followed by unexpected token.
-    (@object $shared:expr, $object:ident [$($key:tt)+] ($value:expr) $unexpected:tt $($rest:tt)*) => {
+    (@object $object:ident [$($key:tt)+] ($value:expr) $unexpected:tt $($rest:tt)*) => {
         json_unexpected!($unexpected);
     };
 
     // Insert the last entry without trailing comma.
-    (@object $shared:expr, $object:ident [$($key:tt)+] ($value:expr)) => {
+    (@object $object:ident [$($key:tt)+] ($value:expr)) => {
         let key: &str = ($($key)+).as_ref();
-        let pair = ($crate::Value::copy_str(key, $shared), $value);
+        let pair = ($crate::Value::copy_str(key), $value);
         let _ = $object.append_pair(pair);
     };
 
     // Next value is `null`.
-    (@object $shared:expr, $object:ident ($($key:tt)+) (: null $($rest:tt)*) $copy:tt) => {
-        json_internal!(@object $shared, $object [$($key)+] (json_internal!($shared, null)) $($rest)*);
+    (@object $object:ident ($($key:tt)+) (: null $($rest:tt)*) $copy:tt) => {
+        json_internal!(@object $object [$($key)+] (json_internal!(null)) $($rest)*);
     };
 
     // Next value is `true`.
-    (@object $shared:expr, $object:ident ($($key:tt)+) (: true $($rest:tt)*) $copy:tt) => {
-        json_internal!(@object $shared, $object [$($key)+] (json_internal!($shared, true)) $($rest)*);
+    (@object $object:ident ($($key:tt)+) (: true $($rest:tt)*) $copy:tt) => {
+        json_internal!(@object $object [$($key)+] (json_internal!(true)) $($rest)*);
     };
 
     // Next value is `false`.
-    (@object $shared:expr, $object:ident ($($key:tt)+) (: false $($rest:tt)*) $copy:tt) => {
-        json_internal!(@object $shared, $object [$($key)+] (json_internal!($shared, false)) $($rest)*);
+    (@object $object:ident ($($key:tt)+) (: false $($rest:tt)*) $copy:tt) => {
+        json_internal!(@object $object [$($key)+] (json_internal!(false)) $($rest)*);
     };
 
     // Next value is an array.
-    (@object $shared:expr, $object:ident ($($key:tt)+) (: [$($array:tt)*] $($rest:tt)*) $copy:tt) => {
-        json_internal!(@object $shared, $object [$($key)+] (json_internal!($shared, [$($array)*])) $($rest)*);
+    (@object $object:ident ($($key:tt)+) (: [$($array:tt)*] $($rest:tt)*) $copy:tt) => {
+        json_internal!(@object $object [$($key)+] (json_internal!([$($array)*])) $($rest)*);
     };
 
     // Next value is a map.
-    (@object $shared:expr, $object:ident ($($key:tt)+) (: {$($map:tt)*} $($rest:tt)*) $copy:tt) => {
-        json_internal!(@object $shared, $object [$($key)+] (json_internal!($shared, {$($map)*})) $($rest)*);
+    (@object $object:ident ($($key:tt)+) (: {$($map:tt)*} $($rest:tt)*) $copy:tt) => {
+        json_internal!(@object $object [$($key)+] (json_internal!({$($map)*})) $($rest)*);
     };
 
     // Next value is an expression followed by comma.
-    (@object $shared:expr, $object:ident ($($key:tt)+) (: $value:expr , $($rest:tt)*) $copy:tt) => {
-        json_internal!(@object $shared, $object [$($key)+] (json_internal!($shared, $value)) , $($rest)*);
+    (@object $object:ident ($($key:tt)+) (: $value:expr , $($rest:tt)*) $copy:tt) => {
+        json_internal!(@object $object [$($key)+] (json_internal!($value)) , $($rest)*);
     };
 
     // Last value is an expression with no trailing comma.
-    (@object $shared:expr, $object:ident ($($key:tt)+) (: $value:expr) $copy:tt) => {
-        json_internal!(@object $shared, $object [$($key)+] (json_internal!($shared, $value)));
+    (@object $object:ident ($($key:tt)+) (: $value:expr) $copy:tt) => {
+        json_internal!(@object $object [$($key)+] (json_internal!($value)));
     };
 
     // Missing value for last entry. Trigger a reasonable error message.
-    (@object $shared:expr, $object:ident ($($key:tt)+) (:) $copy:tt) => {
+    (@object $object:ident ($($key:tt)+) (:) $copy:tt) => {
         // "unexpected end of macro invocation"
         json_internal!();
     };
 
     // Missing colon and value for last entry. Trigger a reasonable error
     // message.
-    (@object $shared:expr, $object:ident ($($key:tt)+) () $copy:tt) => {
+    (@object $object:ident ($($key:tt)+) () $copy:tt) => {
         // "unexpected end of macro invocation"
         json_internal!();
     };
 
     // Misplaced colon. Trigger a reasonable error message.
-    (@object $shared:expr, $object:ident () (: $($rest:tt)*) ($colon:tt $($copy:tt)*)) => {
+    (@object $object:ident () (: $($rest:tt)*) ($colon:tt $($copy:tt)*)) => {
         // Takes no arguments so "no rules expected the token `:`".
         json_unexpected!($colon);
     };
 
     // Found a comma inside a key. Trigger a reasonable error message.
-    (@object $shared:expr, $object:ident ($($key:tt)*) (, $($rest:tt)*) ($comma:tt $($copy:tt)*)) => {
+    (@object $object:ident ($($key:tt)*) (, $($rest:tt)*) ($comma:tt $($copy:tt)*)) => {
         // Takes no arguments so "no rules expected the token `,`".
         json_unexpected!($comma);
     };
 
     // Key is fully parenthesized. This avoids clippy double_parens false
     // positives because the parenthesization may be necessary here.
-    (@object $shared:expr, $object:ident () (($key:expr) : $($rest:tt)*) $copy:tt) => {
-        json_internal!(@object $shared, $object ($key) (: $($rest)*) (: $($rest)*));
+    (@object $object:ident () (($key:expr) : $($rest:tt)*) $copy:tt) => {
+        json_internal!(@object $object ($key) (: $($rest)*) (: $($rest)*));
     };
 
     // Refuse to absorb colon token into key expression.
-    (@object $shared:expr, $object:ident ($($key:tt)*) (: $($unexpected:tt)+) $copy:tt) => {
+    (@object $object:ident ($($key:tt)*) (: $($unexpected:tt)+) $copy:tt) => {
         json_expect_expr_comma!($($unexpected)+);
     };
 
     // Munch a token into the current key.
-    (@object $shared:expr, $object:ident ($($key:tt)*) ($tt:tt $($rest:tt)*) $copy:tt) => {
-        json_internal!(@object $shared, $object ($($key)* $tt) ($($rest)*) ($($rest)*));
+    (@object $object:ident ($($key:tt)*) ($tt:tt $($rest:tt)*) $copy:tt) => {
+        json_internal!(@object $object ($($key)* $tt) ($($rest)*) ($($rest)*));
     };
 
     //////////////////////////////////////////////////////////////////////////
@@ -342,42 +325,42 @@ macro_rules! json_internal {
     // Must be invoked as: json_internal!($($json)+)
     //////////////////////////////////////////////////////////////////////////
 
-    ($shared:expr, true) => {
-        $crate::Value::new_bool(true, $shared)
+    (true) => {
+        $crate::Value::new_bool(true)
     };
 
-    ($shared:expr, false) => {
-        $crate::Value::new_bool(false, $shared)
+    (false) => {
+        $crate::Value::new_bool(false)
     };
 
-    ($shared:expr, null) => {
-        $crate::Value::new_null($shared)
+    (null) => {
+        $crate::Value::new_null()
     };
 
-    ($shared:expr, []) => {
-        $crate::Value::new_array($shared, 0)
+    ([]) => {
+        $crate::Value::new_array()
     };
 
-    ($shared:expr, [ $($tt:tt)+ ]) => {
-        json_internal!(@array $shared, [] $($tt)+)
+    ([ $($tt:tt)+ ]) => {
+        json_internal!(@array [] $($tt)+)
     };
 
-    ($shared:expr, {}) => {
-        $crate::Value::new_object($shared, 0)
+    ({}) => {
+        $crate::Value::new_object()
     };
 
-    ($shared:expr, { $($tt:tt)+ }) => {
+    ({ $($tt:tt)+ }) => {
         {
-            let mut obj_value = $crate::Value::new_object($shared, 0);
-            json_internal!(@object $shared, obj_value () ($($tt)+) ($($tt)+));
+            let mut obj_value = $crate::Value::new_object_with(8);
+            json_internal!(@object obj_value () ($($tt)+) ($($tt)+));
             obj_value
         }
     };
 
     // Any Serialize type: numbers, strings, struct literals, variables etc.
     // Must be below every other rule.
-    ($shared:expr, $other:expr) => {
-        $crate::value::to_value_in($shared.into(), &$other).unwrap()
+    ($other:expr) => {
+        $crate::value::to_value(&$other).unwrap()
     };
 }
 
@@ -387,9 +370,9 @@ macro_rules! json_internal {
 #[macro_export(local_inner_macros)]
 #[doc(hidden)]
 macro_rules! json_internal_array {
-    ($shared:expr, $($content:tt)*) => {
+    ($($content:tt)*) => {
         {
-            let mut arr_value = $crate::Value::new_array($shared, 0);
+            let mut arr_value = $crate::Value::new_array_with(8);
             $(
                 arr_value.append_value($content);
             )*
@@ -415,21 +398,6 @@ mod test {
     use std::collections::HashMap;
 
     use crate::value::value_trait::JsonValueTrait;
-
-    #[test]
-    fn test_json_memory() {
-        assert!(json!(true).is_static());
-        assert!(json!(false).is_static());
-        assert!(json!(null).is_static());
-        assert!(json!([]).is_static());
-        assert!(json!({}).is_static());
-        assert!(json!(123).is_static());
-        assert!(json!(1.23).is_static());
-        assert!(json!("123").is_root());
-        assert!(json!("").is_root());
-        assert!(json!({"1": 123}).is_root());
-        assert!(json!([[[]]]).is_root());
-    }
 
     #[test]
     fn test_json_macro() {
@@ -478,9 +446,6 @@ mod test {
 
     #[test]
     fn test_array_macro() {
-        let arr = array![];
-        assert!(arr.into_value().is_static());
-
         let arr = array![true, false, null, 1, 2, 3, "hi", 1 == 2];
         assert!(arr[arr.len() - 1].is_false());
 
@@ -491,9 +456,6 @@ mod test {
 
     #[test]
     fn test_object_macro() {
-        let obj = object! {};
-        assert!(obj.into_value().is_static());
-
         let obj = object! {
             "a": true,
             "b": false,
@@ -506,7 +468,7 @@ mod test {
         };
         assert!(obj["a"].is_true());
 
-        let buf = array![1, 2, 3];
+        let arr = array![1, 2, 3];
         let obj = object! {
             "a": true,
             "b": false,
@@ -517,7 +479,7 @@ mod test {
             "g": "hi",
             "h": 1 == 2,
             "i": {
-                "i": [buf[1] == buf[2], 1],
+                "i": [arr[1] == arr[2], 1],
             },
         };
         assert!(obj["i"]["i"][1].as_u64().unwrap() == 1);

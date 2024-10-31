@@ -2,19 +2,8 @@ use std::{borrow::Cow, fmt::Debug, str::FromStr};
 
 use faststr::FastStr;
 
-use super::{
-    array::{Array, DEFAULT_ARRAY_CAP},
-    object::Object,
-};
-use crate::{
-    serde::number::N,
-    value::{
-        node::Value,
-        object::DEFAULT_OBJ_CAP,
-        shared::{get_shared, get_shared_or_new, set_shared, Shared},
-    },
-    Number,
-};
+use super::{array::Array, node::ValueMut, object::Object};
+use crate::{serde::number::N, value::node::Value, Number};
 
 impl From<Number> for Value {
     /// Convert `Number` to a `Value`.
@@ -29,11 +18,10 @@ impl From<Number> for Value {
     /// ```
     #[inline]
     fn from(val: Number) -> Self {
-        let shared = get_shared();
         match val.n {
-            N::PosInt(u) => Value::new_u64(u, shared),
-            N::NegInt(i) => Value::new_i64(i, shared),
-            N::Float(f) => unsafe { Value::new_f64_unchecked(f, shared) },
+            N::PosInt(u) => Value::new_u64(u),
+            N::NegInt(i) => Value::new_i64(i),
+            N::Float(f) => unsafe { Value::new_f64_unchecked(f) },
         }
     }
 }
@@ -66,7 +54,7 @@ impl From<bool> for Value {
     /// ```
     #[inline]
     fn from(val: bool) -> Self {
-        Value::new_bool(val, get_shared())
+        Value::new_bool(val)
     }
 }
 
@@ -83,19 +71,28 @@ macro_rules! impl_from_str {
                 ///
                 #[inline]
                 fn from(val: &$ty) -> Self {
-                    let (shared, is_root) = get_shared_or_new();
-                    let mut value = Value::copy_str(val, shared);
-                    if is_root {
-                        value.mark_root();
-                    }
-                    value
+                    Value::copy_str(val)
                 }
             }
         )*
     };
 }
 
-impl_from_str!(String, str, FastStr);
+impl_from_str!(String, str);
+
+impl From<FastStr> for Value {
+    #[inline]
+    fn from(val: FastStr) -> Self {
+        Value::new_faststr(val)
+    }
+}
+
+impl From<&FastStr> for Value {
+    #[inline]
+    fn from(val: &FastStr) -> Self {
+        Value::new_faststr(val.clone())
+    }
+}
 
 impl<'a> From<Cow<'a, str>> for Value {
     /// Convert copy-on-write string to a string `Value`.
@@ -158,29 +155,11 @@ impl<T: Into<Value>> From<Vec<T>> for Value {
     /// ```
     #[inline]
     fn from(val: Vec<T>) -> Self {
-        let shared = get_shared();
-        let is_root = shared.is_null();
-        if val.is_empty() {
-            return Value::new_array(shared, 0);
-        }
-
-        let mut array = if is_root {
-            let new_shared = Shared::new_ptr();
-            set_shared(new_shared);
-            Value::new_array(new_shared, val.len())
-        } else {
-            Value::new_array(shared, val.len())
-        };
-
+        let mut arr = Array::with_capacity(val.len()).0;
         for v in val {
-            // new create value will use the shared allocator.
-            array.append_value(Into::<Value>::into(v));
+            arr.append_value(v.into());
         }
-        if is_root {
-            set_shared(std::ptr::null());
-            array.mark_root();
-        }
-        array
+        arr.into()
     }
 }
 
@@ -217,29 +196,11 @@ impl<T: Clone + Into<Value>> From<&[T]> for Value {
     /// assert_eq!(Value::from(x), json!([]));
     /// ```
     fn from(val: &[T]) -> Self {
-        let shared = get_shared();
-        let is_root = shared.is_null();
-        if val.is_empty() {
-            return Value::new_array(shared, 0);
-        }
-
-        let mut array = if is_root {
-            let new_shared = Shared::new_ptr();
-            set_shared(new_shared);
-            Value::new_array(new_shared, val.len())
-        } else {
-            Value::new_array(shared, val.len())
-        };
+        let mut arr = Array::with_capacity(val.len()).0;
         for v in val {
-            // new create value will use the shared allocator.
-            array.append_value(Into::<Value>::into(v.clone()));
+            arr.append_value(v.clone().into());
         }
-
-        if is_root {
-            array.mark_root();
-            set_shared(std::ptr::null());
-        }
-        array
+        arr.into()
     }
 }
 
@@ -255,8 +216,7 @@ impl From<()> for Value {
     /// ```
     #[inline]
     fn from(_: ()) -> Self {
-        let shared = get_shared();
-        Value::new_null(shared)
+        Value::new_null()
     }
 }
 
@@ -306,7 +266,7 @@ impl FromStr for Value {
     ///
     /// If it is `&'static str`, recommend to use [`Value::from_static_str`].
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Value::new_str_owned(s))
+        Ok(Value::copy_str(s))
     }
 }
 
@@ -331,24 +291,11 @@ impl<'a, K: AsRef<str>, V: Clone + Into<Value>> FromIterator<(K, &'a V)> for Val
     /// assert_eq!(x, json!({"sonic_rs": 40, "json": 2}));
     /// ```
     fn from_iter<T: IntoIterator<Item = (K, &'a V)>>(iter: T) -> Self {
-        let (shared, is_root) = get_shared_or_new();
-        if is_root {
-            set_shared(shared);
-        }
-
-        let mut obj = Value::new_object(shared, DEFAULT_OBJ_CAP);
+        let mut obj = Object::with_capacity(0);
         for (k, v) in iter.into_iter() {
-            let k = Value::copy_str(k.as_ref(), shared);
-            // will create value use `shared` allocator
-            let v = v.clone().into();
-            obj.append_pair((k, v));
+            obj.insert(&k, v.clone().into());
         }
-
-        if is_root {
-            obj.mark_root();
-            set_shared(std::ptr::null());
-        }
-        obj
+        obj.0
     }
 }
 
@@ -371,22 +318,11 @@ impl<T: Into<Value>> FromIterator<T> for Value {
     /// ```
     #[inline]
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        let (shared, is_root) = get_shared_or_new();
-        if is_root {
-            set_shared(shared);
-        }
-
-        let mut arr = Value::new_array(shared, DEFAULT_ARRAY_CAP);
+        let mut arr = Array::with_capacity(0);
         for v in iter.into_iter() {
-            // will create value use `shared` allocator
-            arr.append_value(v.into());
+            arr.0.append_value(v.into());
         }
-
-        if is_root {
-            arr.mark_root();
-            set_shared(std::ptr::null());
-        }
-        arr
+        arr.into()
     }
 }
 
@@ -406,9 +342,7 @@ impl<T: Into<Value>> From<Vec<T>> for Array {
     /// ```
     #[inline]
     fn from(val: Vec<T>) -> Self {
-        debug_assert!(get_shared().is_null(), "array should not be shared");
-        let value = Into::<Value>::into(val);
-        Array(value)
+        Array(val.into())
     }
 }
 
@@ -425,9 +359,7 @@ impl<T: Clone + Into<Value>, const N: usize> From<&[T; N]> for Array {
     /// assert_eq!(x, array!["hi", "hello"]);
     /// ```
     fn from(val: &[T; N]) -> Self {
-        debug_assert!(get_shared().is_null(), "array should not be shared");
-        let value = Into::<Value>::into(val.as_ref());
-        Array(value)
+        Array(val.into())
     }
 }
 
@@ -449,7 +381,6 @@ impl<T: Into<Value>> FromIterator<T> for Array {
     /// assert_eq!(x, array!["sonic_rs", "json", "serde"]);
     /// ```
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        debug_assert!(get_shared().is_null(), "array should not be shared");
         let value = Value::from_iter(iter);
         Array(value)
     }
@@ -468,7 +399,6 @@ impl<T: Clone + Into<Value>> From<&[T]> for Array {
     /// assert_eq!(x, array!["hi", "hello"]);
     /// ```
     fn from(val: &[T]) -> Self {
-        debug_assert!(get_shared().is_null(), "array should not be shared");
         let value = Into::<Value>::into(val);
         Array(value)
     }
@@ -498,7 +428,6 @@ impl<'a, K: AsRef<str>, V: Clone + Into<Value> + 'a> FromIterator<(K, &'a V)> fo
     /// ```
     #[inline]
     fn from_iter<T: IntoIterator<Item = (K, &'a V)>>(iter: T) -> Self {
-        debug_assert!(get_shared().is_null(), "object should not be shared");
         let value = Value::from_iter(iter);
         Object(value)
     }
@@ -526,17 +455,13 @@ impl<'a, T: Clone + Into<Value> + 'a> Extend<&'a T> for Array {
     /// ```
     #[inline]
     fn extend<I: IntoIterator<Item = &'a T>>(&mut self, iter: I) {
-        debug_assert!(
-            get_shared().is_null(),
-            "array extend should not use outer shared allocator"
-        );
-        let shared = self.0.check_shared();
-        set_shared(shared);
-        for v in iter {
-            // new create value will use `shared` allocator
-            self.push(v.clone().into());
+        if let ValueMut::Array(value) = self.0.as_mut() {
+            for v in iter.into_iter() {
+                value.push(v.clone().into());
+            }
+        } else {
+            unreachable!("should not happend")
         }
-        set_shared(std::ptr::null());
     }
 }
 
@@ -567,20 +492,9 @@ impl<'a, K: AsRef<str> + ?Sized, V: Clone + Debug + Into<Value> + 'a> Extend<(&'
     /// assert_eq!(obj, object! {"sonic": 40, "rs": null, "object": [1, 2, 3]});
     /// ```
     fn extend<I: IntoIterator<Item = (&'a K, &'a V)>>(&mut self, iter: I) {
-        debug_assert!(
-            get_shared().is_null(),
-            "object extend should not use outer shared allocator"
-        );
-        let shared = self.0.check_shared() as *const _;
-        set_shared(shared);
-        for (k, v) in iter {
-            let k = Value::copy_str(k.as_ref(), self.0.shared());
-            // new create value will use `shared` allocator
-            let mut v = v.clone().into();
-            v.unmark_root();
-            self.0.append_pair((k, v));
+        for (k, v) in iter.into_iter() {
+            self.insert(k.as_ref(), v.clone().into());
         }
-        set_shared(std::ptr::null());
     }
 }
 

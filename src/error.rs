@@ -365,19 +365,6 @@ impl Error {
     pub(crate) fn error_code(self) -> ErrorCode {
         self.err.code
     }
-
-    #[cold]
-    pub(crate) fn new(code: ErrorCode, msg: Option<String>) -> Self {
-        Error {
-            err: Box::new(ErrorImpl {
-                code,
-                line: 0,
-                index: 0,
-                column: 0,
-                descript: msg,
-            }),
-        }
-    }
 }
 
 impl serde::de::StdError for Error {

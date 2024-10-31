@@ -1,9 +1,6 @@
 use crate::{
     util::{private::Sealed, reborrow::DormantMutRef},
-    value::{
-        object::DEFAULT_OBJ_CAP,
-        shared::{Shared, SharedCtxGuard},
-    },
+    value::{object::DEFAULT_OBJ_CAP, shared::Shared},
     JsonValueMutTrait, JsonValueTrait, PointerNode, Value,
 };
 
@@ -179,15 +176,8 @@ macro_rules! impl_str_index {
 
                 #[inline]
                 fn index_or_insert<'v>(&self, v: &'v mut Value) -> &'v mut Value {
-                    let mut shared = v.shared_parts();
                     if v.is_null() {
-                        if shared.is_null() {
-                            shared = Shared::new_ptr();
-                            *v = Value::new_object(shared, 8);
-                            v.mark_root();
-                        } else {
-                            unsafe { std::ptr::write(v, Value::new_object(shared, DEFAULT_OBJ_CAP)) };
-                        }
+                        *v = Value::new_object_with(8);
                     }
 
                     let typ = v.get_type();
@@ -197,8 +187,7 @@ macro_rules! impl_str_index {
                         .0
                         .get_key_mut(*self).map_or_else(|| {
                             let o =  unsafe { dormant_obj.reborrow() };
-                            let _ = SharedCtxGuard::assign(shared);
-                            let inserted = o.append_pair((Into::<Value>::into((*self)), Value::new_null(shared)));
+                            let inserted = o.append_pair((Into::<Value>::into((*self)), Value::new_null()));
                             &mut inserted.1
                         }, |v| v.0)
                 }

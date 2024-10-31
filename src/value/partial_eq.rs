@@ -1,58 +1,30 @@
 use faststr::FastStr;
 
-use super::object::Pair;
-use crate::{
-    value::{
-        node::Value,
-        value_trait::{JsonContainerTrait, JsonValueTrait},
-    },
-    JsonType,
+use crate::value::{
+    node::{Value, ValueRefInner},
+    value_trait::{JsonContainerTrait, JsonValueTrait},
 };
 impl Eq for Value {}
 
 impl PartialEq for Value {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        if std::ptr::eq(self, other) {
-            return true;
-        }
-
         if self.get_type() != other.get_type() {
             return false;
         }
-
-        match self.get_type() {
-            JsonType::Boolean => self.as_bool() == other.as_bool(),
-            JsonType::Null => other.is_null(),
-            JsonType::Number => self.as_f64() == other.as_f64(),
-            JsonType::String => self.as_str() == other.as_str(),
-            JsonType::Array => {
-                let len = self.len();
-                if len != other.len() {
-                    return false;
-                }
-                let ours = self.children::<Value>();
-                let theirs = other.children::<Value>();
-                ours.iter().zip(theirs).all(|(a, b)| (*a) == b)
+        match self.as_ref2() {
+            ValueRefInner::Null => other.is_null(),
+            ValueRefInner::Bool(a) => other.as_bool().map_or(false, |b| a == b),
+            ValueRefInner::Number(a) => other.as_number().map_or(false, |b| a == b),
+            ValueRefInner::RawNum(a) => other.as_rawnum().map_or(false, |b| a == b),
+            ValueRefInner::Str(a) => other.as_str().map_or(false, |b| a == b),
+            ValueRefInner::Array(_) | ValueRefInner::EmptyArray => {
+                other.as_value_slice() == self.as_value_slice()
             }
-            JsonType::Object => {
-                let len = self.len();
-                if len != other.len() {
-                    return false;
-                }
-                if len == 0 {
-                    return true;
-                }
-
-                for (k, v) in self.iter::<Pair>() {
-                    let key = k.as_str().unwrap();
-                    let matched = other.get(key).map(|v1| v == v1).unwrap_or(false);
-                    if !matched {
-                        return false;
-                    }
-                }
-                true
+            ValueRefInner::Object(_) | ValueRefInner::EmptyObject => {
+                other.as_object() == self.as_object()
             }
+            _ => unreachable!(),
         }
     }
 }

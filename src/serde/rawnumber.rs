@@ -2,6 +2,7 @@ use ::serde::{
     de, de::Visitor, ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer,
 };
 use ::std::fmt;
+use faststr::FastStr;
 
 use super::number::Number;
 use crate::{util::private::Sealed, Error, JsonNumberTrait};
@@ -29,12 +30,12 @@ use crate::{util::private::Sealed, Error, JsonNumberTrait};
 /// ```
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct RawNumber {
-    n: String,
+    n: FastStr,
 }
 
 impl RawNumber {
     pub(crate) fn new(s: &str) -> Self {
-        Self { n: s.to_string() }
+        Self { n: FastStr::new(s) }
     }
 
     /// as_str returns the underlying string representation of the number.
