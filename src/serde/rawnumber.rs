@@ -38,6 +38,10 @@ impl RawNumber {
         Self { n: FastStr::new(s) }
     }
 
+    pub(crate) fn from_faststr(n: FastStr) -> Self {
+        Self { n }
+    }
+
     /// as_str returns the underlying string representation of the number.
     pub fn as_str(&self) -> &str {
         self.n.as_str()

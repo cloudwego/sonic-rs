@@ -9,11 +9,9 @@ use std::{
 
 use faststr::FastStr;
 
-#[cfg(feature = "arbitrary_precision")]
-use crate::RawNumber;
 use crate::{
     from_str, get_unchecked, index::Index, input::JsonSlice, serde::Number, JsonType,
-    JsonValueTrait, Result,
+    JsonValueTrait, RawNumber, Result,
 };
 
 /// LazyValue wrappers a unparsed raw JSON text. It is borrowed from the origin JSON text.
@@ -200,7 +198,6 @@ impl<'a> JsonValueTrait for LazyValue<'a> {
         }
     }
 
-    #[cfg(feature = "arbitrary_precision")]
     fn as_raw_number(&self) -> Option<RawNumber> {
         if let Ok(num) = from_str(self.as_raw_str()) {
             Some(num)

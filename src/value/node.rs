@@ -11,7 +11,10 @@ use std::{
 
 use bumpalo::Bump;
 use faststr::FastStr;
-use serde::ser::{Serialize, SerializeMap, SerializeSeq};
+use serde::{
+    ser::{Serialize, SerializeMap, SerializeSeq, SerializeStruct},
+    Serializer,
+};
 
 use super::{
     object::Pair,
@@ -20,18 +23,16 @@ use super::{
     value_trait::{JsonContainerTrait, JsonValueMutTrait},
     visitor::JsonVisitor,
 };
-#[cfg(feature = "arbitrary_precision")]
-use crate::RawNumber;
 use crate::{
+    config::DeserializeCfg,
     error::Result,
     index::Index,
     parser::Parser,
-    pointer::PointerNode,
     reader::{PaddedSliceRead, Reader},
     serde::tri,
     util::string::str_from_raw_parts,
     value::{array::Array, object::Object, value_trait::JsonValueTrait},
-    JsonNumberTrait, JsonType, Number,
+    JsonNumberTrait, JsonType, Number, RawNumber,
 };
 
 /// Represents any valid JSON value.
@@ -68,69 +69,6 @@ pub struct Value {
     pub(crate) data: Data,
 }
 
-pub(crate) union Data {
-    pub(crate) uval: u64,
-    pub(crate) ival: i64,
-    pub(crate) fval: f64,
-    pub(crate) static_str: NonNull<u8>,
-
-    pub(crate) dom_str: NonNull<u8>,
-    pub(crate) arr_elems: NonNull<Value>,
-    pub(crate) obj_pairs: NonNull<Pair>,
-
-    pub(crate) root: NonNull<Value>,
-
-    pub(crate) str_own: ManuallyDrop<Box<FastStr>>,
-    pub(crate) obj_own: ManuallyDrop<Box<Vec<Pair>>>,
-    pub(crate) arr_own: ManuallyDrop<Box<Vec<Value>>>,
-
-    /// temp
-    pub(crate) parent: u64,
-}
-
-/// inlined string, avoid boxed allocation
-#[derive(Copy, Clone)]
-pub(crate) struct RawStr(NonNull<RawStrHeader>);
-
-// TODO: make sure this safer and clear
-impl RawStr {
-    pub fn unpack(&self) -> (*const u8 /* raw str */, RawStrHeader) {
-        unsafe {
-            let header = self.0.as_ref();
-            let raw_ptr = self.0.as_ptr().add(1) as *const u8;
-            (raw_ptr, *header)
-        }
-    }
-
-    unsafe fn set_header(&mut self, hdr: RawStrHeader) {
-        self.0.write(hdr);
-    }
-
-    unsafe fn from_raw_parts_mut(ptr: *mut u8) -> RawStr {
-        let hdr = ptr.sub(size_of::<RawStrHeader>() as usize);
-        let hdr = hdr as *mut RawStrHeader;
-        assert!(hdr.is_aligned());
-        RawStr(NonNull::new_unchecked(hdr))
-    }
-
-    unsafe fn into_raw(this: Self) -> *mut u8 {
-        let hdr = this.0.as_ptr();
-        let data = hdr.add(1) as *mut u8;
-        data
-    }
-
-    unsafe fn new_in(alloc: &mut Bump, s: &str) -> RawStr {
-        let data_size = s.len();
-        let hdr_size = size_of::<RawStrHeader>();
-        // aligned to hder, make sure tagged pointer in Meta
-        let align = align_of::<RawStrHeader>();
-        let layout = Layout::from_size_align(hdr_size + data_size, align).unwrap();
-        let ptr = alloc.alloc_layout(layout).as_ptr() as *mut RawStrHeader;
-        RawStr(NonNull::new_unchecked(ptr))
-    }
-}
-
-#[allow(clippy::empty_line_after_outer_attr)]
 #[rustfmt::skip]
 // A compact and mutable JSON Value.
 //  
@@ -162,6 +100,70 @@ impl RawStr {
 // | root_node   |   7    |      *const ShardDom (from Arc, MUST aligned 8)             +     *const Node (head)  |                      |
 //
 // NB: we will check the JSON length when parsing, if JSON is > 2GB, will return a error, so we will not check the limits when parsing or using dom.
+#[allow(clippy::box_collection)]
+#[repr(C)]
+pub(crate) union Data {
+    pub(crate) uval: u64,
+    pub(crate) ival: i64,
+    pub(crate) fval: f64,
+    pub(crate) static_str: NonNull<u8>,
+
+    pub(crate) dom_str: NonNull<u8>,
+    pub(crate) arr_elems: NonNull<Value>,
+    pub(crate) obj_pairs: NonNull<Pair>,
+
+    pub(crate) root: NonNull<Value>,
+
+    pub(crate) str_own: ManuallyDrop<Box<FastStr>>,
+    pub(crate) obj_own: ManuallyDrop<Box<Vec<Pair>>>,
+    pub(crate) arr_own: ManuallyDrop<Box<Vec<Value>>>,
+
+    pub(crate) parent: u64,
+}
+
+/// inlined string, avoid boxed allocation
+#[derive(Copy, Clone)]
+#[repr(transparent)]
+pub(crate) struct RawStr(NonNull<RawStrHeader>);
+
+// TODO: make sure this safer and clear
+impl RawStr {
+    pub fn unpack(&self) -> (*const u8 /* raw str */, RawStrHeader) {
+        unsafe {
+            let header = self.0.as_ref();
+            let raw_ptr = self.0.as_ptr().add(1) as *const u8;
+            (raw_ptr, *header)
+        }
+    }
+
+    unsafe fn set_str_len(&mut self, str_len: usize) {
+        let hdr = self.0.as_mut();
+        hdr.str_len = str_len as u32;
+    }
+
+    unsafe fn set_index(&mut self, idx: usize) {
+        let hdr = self.0.as_mut();
+        hdr.node_idx = idx as u32;
+    }
+
+    pub(crate) unsafe fn new_in(alloc: &mut Bump, raw: &str) -> RawStr {
+        let data_size = raw.len();
+        let hdr_size = size_of::<RawStrHeader>();
+        // aligned to hder, make sure tagged pointer in Meta
+        let align = align_of::<RawStrHeader>();
+        let layout = Layout::from_size_align(hdr_size + data_size, align).unwrap();
+        let hdr = alloc.alloc_layout(layout).as_ptr() as *mut RawStrHeader;
+        hdr.write(RawStrHeader {
+            node_idx: 0, // write later
+            str_len: 0,  // write later
+            raw_len: data_size as u32,
+        });
+        let dst = hdr.add(1) as *mut u8;
+        std::ptr::copy_nonoverlapping(raw.as_ptr(), dst, data_size);
+        RawStr(NonNull::new_unchecked(hdr))
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 #[repr(C, align(8))]
 pub(crate) struct RawStrHeader {
@@ -181,15 +183,15 @@ pub(crate) union Meta {
 
 impl Meta {
     const STAIC_NODE: u64 = 0;
-    const NULL: u64 = 0 | (0 << Self::KIND_BITS);
-    const TRUE: u64 = 0 | (1 << Self::KIND_BITS);
-    const FALSE: u64 = 0 | (2 << Self::KIND_BITS);
-    const I64: u64 = 0 | (3 << Self::KIND_BITS);
-    const U64: u64 = 0 | (4 << Self::KIND_BITS);
-    const F64: u64 = 0 | (5 << Self::KIND_BITS);
-    const EMPTY_ARR: u64 = 0 | (6 << Self::KIND_BITS);
-    const EMPTY_OBJ: u64 = 0 | (7 << Self::KIND_BITS);
-    const STATIC_STR: u64 = 0 | (8 << Self::KIND_BITS);
+    const NULL: u64 = (0 << Self::KIND_BITS);
+    const TRUE: u64 = (1 << Self::KIND_BITS);
+    const FALSE: u64 = (2 << Self::KIND_BITS);
+    const I64: u64 = (3 << Self::KIND_BITS);
+    const U64: u64 = (4 << Self::KIND_BITS);
+    const F64: u64 = (5 << Self::KIND_BITS);
+    const EMPTY_ARR: u64 = (6 << Self::KIND_BITS);
+    const EMPTY_OBJ: u64 = (7 << Self::KIND_BITS);
+    const STATIC_STR: u64 = (8 << Self::KIND_BITS);
 
     const OWNED_NODE: u64 = 1;
     const FASTSTR: u64 = 1 | (0 << Self::KIND_BITS);
@@ -254,14 +256,6 @@ impl Meta {
     fn get_kind(&self) -> u64 {
         let val = unsafe { self.val };
         val & 0x7
-    }
-
-    fn is_static(&self) -> bool {
-        self.get_kind() == Self::STAIC_NODE
-    }
-
-    fn is_owned(&self) -> bool {
-        self.get_kind() == Self::OWNED_NODE
     }
 
     fn get_type(&self) -> u64 {
@@ -340,23 +334,17 @@ struct NodeInDom<'a> {
     dom: &'a Shared,
 }
 
-struct UnpackedRawStr<'a> {
-    str: &'a str,
-    raw: &'a str,
-}
-
 impl<'a> NodeInDom<'a> {
     fn get_inner(&self) -> ValueRefInner<'a> {
         let typ = self.node.meta.get_type();
-        let inner = match typ {
+        match typ {
             Meta::STR_NODE => ValueRefInner::Str(self.unpack_str()),
             Meta::RAWNUM_NODE => ValueRefInner::RawNum(self.unpack_str()),
             Meta::ARR_NODE => ValueRefInner::Array(self.unpack_value_slice()),
             Meta::OBJ_NODE => ValueRefInner::Object(self.unpack_pair_slice()),
-            Meta::ESC_RAW_NODE => ValueRefInner::Str(self.unpack_rawstr().str),
+            Meta::ESC_RAW_NODE => ValueRefInner::Str(self.unpack_str_from_raw()),
             _ => unreachable!("unknown type {typ} in dom"),
-        };
-        inner
+        }
     }
 
     fn unpack_str(&self) -> &'a str {
@@ -377,12 +365,10 @@ impl<'a> NodeInDom<'a> {
         unsafe { from_raw_parts(pairs, len) }
     }
 
-    fn unpack_rawstr(&self) -> UnpackedRawStr<'a> {
-        let (rp, hdr) = self.node.meta.unpack_rawstr_node().unpack();
+    fn unpack_str_from_raw(&self) -> &'a str {
+        let (_, hdr) = self.node.meta.unpack_rawstr_node().unpack();
         let sp = unsafe { self.node.data.dom_str.as_ptr() };
-        let raw = unsafe { str_from_raw_parts(rp, hdr.raw_len as usize) };
-        let str = unsafe { str_from_raw_parts(sp, hdr.str_len as usize) };
-        UnpackedRawStr { str, raw }
+        unsafe { str_from_raw_parts(sp, hdr.str_len as usize) }
     }
 }
 
@@ -398,7 +384,7 @@ impl<'a> From<NodeInDom<'a>> for Value {
 }
 
 /// The value borrowed from the SharedDom
-pub(crate) enum ValueDetail<'a> {
+enum ValueDetail<'a> {
     Null,
     Bool(bool),
     Number(Number),
@@ -490,37 +476,16 @@ impl Drop for Value {
 }
 
 pub(crate) enum ValueMut<'a> {
-    Null(&'a mut Value),
-    Bool(&'a mut Value),
-    Number(&'a mut Value),
-    Str(&'a mut Value),
-    RawNum(&'a mut Value),
+    Null,
+    Bool,
+    Number,
+    Str,
+    RawNum,
     Array(&'a mut Vec<Value>),
     Object(&'a mut Vec<Pair>),
 }
 
-#[derive(Debug)]
-pub(crate) enum ValueRef2<'a> {
-    Null,
-    Bool(bool),
-    Number(Number),
-    Str(&'a str),
-    RawNum(&'a str),
-    Array(&'a [Value]),
-    Object(&'a [Pair]),
-    OwnArray(&'a Vec<Value>),
-    OwnObject(&'a Vec<Pair>),
-}
-
 impl Value {
-    fn is_static_kind(&self) -> bool {
-        self.meta.get_kind() == Meta::STAIC_NODE
-    }
-
-    fn is_owned_kind(&self) -> bool {
-        self.meta.get_kind() == Meta::OWNED_NODE
-    }
-
     fn is_node_kind(&self) -> bool {
         matches!(
             self.meta.get_kind(),
@@ -530,10 +495,6 @@ impl Value {
                 | Meta::RAWNUM_NODE
                 | Meta::ESC_RAW_NODE
         )
-    }
-
-    fn is_root_kind(&self) -> bool {
-        self.meta.get_kind() == Meta::ROOT_NODE
     }
 
     fn is_raw_str(&self) -> bool {
@@ -549,15 +510,13 @@ impl Value {
     pub(crate) fn as_mut(&mut self) -> ValueMut<'_> {
         let typ = self.meta.get_type();
         match typ {
-            Meta::NULL => ValueMut::Null(self),
-            Meta::TRUE | Meta::FALSE => ValueMut::Bool(self),
-            Meta::F64 | Meta::I64 | Meta::U64 => ValueMut::Number(self),
-            Meta::STATIC_STR | Meta::STR_NODE | Meta::FASTSTR | Meta::ESC_RAW_NODE => {
-                ValueMut::Str(self)
-            }
-            Meta::RAWNUM_FASTSTR | Meta::RAWNUM_NODE => ValueMut::RawNum(self),
-            Meta::ARR_MUT => ValueMut::Array(unsafe { &mut *self.data.arr_own }),
-            Meta::OBJ_MUT => ValueMut::Object(unsafe { &mut *self.data.obj_own }),
+            Meta::NULL => ValueMut::Null,
+            Meta::TRUE | Meta::FALSE => ValueMut::Bool,
+            Meta::F64 | Meta::I64 | Meta::U64 => ValueMut::Number,
+            Meta::STATIC_STR | Meta::STR_NODE | Meta::FASTSTR | Meta::ESC_RAW_NODE => ValueMut::Str,
+            Meta::RAWNUM_FASTSTR | Meta::RAWNUM_NODE => ValueMut::RawNum,
+            Meta::ARR_MUT => ValueMut::Array(unsafe { &mut self.data.arr_own }),
+            Meta::OBJ_MUT => ValueMut::Object(unsafe { &mut self.data.obj_own }),
             Meta::ROOT_NODE | Meta::EMPTY_ARR | Meta::EMPTY_OBJ => {
                 /* convert to mutable */
                 self.to_mut();
@@ -651,10 +610,10 @@ impl Value {
                     node: self,
                     dom: self.unpack_shared(),
                 }),
-                Meta::FASTSTR => ValueDetail::FastStr(&*self.data.str_own),
-                Meta::RAWNUM_FASTSTR => ValueDetail::RawNumFasStr(&*self.data.str_own),
-                Meta::ARR_MUT => ValueDetail::Array(&*self.data.arr_own),
-                Meta::OBJ_MUT => ValueDetail::Object(&*self.data.obj_own),
+                Meta::FASTSTR => ValueDetail::FastStr(&self.data.str_own),
+                Meta::RAWNUM_FASTSTR => ValueDetail::RawNumFasStr(&self.data.str_own),
+                Meta::ARR_MUT => ValueDetail::Array(&self.data.arr_own),
+                Meta::OBJ_MUT => ValueDetail::Object(&self.data.obj_own),
                 Meta::ROOT_NODE => ValueDetail::Root(NodeInDom {
                     node: self.data.root.as_ref(),
                     dom: &*self.meta.unpack_root(),
@@ -687,7 +646,7 @@ impl Clone for Value {
             ValueDetail::Number(n) => n.into(),
             ValueDetail::StaticStr(s) => Value::from_static_str(s),
             ValueDetail::FastStr(s) => s.into(),
-            ValueDetail::RawNumFasStr(s) => Value::new_raw_num(s),
+            ValueDetail::RawNumFasStr(s) => Value::new_rawnum_faststr(s),
             ValueDetail::Array(a) => a.as_slice().into(),
             ValueDetail::Object(o) => o.as_slice().into(),
             ValueDetail::EmptyArray => Value::new_array(),
@@ -778,9 +737,15 @@ impl super::value_trait::JsonValueTrait for Value {
         }
     }
 
-    #[cfg(feature = "arbitrary_precision")]
     fn as_raw_number(&self) -> Option<RawNumber> {
-        todo!();
+        match self.unpack_ref() {
+            ValueDetail::RawNumFasStr(s) => Some(RawNumber::from_faststr(s.clone())),
+            ValueDetail::NodeInDom(indom) | ValueDetail::Root(indom) => match indom.get_inner() {
+                ValueRefInner::RawNum(s) => Some(RawNumber::new(s)),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
     #[inline]
@@ -948,10 +913,9 @@ impl Value {
             ValueRefInner::Object(_) | ValueRefInner::EmptyObject => {
                 ValueRef::Object(self.as_object().unwrap())
             }
-            ValueRefInner::RawNum(raw) => match crate::from_str(raw) {
-                Ok(num) => ValueRef::Number(num),
-                Err(_) => ValueRef::Null,
-            },
+            ValueRefInner::RawNum(raw) => {
+                crate::from_str(raw).map_or(ValueRef::Null, ValueRef::Number)
+            }
         }
     }
 
@@ -1069,22 +1033,6 @@ impl Value {
         }
     }
 
-    #[inline(always)]
-    fn at_pointer(&self, p: &PointerNode) -> Option<&Self> {
-        match p {
-            PointerNode::Key(key) => self.get_key(key),
-            PointerNode::Index(index) => self.get_index(*index),
-        }
-    }
-
-    #[inline(always)]
-    fn at_pointer_mut(&mut self, p: &PointerNode) -> Option<&mut Self> {
-        match p {
-            PointerNode::Key(key) => self.get_key_mut(key).map(|v| v.0),
-            PointerNode::Index(index) => self.get_index_mut(*index),
-        }
-    }
-
     #[doc(hidden)]
     #[inline]
     pub fn new_bool(val: bool) -> Self {
@@ -1096,20 +1044,19 @@ impl Value {
 
     #[doc(hidden)]
     #[inline]
-    pub fn pack_str(idx: usize, val: &str) -> Self {
+    pub fn pack_str(kind: u64, idx: usize, val: &str) -> Self {
         let node_idx = idx as u32;
         // we check the json length when parsing, so val.len() should always be less than u32::MAX
         Value {
-            meta: Meta::pack_dom_node(Meta::STR_NODE, node_idx, val.len() as u32),
+            meta: Meta::pack_dom_node(kind, node_idx, val.len() as u32),
             data: Data {
                 dom_str: unsafe { NonNull::new_unchecked(val.as_ptr() as *mut _) },
             },
         }
     }
 
-    #[doc(hidden)]
     #[inline]
-    pub fn pack_raw_str(val: &str, raw: RawStr) -> Self {
+    pub(crate) fn pack_raw_str(val: &str, raw: RawStr) -> Self {
         Value {
             meta: Meta::pack_rawstr(raw),
             data: Data {
@@ -1118,8 +1065,18 @@ impl Value {
         }
     }
 
-    pub fn new_raw_num(num: &FastStr) -> Self {
+    #[inline]
+    pub(crate) fn new_rawnum_faststr(num: &FastStr) -> Self {
         let str_own = ManuallyDrop::new(Box::new(num.clone()));
+        Value {
+            meta: Meta::new(Meta::RAWNUM_FASTSTR),
+            data: Data { str_own },
+        }
+    }
+
+    #[inline]
+    pub(crate) fn new_rawnum(num: &str) -> Self {
+        let str_own = ManuallyDrop::new(Box::new(FastStr::new(num)));
         Value {
             meta: Meta::new(Meta::RAWNUM_FASTSTR),
             data: Data { str_own },
@@ -1132,13 +1089,6 @@ impl Value {
             ValueRefInner::Object(obj) => obj.len(),
             ValueRefInner::Str(s) => s.len(),
             _ => 0,
-        }
-    }
-
-    pub(crate) fn as_rawnum(&self) -> Option<&str> {
-        match self.as_ref2() {
-            ValueRefInner::RawNum(s) => Some(s),
-            _ => None,
         }
     }
 
@@ -1158,28 +1108,6 @@ impl Value {
         }
     }
 
-    #[cfg(feature = "arbitrary_precision")]
-    #[doc(hidden)]
-    #[inline]
-    pub fn new_raw_num(num: &str, share: *const Shared) -> Self {
-        Value {
-            meta: Meta::new(RAWNUM, share),
-            data: Data { rawnum: num },
-        }
-    }
-
-    #[cfg(feature = "arbitrary_precision")]
-    #[doc(hidden)]
-    #[inline]
-    pub fn copy_raw_num(num: &str, share: &Shared) -> Self {
-        Value {
-            meta: Meta::new(RAWNUM, share),
-            data: Data {
-                rawnum: share.alloc.alloc_str(num),
-            },
-        }
-    }
-
     #[doc(hidden)]
     #[inline]
     pub fn copy_str(val: &str) -> Self {
@@ -1192,12 +1120,12 @@ impl Value {
 
     #[doc(hidden)]
     #[inline]
-    pub fn copy_str_in(val: &str, idx: usize, shared: &mut Shared) -> Self {
-        let str = shared.alloc.alloc_str(val);
+    pub fn copy_str_in(kind: u64, val: &str, idx: usize, shared: &mut Shared) -> Self {
+        let str = shared.get_alloc().alloc_str(val);
         let node_idx = idx as u32;
         // we check the json length when parsing, so val.len() should always be less than u32::MAX
         Value {
-            meta: Meta::pack_dom_node(Meta::STR_NODE, node_idx, str.len() as u32),
+            meta: Meta::pack_dom_node(kind, node_idx, str.len() as u32),
             data: Data {
                 dom_str: unsafe { NonNull::new_unchecked(str.as_ptr() as *mut _) },
             },
@@ -1289,16 +1217,6 @@ impl Value {
     }
 
     #[inline]
-    pub(crate) fn insert_value(&mut self, index: usize, element: Value) {
-        debug_assert!(self.is_array());
-        if let ValueMut::Array(arr) = self.as_mut() {
-            arr.insert(index, element);
-        } else {
-            unreachable!(" insert value in non-array ")
-        }
-    }
-
-    #[inline]
     fn equal_str(&self, val: &str) -> bool {
         debug_assert!(self.is_str());
         match self.as_ref2() {
@@ -1313,13 +1231,14 @@ impl Value {
         match self.unpack_ref() {
             ValueDetail::Array(arr) => arr.capacity(),
             ValueDetail::Object(obj) => obj.capacity(),
-            ValueDetail::NodeInDom(indom) | ValueDetail::NodeInDom(indom) => {
+            ValueDetail::NodeInDom(indom) | ValueDetail::Root(indom) => {
                 if self.is_object() {
                     indom.unpack_pair_slice().len()
                 } else {
                     indom.unpack_value_slice().len()
                 }
             }
+            ValueDetail::EmptyArray | ValueDetail::EmptyObject => 0,
             _ => unreachable!("value is not array or object"),
         }
     }
@@ -1442,7 +1361,7 @@ impl Value {
     }
 
     #[inline(never)]
-    pub(crate) fn parse_with_padding(&mut self, json: &[u8]) -> Result<usize> {
+    pub(crate) fn parse_with_padding(&mut self, json: &[u8], cfg: DeserializeCfg) -> Result<usize> {
         // allocate the padding buffer for the input json
         let mut shared = Arc::new(Shared::default());
         let mut buffer = Vec::with_capacity(json.len() + Self::PADDING_SIZE);
@@ -1452,14 +1371,14 @@ impl Value {
 
         let smut = Arc::get_mut(&mut shared).unwrap();
         let slice = PaddedSliceRead::new(buffer.as_mut_slice());
-        let mut parser = Parser::new(slice);
+        let mut parser = Parser::new(slice).with_config(cfg);
         let mut vis = DocumentVisitor::new(json.len(), smut);
         parser.parse_dom(&mut vis)?;
         let idx = parser.read.index();
 
         // NOTE: root node should is the first node
         *self = unsafe { vis.root.as_ref().clone() };
-        smut.json = buffer;
+        smut.set_json(buffer);
         Ok(idx)
     }
 
@@ -1467,11 +1386,12 @@ impl Value {
     pub(crate) fn parse_without_padding<'de, R: Reader<'de>>(
         &mut self,
         shared: &mut Shared,
+        strbuf: &mut Vec<u8>,
         parser: &mut Parser<R>,
     ) -> Result<()> {
         let remain_len = parser.read.remain();
         let mut vis = DocumentVisitor::new(remain_len, shared);
-        parser.parse_value_without_padding(&mut vis)?;
+        parser.parse_dom2(&mut vis, strbuf)?;
         *self = unsafe { vis.root.as_ref().clone() };
         Ok(())
     }
@@ -1523,7 +1443,7 @@ impl MetaNode {
         let canary = b"SONICRS\0";
         MetaNode {
             shared,
-            canary: unsafe { transmute(canary) },
+            canary: unsafe { transmute::<&[u8; 8], usize>(canary) },
         }
     }
 }
@@ -1563,7 +1483,8 @@ impl<'a> DocumentVisitor<'a> {
             let visited_children = &vis.nodes()[(parent + 1)..];
             let real_count = visited_children.len() + Value::HEAD_NODE_COUNT;
             let layout = Layout::array::<Value>(real_count).unwrap();
-            let hdr = vis.shared.alloc.alloc_layout(layout).as_ptr() as *mut ManuallyDrop<Value>;
+            let hdr =
+                vis.shared.get_alloc().alloc_layout(layout).as_ptr() as *mut ManuallyDrop<Value>;
 
             // copy visited nodes into document
             let visited_children = &vis.nodes()[(parent + 1)..];
@@ -1590,10 +1511,11 @@ impl<'a> DocumentVisitor<'a> {
         // should alloc root node in the bump allocator
         let start = self.nodes_start;
         let (rm, ru) = unsafe { (self.nodes()[start].meta, self.nodes()[start].data.uval) };
+        let ptr = self.shared as *const _;
         let (_, root) = self
             .shared
-            .alloc
-            .alloc((MetaNode::new(self.shared as *const _), Value::default()));
+            .get_alloc()
+            .alloc((MetaNode::new(ptr), Value::default()));
 
         // copy visited nodes into document
         root.meta = rm;
@@ -1616,8 +1538,9 @@ impl<'a> DocumentVisitor<'a> {
         if self.nodes().len() == self.nodes().capacity() {
             false
         } else {
-            self.nodes()
-                .push(ManuallyDrop::new(unsafe { transmute(node) }));
+            self.nodes().push(ManuallyDrop::new(unsafe {
+                transmute::<MetaNode, Value>(node)
+            }));
             true
         }
     }
@@ -1646,16 +1569,17 @@ impl<'de, 'a> JsonVisitor<'de> for DocumentVisitor<'a> {
         self.push_node(node)
     }
 
-    #[cfg(feature = "arbitrary_precision")]
     #[inline(always)]
     fn visit_raw_number(&mut self, val: &str) -> bool {
-        todo!("raw num")
+        let idx = self.index();
+        let node = Value::copy_str_in(Meta::RAWNUM_NODE, val, idx, self.shared);
+        self.push_node(node)
     }
 
-    #[cfg(feature = "arbitrary_precision")]
     #[inline(always)]
     fn visit_borrowed_raw_number(&mut self, val: &str) -> bool {
-        todo!("raw num")
+        let idx = self.index();
+        self.push_node(Value::pack_str(Meta::RAWNUM_NODE, idx, val))
     }
 
     #[inline(always)]
@@ -1697,14 +1621,14 @@ impl<'de, 'a> JsonVisitor<'de> for DocumentVisitor<'a> {
     #[inline(always)]
     fn visit_str(&mut self, val: &str) -> bool {
         let idx = self.index();
-        let node = Value::copy_str_in(val, idx, self.shared);
+        let node = Value::copy_str_in(Meta::STR_NODE, val, idx, self.shared);
         self.push_node(node)
     }
 
     #[inline(always)]
     fn visit_borrowed_str(&mut self, val: &'de str) -> bool {
         let idx = self.index();
-        self.push_node(Value::pack_str(idx, val))
+        self.push_node(Value::pack_str(Meta::STR_NODE, idx, val))
     }
 
     #[inline(always)]
@@ -1717,23 +1641,40 @@ impl<'de, 'a> JsonVisitor<'de> for DocumentVisitor<'a> {
         self.visit_borrowed_str(key)
     }
 
-    fn visit_raw_str(&mut self, val: &str, raw: &mut [u8]) -> bool {
-        // update the header
-        let raw = unsafe {
-            let mut r = RawStr::from_raw_parts_mut(raw.as_mut_ptr());
-            r.set_header(RawStrHeader {
-                node_idx: self.nodes().len() as u32,
-                str_len: val.len() as u32,
-                raw_len: raw.len() as u32,
-            });
-            r
-        };
-        self.push_node(Value::pack_raw_str(val, raw))
+    fn visit_raw_str(&mut self, val: &str, mut raw: RawStr) -> bool {
+        unsafe {
+            raw.set_index(self.index());
+            raw.set_str_len(val.len());
+        }
+        let node = Value::pack_raw_str(val, raw);
+        self.push_node(node)
     }
 
     fn visit_dom_end(&mut self) -> bool {
         self.visit_root();
         true
+    }
+
+    fn allocator(&mut self) -> Option<&mut Bump> {
+        Some(self.shared.get_alloc())
+    }
+}
+
+impl Value {
+    pub(crate) const RAW_TOKEN: &str = "_private:sonic_rs:raw";
+}
+
+#[derive(Debug)]
+struct RawKey<'a>(&'a str);
+
+impl Serialize for RawKey<'_> {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = serializer.serialize_struct(Value::RAW_TOKEN, 1)?;
+        s.serialize_field(Value::RAW_TOKEN, &self.0)?;
+        s.end()
     }
 }
 
@@ -1747,7 +1688,7 @@ impl Serialize for Value {
             ValueRefInner::Null => serializer.serialize_unit(),
             ValueRefInner::Bool(b) => serializer.serialize_bool(b),
             ValueRefInner::Number(n) => n.serialize(serializer),
-            ValueRefInner::Str(s) if self.is_raw_str() => {
+            ValueRefInner::Str(_) if self.is_raw_str() => {
                 use serde::ser::SerializeStruct;
 
                 use crate::serde::rawnumber::TOKEN;
@@ -1770,10 +1711,15 @@ impl Serialize for Value {
                 {
                     // TODO: sort the keys use thread-local buffer
                     let mut kvs: Vec<&(Value, Value)> = o.iter().collect();
-                    kvs.sort_by(|(k1, _), (k2, _)| k1.str().cmp(k2.str()));
+                    kvs.sort_by(|(k1, _), (k2, _)| k1.as_str().unwrap().cmp(k2.as_str().unwrap()));
                     let mut map = tri!(serializer.serialize_map(Some(kvs.len())));
                     for (k, v) in kvs {
-                        tri!(map.serialize_entry(k, v));
+                        if k.is_raw_str() {
+                            tri!(map.serialize_key(&RawKey(k.raw_str())));
+                        } else {
+                            tri!(map.serialize_key(k.as_str().unwrap()));
+                        }
+                        tri!(map.serialize_value(v));
                     }
                     map.end()
                 }
@@ -1782,7 +1728,12 @@ impl Serialize for Value {
                     let entries = o.iter();
                     let mut map = tri!(serializer.serialize_map(Some(entries.len())));
                     for (k, v) in entries {
-                        tri!(map.serialize_entry(k, v));
+                        if k.is_raw_str() {
+                            tri!(map.serialize_key(&RawKey(k.raw_str())));
+                        } else {
+                            tri!(map.serialize_key(k.as_str().unwrap()));
+                        }
+                        tri!(map.serialize_value(v));
                     }
                     map.end()
                 }
@@ -1795,7 +1746,6 @@ impl Serialize for Value {
                 tri!(struct_.serialize_field(TOKEN, raw));
                 struct_.end()
             }
-            _ => panic!("unsupported types"),
         }
     }
 }
@@ -2051,22 +2001,22 @@ mod test {
     fn test_invalid_utf8() {
         use crate::{from_slice, from_slice_unchecked};
 
-        // let data = [b'"', 0x80, 0x90, b'"'];
-        // let ret: Result<Value> = from_slice(&data);
-        // assert_eq!(
-        //     ret.err().unwrap().to_string(),
-        //     "Invalid UTF-8 characters in json at line 1 column 1\n\n\t\"��\"\n\t.^..\n"
-        // );
+        let data = [b'"', 0x80, 0x90, b'"'];
+        let ret: Result<Value> = from_slice(&data);
+        assert_eq!(
+            ret.err().unwrap().to_string(),
+            "Invalid UTF-8 characters in json at line 1 column 1\n\n\t\"��\"\n\t.^..\n"
+        );
 
-        // let dom: Result<Value> = unsafe { from_slice_unchecked(&data) };
-        // assert!(dom.is_ok(), "{}", dom.unwrap_err());
+        let dom: Result<Value> = unsafe { from_slice_unchecked(&data) };
+        assert!(dom.is_ok(), "{}", dom.unwrap_err());
 
-        // let data = [b'"', b'"', 0x80];
-        // let dom: Result<Value> = from_slice(&data);
-        // assert_eq!(
-        //     dom.err().unwrap().to_string(),
-        //     "Invalid UTF-8 characters in json at line 1 column 2\n\n\t\"\"�\n\t..^\n"
-        // );
+        let data = [b'"', b'"', 0x80];
+        let dom: Result<Value> = from_slice(&data);
+        assert_eq!(
+            dom.err().unwrap().to_string(),
+            "Invalid UTF-8 characters in json at line 1 column 2\n\n\t\"\"�\n\t..^\n"
+        );
 
         let data = [0x80, b'"', b'"'];
         let dom: Result<Value> = unsafe { from_slice_unchecked(&data) };
@@ -2117,18 +2067,38 @@ mod test {
         .unwrap_err();
     }
 
-    #[cfg(feature = "arbitrary_precision")]
     #[test]
     fn test_arbitrary_precision() {
+        use crate::{Deserialize, Deserializer};
+
         let nums = [ "12345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123",
          "1.23456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567e89012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123",
         "-0.000000023456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567e+89012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123",
         ];
 
         for num in nums {
-            let value: Value = crate::from_str(num).unwrap();
+            let mut de = Deserializer::from_str(num).use_rawnumber();
+            let value: Value = Deserialize::deserialize(&mut de).unwrap();
             assert_eq!(value.as_raw_number().unwrap().as_str(), num);
             assert_eq!(value.to_string(), num);
+        }
+    }
+
+    #[test]
+    fn test_raw_str() {
+        use crate::{Deserialize, Deserializer};
+        let data = [
+            r#"{"a":1}"#,
+            r#"{"a":1,"b":"\\u0001"}"#,
+            r#"{"a":1,"b":"💎"}"#,
+            r#"{"\\u0001":1,"b":"\\u0001"}"#,
+        ];
+
+        for json in data {
+            let mut de = Deserializer::from_str(json).use_raw();
+            let value: Value = Deserialize::deserialize(&mut de).unwrap();
+            let out = crate::to_string(&value).unwrap();
+            assert_eq!(json, out);
         }
     }
 

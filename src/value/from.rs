@@ -159,7 +159,7 @@ impl<T: Into<Value>> From<Vec<T>> for Value {
         for v in val {
             arr.append_value(v.into());
         }
-        arr.into()
+        arr
     }
 }
 
@@ -200,7 +200,7 @@ impl<T: Clone + Into<Value>> From<&[T]> for Value {
         for v in val {
             arr.append_value(v.clone().into());
         }
-        arr.into()
+        arr
     }
 }
 

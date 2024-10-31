@@ -297,11 +297,11 @@ impl Array {
     /// assert_eq!(arr, [2, 3, 4]);
     /// ```
     #[inline]
-    pub fn retain_mut<F>(&mut self, mut f: F)
+    pub fn retain_mut<F>(&mut self, f: F)
     where
         F: FnMut(&mut Value) -> bool,
     {
-        if let ValueMut::Array(mut array) = self.0.as_mut() {
+        if let ValueMut::Array(array) = self.0.as_mut() {
             array.retain_mut(f);
         } else {
             panic!("Array::retain_mut: not an array");
@@ -355,7 +355,7 @@ impl Array {
     /// [`drain`]: Array::drain
     #[inline]
     pub fn truncate(&mut self, len: usize) {
-        if let ValueMut::Array(mut array) = self.0.as_mut() {
+        if let ValueMut::Array(array) = self.0.as_mut() {
             array.truncate(len);
         } else {
             panic!("Array::truncate: not an array");
@@ -380,7 +380,7 @@ impl Array {
     /// ```
     #[inline]
     pub fn push<T: Into<Value>>(&mut self, val: T) {
-        if let ValueMut::Array(mut array) = self.0.as_mut() {
+        if let ValueMut::Array(array) = self.0.as_mut() {
             array.push(val.into());
         } else {
             panic!("Array::push: not an array");
@@ -397,13 +397,16 @@ impl Array {
     /// Returns the number of elements in the array.
     #[inline]
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.0
+            .as_value_slice()
+            .expect("call len in non-array type")
+            .len()
     }
 
     /// Returns `true` if the array contains no elements.
     #[inline]
     pub fn is_empty(&self) -> bool {
-        self.0.len() == 0
+        self.len() == 0
     }
 
     /// Extracts a mutable slice of the entire array. Equivalent to &mut s[..].

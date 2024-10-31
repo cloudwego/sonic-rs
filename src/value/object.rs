@@ -1,12 +1,9 @@
 //! Represents a parsed JSON object.
-use std::marker::PhantomData;
+use std::{iter::FusedIterator, marker::PhantomData, slice};
 
 use super::{node::ValueMut, value_trait::JsonValueTrait};
-use crate::{
-    serde::tri,
-    util::reborrow::DormantMutRef,
-    value::node::{Value, ValueRefInner},
-};
+use crate::{serde::tri, util::reborrow::DormantMutRef, value::node::Value};
+
 /// Represents the JSON object. The inner implement is a key-value array. Its order is as same as
 /// origin JSON.
 ///
@@ -53,24 +50,13 @@ impl PartialEq for Object {
         if self.len() != other.len() {
             return false;
         }
-
-        for (k, v) in self.iter() {
-            if let Some(other_v) = other.get(&k) {
-                if v != other_v {
-                    return false;
-                }
-            } else {
-                return false;
-            }
-        }
-        true
+        // because we allow duplicated keys in object, so we need to compare by `get`
+        self.iter().all(|(k, _)| other.get(&k) == self.get(&k))
     }
 }
 
 #[doc(hidden)]
 pub type Pair = (Value, Value);
-
-pub(crate) const DEFAULT_OBJ_CAP: usize = 4;
 
 impl Object {
     /// Returns the inner `Value`.
@@ -298,7 +284,10 @@ impl Object {
     /// Returns the number of key-value paris in the object.
     #[inline]
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.0
+            .as_pair_slice()
+            .expect("get len in non-object type")
+            .len()
     }
 
     /// Returns true if the object contains no key-value pairs.
@@ -783,18 +772,13 @@ impl<'a> Entry<'a> {
     {
         match self {
             Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(mut entry) => {
-                let obj = unsafe { entry.dormant_obj.reborrow() };
+            Entry::Vacant(entry) => {
                 let value = default(entry.key());
                 entry.insert(value)
             }
         }
     }
 }
-
-//////////////////////////////////////////////////////////////////////////////
-
-use std::{iter::FusedIterator, slice};
 
 macro_rules! impl_entry_iter {
     (($name:ident $($generics:tt)*): $item:ty) => {
@@ -933,8 +917,6 @@ impl<'a, Q: AsRef<str> + ?Sized> std::ops::IndexMut<&'a Q> for Object {
         self.get_mut(&index.as_ref()).unwrap()
     }
 }
-
-//////////////////////////////////////////////////////////////////////////////
 
 impl serde::ser::Serialize for Object {
     #[inline]

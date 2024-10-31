@@ -3,18 +3,16 @@ use std::{
     ops::Deref,
     slice::{from_raw_parts, from_raw_parts_mut},
     str::from_utf8_unchecked,
-    sync::Arc,
 };
 
-use bumpalo::Bump;
 use faststr::FastStr;
 use serde::de::{self, Expected, Unexpected};
-use smallvec::SmallVec;
 
 use super::reader::{Reader, Reference};
 #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
 use crate::util::simd::bits::NeonBits;
 use crate::{
+    config::DeserializeCfg,
     error::{
         Error,
         ErrorCode::{self, *},
@@ -23,7 +21,7 @@ use crate::{
     index::Index,
     pointer::{
         tree::{MultiIndex, MultiKey, PointerTreeInner, PointerTreeNode},
-        JsonPointer, PointerTree,
+        PointerTree,
     },
     util::{
         arch::{get_nonspace_bits, prefix_xor},
@@ -32,7 +30,7 @@ use crate::{
         string::*,
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
-    value::{shared::Shared, visitor::JsonVisitor},
+    value::{node::RawStr, visitor::JsonVisitor},
     LazyValue,
 };
 
@@ -64,7 +62,9 @@ macro_rules! perr {
 macro_rules! check_visit {
     ($self:ident, $e:expr $(,)?) => {
         if !($e) {
-            return perr!($self, UnexpectedVisitType);
+            perr!($self, UnexpectedVisitType)
+        } else {
+            Ok(())
         }
     };
 }
@@ -146,6 +146,7 @@ pub(crate) struct Parser<R> {
     error_index: usize,   // mark the error position
     nospace_bits: u64,    // SIMD marked nospace bitmap
     nospace_start: isize, // the start position of nospace_bits
+    pub(crate) cfg: DeserializeCfg,
 }
 
 /// Records the parse status
@@ -165,7 +166,13 @@ where
             error_index: usize::MAX,
             nospace_bits: 0,
             nospace_start: -128,
+            cfg: DeserializeCfg::default(),
         }
+    }
+
+    pub(crate) fn with_config(mut self, cfg: DeserializeCfg) -> Self {
+        self.cfg = cfg;
+        self
     }
 
     #[inline(always)]
@@ -192,7 +199,6 @@ where
             reason = EofWhileParsing;
             index = len;
         }
-        dbg!(crate::parser::as_str(self.read.as_u8_slice()));
         Error::syntax(reason, self.read.as_u8_slice(), index)
     }
 
@@ -222,7 +228,7 @@ where
 
     // TODO: optimize me, avoid clone twice.
     #[inline(always)]
-    fn parse_string_owned<V>(&mut self, visitor: &mut V, strbuf: &mut Vec<u8>) -> Result<()>
+    fn parse_string_owned<V>(&mut self, vis: &mut V, strbuf: &mut Vec<u8>) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
@@ -246,10 +252,7 @@ where
     }
 
     #[inline(always)]
-    fn parse_string_inplace<V>(&mut self, visitor: &mut V) -> Result<()>
-    where
-        V: JsonVisitor<'de>,
-    {
+    fn parse_string_inplace_impl<V: JsonVisitor<'de>>(&mut self, vis: &mut V) -> Result<()> {
         unsafe {
             let mut src = self.read.cur_ptr();
             let start = self.read.cur_ptr();
@@ -257,95 +260,105 @@ where
             self.read.set_ptr(src);
             let slice = from_raw_parts(start, cnt);
             let s = from_utf8_unchecked(slice);
-            check_visit!(self, visitor.visit_borrowed_str(s));
+            check_visit!(self, vis.visit_borrowed_str(s))
         }
-        Ok(())
     }
 
     #[inline(always)]
-    fn parse_number_visit<V>(&mut self, first: u8, visitor: &mut V) -> Result<()>
+    fn parse_string_inplace<V: JsonVisitor<'de>>(&mut self, vis: &mut V) -> Result<()> {
+        if !self.cfg.use_raw {
+            return self.parse_string_inplace_impl(vis);
+        }
+        unsafe {
+            let start_idx = self.read.index();
+            let mut src = self.read.cur_ptr();
+            let start = self.read.cur_ptr();
+            match self.skip_string_unchecked()? {
+                ParseStatus::HasEscaped => {
+                    let end = self.read.index();
+                    let raw = as_str(&self.read.as_u8_slice()[start_idx - 1..end]);
+                    let alloc = vis.allocator().unwrap();
+                    let raw = RawStr::new_in(alloc, raw);
+                    let cnt = parse_string_inplace(&mut src).map_err(|e| self.error(e))?;
+                    self.read.set_ptr(src);
+                    let s = str_from_raw_parts(start, cnt);
+                    check_visit!(self, vis.visit_raw_str(s, raw))
+                }
+                ParseStatus::None => {
+                    let end = self.read.index() - 1;
+                    let s = as_str(&self.read.as_u8_slice()[start_idx..end]);
+                    check_visit!(self, vis.visit_borrowed_str(s))
+                }
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn parse_number_visit<V>(&mut self, first: u8, vis: &mut V) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
-        #[cfg(feature = "arbitrary_precision")]
-        {
+        if self.cfg.use_rawnumber || self.cfg.use_raw {
             let start = self.read.index() - 1;
             self.skip_number(first)?;
             let slice = self.read.slice_unchecked(start, self.read.index());
-            check_visit!(self, visitor.visit_raw_number(as_str(slice)));
-            Ok(())
-        }
-
-        #[cfg(not(feature = "arbitrary_precision"))]
-        {
+            check_visit!(self, vis.visit_raw_number(as_str(slice)))
+        } else {
             let ok = match self.parse_number(first)? {
-                ParserNumber::Float(f) => visitor.visit_f64(f),
-                ParserNumber::Unsigned(f) => visitor.visit_u64(f),
-                ParserNumber::Signed(f) => visitor.visit_i64(f),
+                ParserNumber::Float(f) => vis.visit_f64(f),
+                ParserNumber::Unsigned(f) => vis.visit_u64(f),
+                ParserNumber::Signed(f) => vis.visit_i64(f),
             };
-            check_visit!(self, ok);
-            Ok(())
+            check_visit!(self, ok)
         }
     }
 
     #[inline(always)]
-    fn parse_number_inplace<V>(&mut self, first: u8, visitor: &mut V) -> Result<()>
+    fn parse_number_inplace<V>(&mut self, first: u8, vis: &mut V) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
-        #[cfg(feature = "arbitrary_precision")]
-        {
+        if self.cfg.use_rawnumber || self.cfg.use_raw {
             let start = self.read.index() - 1;
             self.skip_number(first)?;
             let slice = self.read.slice_unchecked(start, self.read.index());
-            check_visit!(self, visitor.visit_borrowed_raw_number(as_str(slice)));
-            Ok(())
-        }
-
-        #[cfg(not(feature = "arbitrary_precision"))]
-        {
+            check_visit!(self, vis.visit_borrowed_raw_number(as_str(slice)))
+        } else {
             let ok = match self.parse_number(first)? {
-                ParserNumber::Float(f) => visitor.visit_f64(f),
-                ParserNumber::Unsigned(f) => visitor.visit_u64(f),
-                ParserNumber::Signed(f) => visitor.visit_i64(f),
+                ParserNumber::Float(f) => vis.visit_f64(f),
+                ParserNumber::Unsigned(f) => vis.visit_u64(f),
+                ParserNumber::Signed(f) => vis.visit_i64(f),
             };
-            check_visit!(self, ok);
-            Ok(())
+            check_visit!(self, ok)
         }
     }
 
     #[inline(always)]
-    fn parse_array<V>(&mut self, visitor: &mut V) -> Result<()>
+    fn parse_array<V>(&mut self, vis: &mut V) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
         // parsing empty array
-        check_visit!(self, visitor.visit_array_start(0));
+        check_visit!(self, vis.visit_array_start(0))?;
 
         let mut first = match self.skip_space() {
-            Some(b']') => {
-                check_visit!(self, visitor.visit_array_end(0));
-                return Ok(());
-            }
+            Some(b']') => return check_visit!(self, vis.visit_array_end(0)),
             first => first,
         };
 
         let mut count = 0;
         loop {
             match first {
-                Some(c @ b'-' | c @ b'0'..=b'9') => self.parse_number_inplace(c, visitor),
-                Some(b'"') => self.parse_string_inplace(visitor),
-                Some(b'{') => self.parse_object(visitor),
-                Some(b'[') => self.parse_array(visitor),
-                Some(first) => self.parse_literal_visit(first, visitor),
+                Some(c @ b'-' | c @ b'0'..=b'9') => self.parse_number_inplace(c, vis),
+                Some(b'"') => self.parse_string_inplace(vis),
+                Some(b'{') => self.parse_object(vis),
+                Some(b'[') => self.parse_array(vis),
+                Some(first) => self.parse_literal_visit(first, vis),
                 None => perr!(self, EofWhileParsing),
             }?;
             count += 1;
             first = match self.skip_space() {
-                Some(b']') => {
-                    check_visit!(self, visitor.visit_array_end(count));
-                    return Ok(());
-                }
+                Some(b']') => return check_visit!(self, vis.visit_array_end(count)),
                 Some(b',') => self.skip_space(),
                 _ => return perr!(self, ExpectedArrayCommaOrEnd),
             };
@@ -353,40 +366,30 @@ where
     }
 
     #[inline(always)]
-    fn parse_object<V>(&mut self, visitor: &mut V) -> Result<()>
+    fn parse_object<V>(&mut self, vis: &mut V) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
         // parsing empty object
         let mut count: usize = 0;
-        check_visit!(self, visitor.visit_object_start(0));
+        check_visit!(self, vis.visit_object_start(0))?;
         match self.skip_space() {
-            Some(b'}') => {
-                check_visit!(self, visitor.visit_object_end(0));
-                return Ok(());
-            }
+            Some(b'}') => return check_visit!(self, vis.visit_object_end(0)),
             Some(b'"') => {}
-            _ => {
-                return perr!(self, ExpectObjectKeyOrEnd);
-            }
+            _ => return perr!(self, ExpectObjectKeyOrEnd),
         }
 
         // loop for each object key and value
         loop {
-            self.parse_string_inplace(visitor)?;
+            self.parse_string_inplace(vis)?;
             self.parse_object_clo()?;
-            self.parse_value(visitor)?;
+            self.parse_value(vis)?;
             count += 1;
             match self.skip_space() {
-                Some(b'}') => {
-                    check_visit!(self, visitor.visit_object_end(count));
-                    return Ok(());
-                }
+                Some(b'}') => return check_visit!(self, vis.visit_object_end(count)),
                 Some(b',') => match self.skip_space() {
                     Some(b'"') => continue,
-                    _ => {
-                        return perr!(self, ExpectObjectKeyOrEnd);
-                    }
+                    _ => return perr!(self, ExpectObjectKeyOrEnd),
                 },
                 _ => return perr!(self, ExpectedArrayCommaOrEnd),
             }
@@ -394,7 +397,7 @@ where
     }
 
     #[inline(always)]
-    fn parse_literal_visit<V>(&mut self, first: u8, visitor: &mut V) -> Result<()>
+    fn parse_literal_visit<V>(&mut self, first: u8, vis: &mut V) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
@@ -408,17 +411,16 @@ where
         let reader = &mut self.read;
         if let Some(chunk) = reader.next_n(literal.len()) {
             if chunk != literal.as_bytes() {
-                perr!(self, InvalidLiteral)
-            } else {
-                let ok = match first {
-                    b't' => visitor.visit_bool(true),
-                    b'f' => visitor.visit_bool(false),
-                    b'n' => visitor.visit_null(),
-                    _ => unreachable!(),
-                };
-                check_visit!(self, ok);
-                Ok(())
+                return perr!(self, InvalidLiteral);
             }
+
+            let ok = match first {
+                b't' => vis.visit_bool(true),
+                b'f' => vis.visit_bool(false),
+                b'n' => vis.visit_null(),
+                _ => unreachable!(),
+            };
+            check_visit!(self, ok)
         } else {
             perr!(self, EofWhileParsing)
         }
@@ -506,247 +508,100 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn parse_dom<V>(&mut self, visitor: &mut V) -> Result<()>
+    pub(crate) fn parse_dom<V>(&mut self, vis: &mut V) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
-        check_visit!(self, visitor.visit_dom_start());
-        self.parse_value(visitor)?;
-        check_visit!(self, visitor.visit_dom_end());
-        Ok(())
+        check_visit!(self, vis.visit_dom_start())?;
+        self.parse_value(vis)?;
+        check_visit!(self, vis.visit_dom_end())
     }
 
-    pub(crate) fn parse_value_without_padding<V>(&mut self, visitor: &mut V) -> Result<()>
+    #[inline(always)]
+    pub(crate) fn parse_dom2<V>(&mut self, vis: &mut V, strbuf: &mut Vec<u8>) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
-        check_visit!(self, visitor.visit_dom_start());
-        const COMMON_DEPTH: usize = 20;
-        const ARR_MASK: u32 = 1u32 << 31;
-        const OBJ_MASK: u32 = 0u32;
-        let mut depth = SmallVec::<[u32; COMMON_DEPTH]>::new();
-        let mut c: u8;
+        check_visit!(self, vis.visit_dom_start())?;
+        self.parse_value2(vis, strbuf)?;
+        check_visit!(self, vis.visit_dom_end())
+    }
 
-        enum Fsm {
-            ScopeEnd,
-            ArrVal,
-            ObjKey,
+    pub(crate) fn parse_value2<V: JsonVisitor<'de>>(
+        &mut self,
+        vis: &mut V,
+        strbuf: &mut Vec<u8>,
+    ) -> Result<()> {
+        match self.skip_space() {
+            Some(c @ b'-' | c @ b'0'..=b'9') => self.parse_number_visit(c, vis),
+            Some(b'"') => self.parse_string_owned(vis, strbuf),
+            Some(b'{') => self.parse_object2(vis, strbuf),
+            Some(b'[') => self.parse_array2(vis, strbuf),
+            Some(first) => self.parse_literal_visit(first, vis),
+            None => perr!(self, EofWhileParsing),
+        }
+    }
+
+    pub(crate) fn parse_object2<V: JsonVisitor<'de>>(
+        &mut self,
+        vis: &mut V,
+        strbuf: &mut Vec<u8>,
+    ) -> Result<()> {
+        // parsing empty object
+        let mut count: usize = 0;
+        check_visit!(self, vis.visit_object_start(0))?;
+        match self.skip_space() {
+            Some(b'}') => return check_visit!(self, vis.visit_object_end(0)),
+            Some(b'"') => {}
+            _ => return perr!(self, ExpectObjectKeyOrEnd),
         }
 
-        let mut strbuf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);
-        let mut state;
-        match self.skip_space2() {
-            b'[' => {
-                check_visit!(self, visitor.visit_array_start(0));
-                depth.push(ARR_MASK);
-                c = self.skip_space2();
-                if c == b']' {
-                    check_visit!(self, visitor.visit_array_end(0));
-                    state = Fsm::ScopeEnd;
-                } else {
-                    state = Fsm::ArrVal;
-                }
-            }
-            b'{' => {
-                check_visit!(self, visitor.visit_object_start(0));
-                depth.push(OBJ_MASK);
-                c = self.skip_space2();
-                if c == b'}' {
-                    check_visit!(self, visitor.visit_object_end(0));
-                    state = Fsm::ScopeEnd;
-                } else {
-                    state = Fsm::ObjKey;
-                }
-            }
-            c @ b'-' | c @ b'0'..=b'9' => {
-                self.parse_number_visit(c, visitor)?;
-                check_visit!(self, visitor.visit_dom_end());
-                return Ok(());
-            }
-            b'"' => {
-                self.parse_string_owned(visitor, &mut strbuf)?;
-                check_visit!(self, visitor.visit_dom_end());
-                return Ok(());
-            }
-            0 => {
-                return perr!(self, EofWhileParsing);
-            }
-            first => {
-                self.parse_literal_visit(first, visitor)?;
-                check_visit!(self, visitor.visit_dom_end());
-                return Ok(());
-            }
-        }
-
+        // loop for each object key and value
         loop {
-            match state {
-                Fsm::ArrVal => {
-                    'arr_val: loop {
-                        match c {
-                            b'{' => {
-                                check_visit!(self, visitor.visit_object_start(0));
-                                depth.push(OBJ_MASK);
-                                c = self.skip_space2();
-                                if c == b'}' {
-                                    check_visit!(self, visitor.visit_object_end(0));
-                                    state = Fsm::ScopeEnd;
-                                } else {
-                                    state = Fsm::ObjKey;
-                                }
-                                break 'arr_val;
-                            }
-                            b'[' => {
-                                check_visit!(self, visitor.visit_array_start(0));
-                                depth.push(ARR_MASK);
-                                c = self.skip_space2();
-                                if c == b']' {
-                                    check_visit!(self, visitor.visit_array_end(0));
-                                    state = Fsm::ScopeEnd;
-                                    break 'arr_val;
-                                }
-
-                                continue 'arr_val;
-                            }
-                            c @ b'-' | c @ b'0'..=b'9' => self.parse_number_visit(c, visitor)?,
-                            b'"' => self.parse_string_owned(visitor, &mut strbuf)?,
-                            first => self.parse_literal_visit(first, visitor)?,
-                        }
-                        // count after array primitive value end
-                        let len = depth.len();
-                        depth[len - 1] += 1;
-                        match self.skip_space2() {
-                            b',' => {
-                                c = self.skip_space2();
-                                continue 'arr_val;
-                            }
-                            b']' => {
-                                let back = depth[depth.len() - 1];
-                                check_visit!(
-                                    self,
-                                    visitor.visit_array_end((back & (ARR_MASK - 1)) as usize)
-                                );
-                                state = Fsm::ScopeEnd;
-                                break 'arr_val;
-                            }
-                            _ => return perr!(self, ExpectedArrayCommaOrEnd),
-                        }
-                    }
-                }
-                Fsm::ObjKey => {
-                    'obj_key: loop {
-                        if c != b'"' {
-                            return perr!(self, ExpectObjectKeyOrEnd);
-                        }
-                        self.parse_string_owned(visitor, &mut strbuf)?;
-                        self.parse_object_clo()?;
-                        match self.skip_space2() {
-                            b'{' => {
-                                check_visit!(self, visitor.visit_object_start(0));
-                                depth.push(OBJ_MASK);
-                                c = self.skip_space2();
-                                if c == b'}' {
-                                    check_visit!(self, visitor.visit_object_end(0));
-                                    state = Fsm::ScopeEnd;
-                                    break 'obj_key;
-                                }
-
-                                continue 'obj_key;
-                            }
-                            b'[' => {
-                                check_visit!(self, visitor.visit_array_start(0));
-                                depth.push(ARR_MASK);
-                                c = self.skip_space2();
-                                if c == b']' {
-                                    check_visit!(self, visitor.visit_array_end(0));
-                                    state = Fsm::ScopeEnd;
-                                } else {
-                                    state = Fsm::ArrVal;
-                                }
-                                break 'obj_key;
-                            }
-                            c @ b'-' | c @ b'0'..=b'9' => self.parse_number_visit(c, visitor)?,
-                            b'"' => self.parse_string_owned(visitor, &mut strbuf)?,
-                            first => self.parse_literal_visit(first, visitor)?,
-                        }
-                        // count after object primitive value end
-                        let len = depth.len();
-                        depth[len - 1] += 1;
-                        match self.skip_space2() {
-                            b',' => {
-                                c = self.skip_space2();
-
-                                continue 'obj_key;
-                            }
-                            b'}' => {
-                                let back = depth[depth.len() - 1];
-                                check_visit!(
-                                    self,
-                                    visitor.visit_object_end((back & (ARR_MASK - 1)) as usize)
-                                );
-                                state = Fsm::ScopeEnd;
-                                break 'obj_key;
-                            }
-                            _ => return perr!(self, ExpectedArrayCommaOrEnd),
-                        }
-                    }
-                }
-                Fsm::ScopeEnd => {
-                    'scope_end: loop {
-                        depth.pop();
-                        if depth.is_empty() {
-                            // Note: we will not check trailing characters
-                            // because get_from maybe returns all remaining bytes.
-                            check_visit!(self, visitor.visit_dom_end());
-                            return Ok(());
-                        }
-                        // count after container value end
-                        let len = depth.len();
-                        depth[len - 1] += 1;
-                        c = self.skip_space2();
-                        if (depth[len - 1] & ARR_MASK) != 0 {
-                            // parent is array
-                            match c {
-                                b',' => {
-                                    c = self.skip_space2();
-                                    state = Fsm::ArrVal;
-
-                                    break 'scope_end;
-                                }
-                                b']' => {
-                                    let back = depth[depth.len() - 1];
-                                    check_visit!(
-                                        self,
-                                        visitor.visit_array_end((back & (ARR_MASK - 1)) as usize)
-                                    );
-
-                                    continue 'scope_end;
-                                }
-                                _ => return perr!(self, ExpectedArrayCommaOrEnd),
-                            }
-                        } else {
-                            // parent is object
-                            match c {
-                                b',' => {
-                                    c = self.skip_space2();
-                                    state = Fsm::ObjKey;
-
-                                    break 'scope_end;
-                                }
-                                b'}' => {
-                                    let back = depth[depth.len() - 1];
-                                    check_visit!(
-                                        self,
-                                        visitor.visit_object_end((back & (ARR_MASK - 1)) as usize)
-                                    );
-
-                                    continue 'scope_end;
-                                }
-                                _ => return perr!(self, ExpectedObjectCommaOrEnd),
-                            }
-                        }
-                    }
-                }
+            self.parse_string_owned(vis, strbuf)?;
+            self.parse_object_clo()?;
+            self.parse_value2(vis, strbuf)?;
+            count += 1;
+            match self.skip_space() {
+                Some(b'}') => return check_visit!(self, vis.visit_object_end(count)),
+                Some(b',') => match self.skip_space() {
+                    Some(b'"') => continue,
+                    _ => return perr!(self, ExpectObjectKeyOrEnd),
+                },
+                _ => return perr!(self, ExpectedArrayCommaOrEnd),
             }
+        }
+    }
+
+    pub(crate) fn parse_array2<V: JsonVisitor<'de>>(
+        &mut self,
+        visitor: &mut V,
+        strbuf: &mut Vec<u8>,
+    ) -> Result<()> {
+        // parsing empty array
+        check_visit!(self, visitor.visit_array_start(0))?;
+
+        let mut first = match self.skip_space() {
+            Some(b']') => return check_visit!(self, visitor.visit_array_end(0)),
+            first => first,
+        };
+
+        let mut count = 0;
+        loop {
+            match first {
+                Some(c @ b'-' | c @ b'0'..=b'9') => self.parse_number_visit(c, visitor),
+                Some(b'"') => self.parse_string_owned(visitor, strbuf),
+                Some(b'{') => self.parse_object2(visitor, strbuf),
+                Some(b'[') => self.parse_array2(visitor, strbuf),
+                Some(first) => self.parse_literal_visit(first, visitor),
+                None => perr!(self, EofWhileParsing),
+            }?;
+            count += 1;
+            first = match self.skip_space() {
+                Some(b']') => return check_visit!(self, visitor.visit_array_end(count)),
+                Some(b',') => self.skip_space(),
+                _ => return perr!(self, ExpectedArrayCommaOrEnd),
+            };
         }
     }
 
@@ -969,7 +824,7 @@ where
     #[inline(always)]
     fn get_next_token<const N: usize>(&mut self, tokens: [u8; N], advance: usize) -> Option<u8> {
         let r = &mut self.read;
-        const LANS: usize = u8x32::lanes();
+        const LANS: usize = u8x32::LANES;
         while let Some(chunk) = r.peek_n(LANS) {
             let v = unsafe { u8x32::from_slice_unaligned_unchecked(chunk) };
             let mut vor = m8x32::splat(false);
@@ -998,11 +853,17 @@ where
         None
     }
 
+    #[inline(always)]
+    unsafe fn skip_string_unchecked2(&mut self) -> Result<()> {
+        let _ = self.skip_string_unchecked()?;
+        Ok(())
+    }
+
     // skip_string skips a JSON string, and return the later parts after closed quote, and the
     // escaped status. skip_string always start with the quote marks.
     #[inline(always)]
-    fn skip_string_impl(&mut self) -> Result<ParseStatus> {
-        const LANS: usize = u8x32::lanes();
+    unsafe fn skip_string_unchecked(&mut self) -> Result<ParseStatus> {
+        const LANS: usize = u8x32::LANES;
         let r = &mut self.read;
         let mut quote_bits;
         let mut escaped;
@@ -1051,11 +912,6 @@ where
         perr!(self, EofWhileParsing)
     }
 
-    #[inline(always)]
-    fn skip_string_unchecked(&mut self) -> Result<ParseStatus> {
-        self.skip_string_impl()
-    }
-
     fn skip_escaped_chars(&mut self) -> Result<()> {
         match self.read.peek() {
             Some(b'u') => {
@@ -1081,7 +937,7 @@ where
     // skip_string skips a JSON string with validation.
     #[inline(always)]
     fn skip_string(&mut self) -> Result<ParseStatus> {
-        const LANS: usize = u8x32::lanes();
+        const LANS: usize = u8x32::LANES;
 
         let mut status = ParseStatus::None;
         while let Some(chunk) = self.read.peek_n(LANS) {
@@ -1311,65 +1167,6 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn skip_space2(&mut self) -> u8 {
-        let reader = &mut self.read;
-        // fast path 1: for nospace or single space
-        // most JSON is like ` "name": "balabala" `
-        if let Some(ch) = reader.next() {
-            if !is_whitespace(ch) {
-                return ch;
-            }
-        }
-        if let Some(ch) = reader.next() {
-            if !is_whitespace(ch) {
-                return ch;
-            }
-        }
-
-        // fast path 2: reuse the bitmap for short key or numbers
-        let nospace_offset = (reader.index() as isize) - self.nospace_start;
-        if nospace_offset < 64 {
-            let bitmap = {
-                let mask = !((1 << nospace_offset) - 1);
-                self.nospace_bits & mask
-            };
-            if bitmap != 0 {
-                let cnt = bitmap.trailing_zeros() as usize;
-                let ch = reader.at(self.nospace_start as usize + cnt);
-                reader.set_index(self.nospace_start as usize + cnt + 1);
-
-                return ch;
-            } else {
-                // we can still fast skip the marked space in here.
-                reader.set_index(self.nospace_start as usize + 64);
-            }
-        }
-
-        // then we use simd to accelerate skipping space
-        while let Some(chunk) = reader.peek_n(64) {
-            let chunk = unsafe { &*(chunk.as_ptr() as *const [_; 64]) };
-            let bitmap = unsafe { get_nonspace_bits(chunk) };
-            if bitmap != 0 {
-                self.nospace_bits = bitmap;
-                self.nospace_start = reader.index() as isize;
-                let cnt = bitmap.trailing_zeros() as usize;
-                let ch = chunk[cnt];
-                reader.eat(cnt + 1);
-
-                return ch;
-            }
-            reader.eat(64)
-        }
-
-        while let Some(ch) = reader.next() {
-            if !is_whitespace(ch) {
-                return ch;
-            }
-        }
-        0
-    }
-
-    #[inline(always)]
     pub(crate) fn skip_space_peek(&mut self) -> Option<u8> {
         let ret = self.skip_space()?;
         self.read.backward(1);
@@ -1563,7 +1360,7 @@ where
         match ch {
             Some(b'-' | b'0'..=b'9') => self.skip_number_unsafe(),
             Some(b'"') => {
-                status = self.skip_string_unchecked()?;
+                status = unsafe { self.skip_string_unchecked() }?;
                 Ok(())
             }
             Some(b'{') => self.skip_container(b'{', b'}'),
@@ -1630,9 +1427,9 @@ where
             match self.skip_space() {
                 Some(b'{') => self.skip_container(b'{', b'}')?,
                 Some(b'[') => self.skip_container(b'[', b']')?,
-                Some(b'"') => {
+                Some(b'"') => unsafe {
                     let _ = self.skip_string_unchecked()?;
-                }
+                },
                 None => return perr!(self, EofWhileParsing),
                 _ => {}
             };
@@ -1736,9 +1533,7 @@ where
             match self.skip_space() {
                 Some(b'{') => self.skip_container(b'{', b'}')?,
                 Some(b'[') => self.skip_container(b'[', b']')?,
-                Some(b'"') => {
-                    let _ = self.skip_string_unchecked()?;
-                }
+                Some(b'"') => unsafe { self.skip_string_unchecked2() }?,
                 Some(b']') => return perr!(self, GetInEmptyArray),
                 None => return perr!(self, EofWhileParsing),
                 _ => {}
@@ -1759,7 +1554,7 @@ where
         Ok(())
     }
 
-    pub(crate) fn get_from_with_iter<P: IntoIterator>(
+    pub(crate) fn get_from_with_iter_unchecked<P: IntoIterator>(
         &mut self,
         path: P,
     ) -> Result<(&'de [u8], ParseStatus)>
@@ -1780,7 +1575,7 @@ where
         self.skip_one()
     }
 
-    pub(crate) fn get_from_with_iter_checked<P: IntoIterator>(
+    pub(crate) fn get_from_with_iter<P: IntoIterator>(
         &mut self,
         path: P,
     ) -> Result<(&'de [u8], ParseStatus)>
@@ -1894,9 +1689,7 @@ where
                 match self.skip_space() {
                     Some(b'{') => self.skip_container(b'{', b'}')?,
                     Some(b'[') => self.skip_container(b'[', b']')?,
-                    Some(b'"') => {
-                        let _ = self.skip_string_unchecked()?;
-                    }
+                    Some(b'"') => unsafe { self.skip_string_unchecked2() }?,
                     None => return perr!(self, EofWhileParsing),
                     _ => {}
                 };
@@ -1977,11 +1770,13 @@ where
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn remain_str(&self) -> &'de str {
         as_str(self.remain_u8_slice())
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn remain_u8_slice(&self) -> &'de [u8] {
         let reader = &self.read;
         let start = reader.index();
@@ -2021,9 +1816,7 @@ where
                 match self.skip_space() {
                     Some(b'{') => self.skip_container(b'{', b'}')?,
                     Some(b'[') => self.skip_container(b'[', b']')?,
-                    Some(b'"') => {
-                        let _ = self.skip_string_unchecked()?;
-                    }
+                    Some(b'"') => unsafe { self.skip_string_unchecked2() }?,
                     None => return perr!(self, EofWhileParsing),
                     _ => {}
                 };

@@ -55,7 +55,6 @@ where
 
 /// Trait is used by the deserializer for iterating over input. And it is sealed and cannot be
 /// implemented for types outside of sonic_rs.
-
 #[doc(hidden)]
 pub trait Reader<'de>: Sealed {
     fn remain(&self) -> usize;

@@ -10,9 +10,6 @@ pub(crate) trait ByteSlice {
     /// Write a 64-bit integer as 8 bytes in little-endian order.
     fn write_u64(&mut self, value: u64);
 
-    /// Calculate the offset of a slice from another.
-    fn offset_from(&self, other: &Self) -> isize;
-
     /// Iteratively parse and consume digits from bytes.
     /// Returns the same bytes with consumed digits being
     /// elided.
@@ -30,11 +27,6 @@ impl ByteSlice for [u8] {
     #[inline(always)] // inlining this is crucial to remove bound checks
     fn write_u64(&mut self, value: u64) {
         self[..8].copy_from_slice(&value.to_le_bytes())
-    }
-
-    #[inline]
-    fn offset_from(&self, other: &Self) -> isize {
-        other.len() as isize - self.len() as isize
     }
 
     #[inline]

@@ -45,6 +45,49 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         }
     }
 
+    /// Parse all number as [`crate::RawNumber`].
+    ///
+    /// # Example
+    /// ```
+    /// use sonic_rs::{Deserialize, Deserializer, Value};
+    /// let json = r#"{"a":1.2345678901234567890123}"#;
+    /// let mut de = Deserializer::from_str(json).use_rawnumber();
+    /// let value: Value = Deserialize::deserialize(&mut de).unwrap();
+    /// let out = sonic_rs::to_string(&value).unwrap();
+    /// assert_eq!(json, out);
+    /// ```
+    pub fn use_rawnumber(mut self) -> Self {
+        self.parser.cfg.use_rawnumber = true;
+        self
+    }
+
+    /// Parse all number as `RawNumber` and record the raw text for all JSON string.
+    ///
+    /// This will make sure the the serialize of `number` or `string` will retain from the origin
+    /// JSON text.
+    ///
+    /// # Example
+    /// ```
+    /// use sonic_rs::{Deserialize, Deserializer, Value};
+    /// let data = [
+    ///     r#"{"a":1.2345678901234567890123}"#,
+    ///     r#"{"a":1,"b":"\\u0001"}"#,
+    ///     r#"{"a":1,"b":"💎"}"#,
+    ///     r#"{"\\u0001":1,"b":"\\u0001"}"#,
+    /// ];
+    ///
+    /// for json in data {
+    ///     let mut de = Deserializer::from_str(json).use_raw();
+    ///     let value: Value = Deserialize::deserialize(&mut de).unwrap();
+    ///     let out = sonic_rs::to_string(&value).unwrap();
+    ///     assert_eq!(json, out);
+    /// }
+    /// ```
+    pub fn use_raw(mut self) -> Self {
+        self.parser.cfg.use_raw = true;
+        self
+    }
+
     /// Deserialize a JSON stream to a Rust data structure.
     ///
     /// It can be used repeatedly and we do not check trailing chars after deserilalized.
@@ -311,7 +354,8 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         let mut val = Value::new();
         let val = if self.parser.read.index() == 0 {
             // get n to check trailing characters in later
-            let n = val.parse_with_padding(self.parser.read.as_u8_slice())?;
+            let cfg = self.parser.cfg;
+            let n = val.parse_with_padding(self.parser.read.as_u8_slice(), cfg)?;
             self.parser.read.eat(n);
             val
         } else {
@@ -324,7 +368,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
             };
             // deserialize some json parts into `Value`, not use padding buffer, avoid the memory
             // copy
-            val.parse_without_padding(shared, &mut self.parser)?;
+            val.parse_without_padding(shared, &mut self.scratch, &mut self.parser)?;
             val
         };
 
@@ -401,13 +445,10 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 visitor.visit_bool(false)
             }
             c @ b'-' | c @ b'0'..=b'9' => tri!(self.parser.parse_number(c)).visit(visitor),
-            b'"' => {
-                self.scratch.clear();
-                match tri!(self.parser.parse_str_impl(&mut self.scratch)) {
-                    Reference::Borrowed(s) => visitor.visit_borrowed_str(s),
-                    Reference::Copied(s) => visitor.visit_str(s),
-                }
-            }
+            b'"' => match tri!(self.parser.parse_str_impl(&mut self.scratch)) {
+                Reference::Borrowed(s) => visitor.visit_borrowed_str(s),
+                Reference::Copied(s) => visitor.visit_str(s),
+            },
             b'[' => {
                 let ret = {
                     let _ = DepthGuard::guard(self);
@@ -556,13 +597,10 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         };
 
         let value = match peek {
-            b'"' => {
-                self.scratch.clear();
-                match tri!(self.parser.parse_str_impl(&mut self.scratch)) {
-                    Reference::Borrowed(s) => visitor.visit_borrowed_str(s),
-                    Reference::Copied(s) => visitor.visit_str(s),
-                }
-            }
+            b'"' => match tri!(self.parser.parse_str_impl(&mut self.scratch)) {
+                Reference::Borrowed(s) => visitor.visit_borrowed_str(s),
+                Reference::Copied(s) => visitor.visit_str(s),
+            },
             _ => Err(self.peek_invalid_type(peek, &visitor)),
         };
 
@@ -1125,29 +1163,6 @@ macro_rules! deserialize_numeric_key {
     };
 }
 
-impl<'de, 'a, R> MapKey<'a, R>
-where
-    R: Reader<'de>,
-{
-    fn deserialize_number<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: de::Visitor<'de>,
-    {
-        match self.de.parser.read.peek() {
-            Some(b'0'..=b'9' | b'-') => {}
-            _ => return Err(self.de.parser.error(ErrorCode::ExpectedNumericKey)),
-        }
-
-        let value = tri!(self.de.deserialize_number(visitor));
-
-        if self.de.parser.read.next() != Some(b'"') {
-            return Err(self.de.parser.error(ErrorCode::ExpectedQuote));
-        }
-
-        Ok(value)
-    }
-}
-
 impl<'de, 'a, R> de::Deserializer<'de> for MapKey<'a, R>
 where
     R: Reader<'de>,
@@ -1268,6 +1283,11 @@ where
     T: de::Deserialize<'de>,
 {
     let mut de = Deserializer::new(read);
+    #[cfg(feature = "arbitrary_precision")]
+    {
+        de = de.use_rawnumber();
+    }
+
     let value = tri!(de::Deserialize::deserialize(&mut de));
 
     // Make sure the whole stream has been consumed.

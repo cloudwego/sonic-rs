@@ -1,6 +1,5 @@
 use crate::{
     util::{private::Sealed, reborrow::DormantMutRef},
-    value::{object::DEFAULT_OBJ_CAP, shared::Shared},
     JsonValueMutTrait, JsonValueTrait, PointerNode, Value,
 };
 

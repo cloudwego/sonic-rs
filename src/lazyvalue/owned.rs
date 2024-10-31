@@ -91,7 +91,6 @@ impl JsonValueTrait for OwnedLazyValue {
         }
     }
 
-    #[cfg(feature = "arbitrary_precision")]
     fn as_raw_number(&self) -> Option<crate::RawNumber> {
         if let Ok(num) = from_str(self.as_raw_str()) {
             Some(num)

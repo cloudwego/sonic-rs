@@ -504,6 +504,7 @@ mod test {
 
     #[test]
     fn test_serde_errors_display() {
+        #[allow(unused)]
         #[derive(Debug, Deserialize)]
         struct Foo {
             a: Vec<i32>,

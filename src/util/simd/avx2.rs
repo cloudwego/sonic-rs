@@ -5,7 +5,6 @@ use std::{
 };
 
 use super::{Mask, Simd};
-use crate::impl_lanes;
 
 #[derive(Debug)]
 #[repr(transparent)]
@@ -55,10 +54,6 @@ impl Simd for Simd256i {
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Mask256(__m256i);
-
-impl_lanes!(Simd256u, 32);
-
-impl_lanes!(Mask256, 32);
 
 impl Mask for Mask256 {
     type BitMask = u32;

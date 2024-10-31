@@ -1,11 +1,6 @@
 use std::ops::{BitAnd, BitOr, BitOrAssign};
 
 use super::{bits::combine_u16, Mask, Mask128, Simd, Simd128i, Simd128u};
-use crate::impl_lanes;
-
-impl_lanes!(Simd256u, 32);
-
-impl_lanes!(Mask256, 32);
 
 #[derive(Debug)]
 #[repr(transparent)]
