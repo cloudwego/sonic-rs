@@ -2,6 +2,7 @@ use std::{marker::PhantomData, ops::Deref, ptr::NonNull};
 
 use crate::{
     error::invalid_utf8,
+    input::JsonSlice,
     util::{private::Sealed, utf8::from_utf8},
     JsonInput, Result,
 };
@@ -75,7 +76,6 @@ pub trait Reader<'de>: Sealed {
     }
     fn cur_ptr(&mut self) -> *mut u8;
 
-    unsafe fn update_slice(&mut self, _start: *const u8) {}
     /// # Safety
     /// cur must be a valid pointer in the slice
     unsafe fn set_ptr(&mut self, cur: *mut u8);
@@ -92,6 +92,8 @@ pub trait Reader<'de>: Sealed {
     fn check_utf8_final(&self) -> Result<()> {
         Ok(())
     }
+
+    fn as_json_slice(&self) -> JsonSlice<'de>;
 }
 
 /// JSON input source that reads from a string/bytes-like JSON input.
@@ -119,6 +121,7 @@ pub trait Reader<'de>: Sealed {
 /// assert_eq!(num, 123);
 /// ```
 pub struct Read<'a> {
+    input: JsonSlice<'a>,
     slice: &'a [u8],
     pub(crate) index: usize,
     // next invalid utf8 position, if not found, will be usize::MAX
@@ -128,21 +131,25 @@ pub struct Read<'a> {
 impl<'a> Read<'a> {
     /// Make a `Read` from string/bytes-like JSON input.
     pub fn from<I: JsonInput<'a>>(input: I) -> Self {
-        Self::new(input.to_u8_slice(), input.need_utf8_valid())
+        let need = input.need_utf8_valid();
+        Self::new_in(input, need)
     }
 
     pub(crate) fn new(slice: &'a [u8], need_validate: bool) -> Self {
+        Self::new_in(slice, need_validate)
+    }
+
+    pub(crate) fn new_in<I: JsonInput<'a>>(input: I, need_validate: bool) -> Self {
+        let slice = input.to_u8_slice();
+        let input = input.to_json_slice();
         // validate the utf-8 at first for slice
-        let next_invalid_utf8 = if need_validate {
-            match from_utf8(slice) {
-                Ok(_) => usize::MAX,
-                Err(e) => e.offset(),
-            }
-        } else {
-            usize::MAX
+        let next_invalid_utf8 = match from_utf8(slice) {
+            Err(e) if need_validate => e.offset(),
+            _ => usize::MAX,
         };
 
         Self {
+            input,
             slice,
             index: 0,
             next_invalid_utf8,
@@ -154,6 +161,11 @@ impl<'a> Reader<'a> for Read<'a> {
     #[inline(always)]
     fn remain(&self) -> usize {
         self.slice.len() - self.index
+    }
+
+    #[inline(always)]
+    fn as_json_slice(&self) -> JsonSlice<'a> {
+        self.input.clone()
     }
 
     #[inline(always)]
@@ -194,10 +206,6 @@ impl<'a> Reader<'a> for Read<'a> {
         } else {
             None
         }
-    }
-
-    unsafe fn update_slice(&mut self, start: *const u8) {
-        self.slice = std::slice::from_raw_parts(start, self.slice.len());
     }
 
     #[inline(always)]
@@ -284,6 +292,11 @@ impl<'a> Reader<'a> for PaddedSliceRead<'a> {
     #[inline(always)]
     fn as_u8_slice(&self) -> &'a [u8] {
         unsafe { std::slice::from_raw_parts(self.base.as_ptr(), self.len) }
+    }
+
+    #[inline(always)]
+    fn as_json_slice(&self) -> JsonSlice<'a> {
+        self.as_u8_slice().into()
     }
 
     #[inline(always)]

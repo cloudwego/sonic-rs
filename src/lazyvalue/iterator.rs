@@ -2,7 +2,7 @@ use faststr::FastStr;
 
 use crate::{
     error::Result,
-    input::{JsonInput, JsonSlice},
+    input::JsonInput,
     lazyvalue::LazyValue,
     parser::{Parser, DEFAULT_KEY_BUF_CAPACITY},
     reader::{Read, Reader},
@@ -35,8 +35,7 @@ use crate::{
 /// }
 /// ```
 pub struct ObjectJsonIter<'de> {
-    json: JsonSlice<'de>,
-    parser: Option<Parser<Read<'de>>>,
+    parser: Parser<Read<'de>>,
     strbuf: Vec<u8>,
     first: bool,
     ending: bool,
@@ -71,18 +70,16 @@ pub struct ObjectJsonIter<'de> {
 /// }
 /// ```
 pub struct ArrayJsonIter<'de> {
-    json: JsonSlice<'de>,
-    parser: Option<Parser<Read<'de>>>,
+    parser: Parser<Read<'de>>,
     first: bool,
     ending: bool,
     check: bool,
 }
 
 impl<'de> ObjectJsonIter<'de> {
-    fn new(json: JsonSlice<'de>, check: bool) -> Self {
+    fn new<I: JsonInput<'de>>(json: I, check: bool) -> Self {
         Self {
-            json,
-            parser: None,
+            parser: Parser::new(Read::new_in(json, check)),
             strbuf: Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY),
             first: true,
             ending: false,
@@ -95,24 +92,21 @@ impl<'de> ObjectJsonIter<'de> {
             return None;
         }
 
-        if self.parser.is_none() {
-            let slice = self.json.as_ref();
-            let slice = unsafe { std::slice::from_raw_parts(slice.as_ptr(), slice.len()) };
-            let parser = Parser::new(Read::new(slice, check));
+        if self.first {
             // check invalid utf8
-            if let Err(err) = parser.read.check_utf8_final() {
+            if let Err(err) = self.parser.read.check_utf8_final() {
                 self.ending = true;
                 return Some(Err(err));
             }
-            self.parser = Some(parser);
         }
 
-        let parser = unsafe { self.parser.as_mut().unwrap_unchecked() };
-        unsafe { parser.read.update_slice(self.json.as_ref().as_ptr()) };
-        match parser.parse_entry_lazy(&mut self.strbuf, &mut self.first, check) {
+        match self
+            .parser
+            .parse_entry_lazy(&mut self.strbuf, &mut self.first, check)
+        {
             Ok(ret) => {
                 if let Some((key, val, has_escaped)) = ret {
-                    let val = self.json.slice_ref(val);
+                    let val = self.parser.read.as_json_slice().slice_ref(val);
                     Some(LazyValue::new(val, has_escaped).map(|v| (key, v)))
                 } else {
                     self.ending = true;
@@ -128,10 +122,9 @@ impl<'de> ObjectJsonIter<'de> {
 }
 
 impl<'de> ArrayJsonIter<'de> {
-    fn new(json: JsonSlice<'de>, check: bool) -> Self {
+    fn new<I: JsonInput<'de>>(input: I, check: bool) -> Self {
         Self {
-            json,
-            parser: None,
+            parser: Parser::new(Read::new_in(input, check)),
             first: true,
             ending: false,
             check,
@@ -143,24 +136,18 @@ impl<'de> ArrayJsonIter<'de> {
             return None;
         }
 
-        if self.parser.is_none() {
-            let slice = self.json.as_ref();
-            let slice = unsafe { std::slice::from_raw_parts(slice.as_ptr(), slice.len()) };
-            let parser = Parser::new(Read::new(slice, check));
+        if self.first {
             // check invalid utf8
-            if let Err(err) = parser.read.check_utf8_final() {
+            if let Err(err) = self.parser.read.check_utf8_final() {
                 self.ending = true;
                 return Some(Err(err));
             }
-            self.parser = Some(parser);
         }
 
-        let parser = self.parser.as_mut().unwrap();
-        unsafe { parser.read.update_slice(self.json.as_ref().as_ptr()) };
-        match parser.parse_array_elem_lazy(&mut self.first, check) {
+        match self.parser.parse_array_elem_lazy(&mut self.first, check) {
             Ok(ret) => {
-                if let Some((ret, has_escaped)) = ret {
-                    let val = self.json.slice_ref(ret);
+                if let Some((val, has_escaped)) = ret {
+                    let val = self.parser.read.as_json_slice().slice_ref(val);
                     Some(LazyValue::new(val, has_escaped))
                 } else {
                     self.ending = true;
@@ -215,7 +202,7 @@ impl<'de> ArrayJsonIter<'de> {
 /// }
 /// ```
 pub fn to_object_iter<'de, I: JsonInput<'de>>(json: I) -> ObjectJsonIter<'de> {
-    ObjectJsonIter::new(json.to_json_slice(), true)
+    ObjectJsonIter::new(json, true)
 }
 
 /// Traverse the JSON array text through a lazy iterator. The JSON parsing will doing when
@@ -252,7 +239,7 @@ pub fn to_object_iter<'de, I: JsonInput<'de>>(json: I) -> ObjectJsonIter<'de> {
 /// }
 /// ```
 pub fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayJsonIter<'de> {
-    ArrayJsonIter::new(json.to_json_slice(), true)
+    ArrayJsonIter::new(json, true)
 }
 
 /// Traverse the JSON text through a lazy object iterator. The JSON parsing will doing when
@@ -289,7 +276,7 @@ pub fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayJsonIter<'de> {
 /// }
 /// ```
 pub unsafe fn to_object_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> ObjectJsonIter<'de> {
-    ObjectJsonIter::new(json.to_json_slice(), false)
+    ObjectJsonIter::new(json, false)
 }
 
 /// Traverse the JSON text through a lazy object iterator. The JSON parsing will doing when
@@ -323,7 +310,7 @@ pub unsafe fn to_object_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> Objec
 /// }
 /// ```
 pub unsafe fn to_array_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> ArrayJsonIter<'de> {
-    ArrayJsonIter::new(json.to_json_slice(), false)
+    ArrayJsonIter::new(json, false)
 }
 
 impl<'de> Iterator for ObjectJsonIter<'de> {
