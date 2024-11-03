@@ -1,6 +1,6 @@
 use faststr::FastStr;
 
-/// Represents a json pointer path. It can be created by [`pointer!`] macro.
+/// Represents a json pointer path. It can be created by [`pointer`] macro.
 pub type JsonPointer = Vec<PointerNode>;
 
 /// Represents a node in a json pointer path.

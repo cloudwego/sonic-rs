@@ -54,7 +54,7 @@ fuzz_target!(|data: &[u8]| {
             let sv2: Value = from_str(&sout).unwrap();
             let eq = compare_value(&jv2, &sv2);
 
-            // compre use raw
+            // compare use raw
             fuzz_use_raw(data, &sv);
 
             if jv.is_object() && eq {

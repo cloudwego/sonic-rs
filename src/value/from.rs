@@ -460,7 +460,7 @@ impl<'a, T: Clone + Into<Value> + 'a> Extend<&'a T> for Array {
                 value.push(v.clone().into());
             }
         } else {
-            unreachable!("should not happend")
+            unreachable!("should not happened")
         }
     }
 }

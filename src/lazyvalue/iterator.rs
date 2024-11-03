@@ -166,7 +166,7 @@ impl<'de> ArrayJsonIter<'de> {
 /// iterating.
 ///
 /// The item of the iterator is a key-value pair: ([FastStr][`faststr::FastStr`],
-/// [Result<LazyValue>][`crate::LazyValue`]).
+/// [`Result<LazyValue>`][`crate::LazyValue`]).
 ///
 /// # Errors
 ///
@@ -246,7 +246,7 @@ pub fn to_array_iter<'de, I: JsonInput<'de>>(json: I) -> ArrayJsonIter<'de> {
 /// iterating.
 ///
 /// The item of the iterator is a key-value pair: ([FastStr][`faststr::FastStr`],
-/// [Result<LazyValue>][`crate::LazyValue`]).
+/// [`Result<LazyValue>`][`crate::LazyValue`]).
 ///
 /// # Errors
 ///

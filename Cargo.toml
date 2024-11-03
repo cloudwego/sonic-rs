@@ -4,6 +4,7 @@ categories    = ["encoding", "parser-implementations"]
 description   = "Sonic-rs is a fast Rust JSON library based on SIMD"
 documentation = "https://docs.rs/sonic-rs"
 edition       = "2021"
+exclude       = ["benchmarks", "assets"]
 keywords      = ["json", "simd", "serde", "serialization"]
 license       = "Apache-2.0"
 name          = "sonic-rs"
@@ -25,15 +26,14 @@ simdutf8  = "0.1"
 thiserror = "1.0"
 
 [dev-dependencies]
+bytes        = { version = "1.4", features = ["serde"] }
+chrono       = { version = "0.4", features = ["serde"] }
 encoding_rs  = "0.8"
+paste        = "1.0"
+schema       = { path = "./benchmarks/benches/schema" }
+serde_bytes  = "0.11"
 serde_derive = "1.0"
 serde_json   = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
-# This schema are used in benches and copied from https://github.com/serde-rs/json-benchmark
-bytes       = { version = "1.4", features = ["serde"] }
-chrono      = { version = "0.4", features = ["serde"] }
-paste       = "1.0"
-schema      = { path = "./benchmarks/benches/schema" }
-serde_bytes = "0.11"
 
 [profile.release]
 codegen-units    = 1
@@ -55,3 +55,6 @@ arbitrary_precision = []
 
 # Sort the keys when serializing `sonic_rs::Value`.
 sort_keys = []
+
+# Will record the raw message of number and string when parse JSON into `sonic::Value`, and serialize the value will use the raw message
+use_raw = []

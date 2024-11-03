@@ -246,6 +246,7 @@ where
                 let raw = as_str(&self.read.as_u8_slice()[start - 1..end]);
                 let alloc = vis.allocator().unwrap();
                 let raw = RawStr::new_in(alloc, raw);
+                let s = &*(alloc.alloc_str(s) as *mut str);
                 check_visit!(self, vis.visit_raw_str(s, raw))
             },
         }
@@ -264,6 +265,16 @@ where
         }
     }
 
+    fn check_string_eof_inpadding(&self) -> Result<usize> {
+        let json = self.read.as_u8_slice();
+        let cur = self.read.index();
+        if cur > json.len() {
+            perr!(self, EofWhileParsing)
+        } else {
+            Ok(cur)
+        }
+    }
+
     #[inline(always)]
     fn parse_string_inplace<V: JsonVisitor<'de>>(&mut self, vis: &mut V) -> Result<()> {
         if !self.cfg.use_raw {
@@ -275,7 +286,7 @@ where
             let start = self.read.cur_ptr();
             match self.skip_string_unchecked()? {
                 ParseStatus::HasEscaped => {
-                    let end = self.read.index();
+                    let end = self.check_string_eof_inpadding()?;
                     let raw = as_str(&self.read.as_u8_slice()[start_idx - 1..end]);
                     let alloc = vis.allocator().unwrap();
                     let raw = RawStr::new_in(alloc, raw);
@@ -285,8 +296,8 @@ where
                     check_visit!(self, vis.visit_raw_str(s, raw))
                 }
                 ParseStatus::None => {
-                    let end = self.read.index() - 1;
-                    let s = as_str(&self.read.as_u8_slice()[start_idx..end]);
+                    let end = self.check_string_eof_inpadding()?;
+                    let s = as_str(&self.read.as_u8_slice()[start_idx..end - 1]);
                     check_visit!(self, vis.visit_borrowed_str(s))
                 }
             }

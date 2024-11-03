@@ -1282,10 +1282,24 @@ where
     R: Reader<'de>,
     T: de::Deserialize<'de>,
 {
+    // check JSON size, because the design of `sonic_rs::Value`, parsing JSON larger than 2 GB is
+    // not supported
+    let len = read.as_u8_slice().len();
+    if len >= (1 << 32) {
+        return Err(crate::error::make_error(format!(
+            "Only support JSON less than 2 GB, the input JSON is too large here, len is {len}"
+        )));
+    }
+
     let mut de = Deserializer::new(read);
     #[cfg(feature = "arbitrary_precision")]
     {
         de = de.use_rawnumber();
+    }
+
+    #[cfg(feature = "use_raw")]
+    {
+        de = de.use_raw();
     }
 
     let value = tri!(de::Deserialize::deserialize(&mut de));

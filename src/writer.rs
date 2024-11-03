@@ -10,7 +10,7 @@ pub trait WriteExt: io::Write {
     /// a slice of `MaybeUninit<u8>`.
     ///
     /// The returned slice will be used to write new data before marking the data as initialized
-    /// using the [`add_len`] method.
+    /// using the [`WriteExt::flush_len`] method.
     fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]>;
 
     /// Flush the `additional` length to the output stream, ensuring that `additional` bytes

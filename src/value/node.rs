@@ -556,8 +556,7 @@ impl Value {
     }
 
     fn forward_find_shared(current: *const Value, idx: usize) -> *const Shared {
-        let meta = unsafe { &*(current.sub(idx) as *const MetaNode) };
-        meta.shared
+        unsafe { (*(current.sub(idx) as *const MetaNode)).shared }
     }
 
     fn unpack_shared(&self) -> &Shared {
