@@ -5,6 +5,8 @@ use std::{fs::File, io::Read};
 
 use criterion::{criterion_group, BatchSize, Criterion, SamplingMode, Throughput};
 
+include!("./common.rs");
+
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
@@ -71,8 +73,27 @@ macro_rules! bench_file {
             let mut group = c.benchmark_group(stringify!($name));
             group.sampling_mode(SamplingMode::Flat);
 
-            let value: sonic_rs::Value = sonic_rs::from_slice(&data).unwrap();
+            let value: sonic_rs::Value = do_sonic_rs_from_slice(&data, SONIC_DEFAULT_CFG).unwrap();
             group.bench_with_input("sonic_rs::to_string", &value, |b, data| {
+                b.iter_batched(
+                    || data,
+                    |val| sonic_rs_to_string(&val),
+                    BatchSize::SmallInput,
+                )
+            });
+
+            let value: sonic_rs::Value = do_sonic_rs_from_slice(&data, SONIC_USE_RAW_CFG).unwrap();
+            group.bench_with_input("sonic_rs::to_string_use_raw", &value, |b, data| {
+                b.iter_batched(
+                    || data,
+                    |val| sonic_rs_to_string(&val),
+                    BatchSize::SmallInput,
+                )
+            });
+
+            let value: sonic_rs::Value =
+                do_sonic_rs_from_slice(&data, SONIC_USE_RAWNUM_CFG).unwrap();
+            group.bench_with_input("sonic_rs::to_string_use_rawnum", &value, |b, data| {
                 b.iter_batched(
                     || data,
                     |val| sonic_rs_to_string(&val),

@@ -5,6 +5,8 @@ use std::{fs::File, io::Read, str::from_utf8_unchecked};
 
 use criterion::{criterion_group, BatchSize, Criterion, SamplingMode, Throughput};
 
+include!("./common.rs");
+
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
@@ -26,8 +28,8 @@ fn serde_from_str(data: &[u8]) {
     let _: serde_json::Value = serde_json::from_str(data).unwrap();
 }
 
-fn sonic_rs_from_slice(data: &[u8]) {
-    let _: sonic_rs::Value = sonic_rs::from_slice(data).unwrap();
+fn sonic_rs_from_slice(data: &[u8], cfg: SonicConfig) {
+    let _: sonic_rs::Value = do_sonic_rs_from_slice(data, cfg).unwrap();
 }
 
 fn sonic_rs_from_slice_unchecked(data: &[u8]) {
@@ -78,7 +80,23 @@ macro_rules! bench_file {
             group.bench_with_input("sonic_rs_dom::from_slice", &vec, |b, data| {
                 b.iter_batched(
                     || data,
-                    |bytes| sonic_rs_from_slice(&bytes),
+                    |bytes| sonic_rs_from_slice(&bytes, SONIC_DEFAULT_CFG),
+                    BatchSize::SmallInput,
+                )
+            });
+
+            group.bench_with_input("sonic_rs_dom::from_slice_use_raw", &vec, |b, data| {
+                b.iter_batched(
+                    || data,
+                    |bytes| sonic_rs_from_slice(&bytes, SONIC_USE_RAW_CFG),
+                    BatchSize::SmallInput,
+                )
+            });
+
+            group.bench_with_input("sonic_rs_dom::from_slice_use_rawnum", &vec, |b, data| {
+                b.iter_batched(
+                    || data,
+                    |bytes| sonic_rs_from_slice(&bytes, SONIC_USE_RAWNUM_CFG),
                     BatchSize::SmallInput,
                 )
             });
