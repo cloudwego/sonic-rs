@@ -4,9 +4,19 @@ set -ex
 
 cargo test
 
-./scripts/run_examples.sh
+cargo test --features arbitrary_precision
 
-./scripts/fuzz.sh
+cargo test --features sort_keys
+
+cargo test --features use_raw
+
+examples=$(cargo build --example 2>&1 | grep -v ":")
+
+for example in $examples; do
+    echo "Running example $example"
+    cargo run --example $example
+done
+
 
 
 
