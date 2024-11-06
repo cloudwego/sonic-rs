@@ -106,7 +106,7 @@ impl<'de> ObjectJsonIter<'de> {
         {
             Ok(ret) => {
                 if let Some((key, val, has_escaped)) = ret {
-                    let val = self.parser.read.as_json_slice().slice_ref(val);
+                    let val = self.parser.read.slice_ref(val);
                     Some(LazyValue::new(val, has_escaped).map(|v| (key, v)))
                 } else {
                     self.ending = true;
@@ -147,7 +147,7 @@ impl<'de> ArrayJsonIter<'de> {
         match self.parser.parse_array_elem_lazy(&mut self.first, check) {
             Ok(ret) => {
                 if let Some((val, has_escaped)) = ret {
-                    let val = self.parser.read.as_json_slice().slice_ref(val);
+                    let val = self.parser.read.slice_ref(val);
                     Some(LazyValue::new(val, has_escaped))
                 } else {
                     self.ending = true;

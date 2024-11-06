@@ -93,7 +93,7 @@ pub trait Reader<'de>: Sealed {
         Ok(())
     }
 
-    fn as_json_slice(&self) -> JsonSlice<'de>;
+    fn slice_ref(&self, subset: &'de [u8]) -> JsonSlice<'de>;
 }
 
 /// JSON input source that reads from a string/bytes-like JSON input.
@@ -121,7 +121,8 @@ pub trait Reader<'de>: Sealed {
 /// assert_eq!(num, 123);
 /// ```
 pub struct Read<'a> {
-    input: JsonSlice<'a>,
+    // pin the input JSON, because `slice` will reference it
+    input: Box<JsonSlice<'a>>,
     slice: &'a [u8],
     pub(crate) index: usize,
     // next invalid utf8 position, if not found, will be usize::MAX
@@ -140,8 +141,9 @@ impl<'a> Read<'a> {
     }
 
     pub(crate) fn new_in<I: JsonInput<'a>>(input: I, need_validate: bool) -> Self {
-        let slice = input.to_u8_slice();
-        let input = input.to_json_slice();
+        let input = Box::new(input.to_json_slice());
+        // #safety: we pinned the input json
+        let slice = unsafe { &*((*input).as_ref() as *const [u8]) };
         // validate the utf-8 at first for slice
         let next_invalid_utf8 = match from_utf8(slice) {
             Err(e) if need_validate => e.offset(),
@@ -164,8 +166,8 @@ impl<'a> Reader<'a> for Read<'a> {
     }
 
     #[inline(always)]
-    fn as_json_slice(&self) -> JsonSlice<'a> {
-        self.input.clone()
+    fn slice_ref(&self, subset: &'a [u8]) -> JsonSlice<'a> {
+        self.input.slice_ref(subset)
     }
 
     #[inline(always)]
@@ -295,8 +297,8 @@ impl<'a> Reader<'a> for PaddedSliceRead<'a> {
     }
 
     #[inline(always)]
-    fn as_json_slice(&self) -> JsonSlice<'a> {
-        self.as_u8_slice().into()
+    fn slice_ref(&self, subset: &'a [u8]) -> JsonSlice<'a> {
+        subset.into()
     }
 
     #[inline(always)]
