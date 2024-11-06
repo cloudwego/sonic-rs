@@ -1248,9 +1248,7 @@ where
         // fast path for the single digit
         let mut is_float: bool = false;
         match second {
-            Some(b'0'..=b'9') => {
-                self.read.eat(1);
-            }
+            Some(b'0'..=b'9') => self.read.eat(1),
             Some(b'.') => {
                 is_float = true;
                 self.read.eat(1);
@@ -1268,33 +1266,30 @@ where
             let v = unsafe { i8x32::from_slice_unaligned_unchecked(chunk) };
             let zero = i8x32::splat(b'0' as i8);
             let nine = i8x32::splat(b'9' as i8);
-            let nondigits = (zero.gt(&v) | v.gt(&nine)).bitmask();
+            let mut nondigits = (zero.gt(&v) | v.gt(&nine)).bitmask();
             if nondigits != 0 {
-                let cnt = nondigits.trailing_zeros() as usize;
+                let mut cnt = nondigits.trailing_zeros() as usize;
                 let ch = chunk[cnt];
                 if ch == b'.' && !is_float {
                     self.read.eat(cnt + 1);
                     // check the first digit after the dot
                     self.skip_single_digit()?;
 
-                    let traversed = cnt + 2;
                     // check the remaining digits
-                    let nondigts = nondigits.wrapping_shr((traversed) as u32);
-                    if nondigts != 0 {
-                        while let Some(ch) = self.read.peek() {
-                            if ch == b'e' || ch == b'E' {
-                                self.read.eat(1);
-                                return self.skip_exponent();
-                            } else if ch.is_ascii_digit() {
-                                self.read.eat(1);
-                                continue;
-                            } else {
-                                return Ok(());
-                            }
+                    cnt += 2;
+                    nondigits = nondigits.wrapping_shr(cnt as u32);
+                    if nondigits != 0 {
+                        let offset = nondigits.trailing_zeros() as usize;
+                        let ch = chunk[cnt + offset];
+                        if ch == b'e' || ch == b'E' {
+                            self.read.eat(offset + 1);
+                            return self.skip_exponent();
+                        } else {
+                            self.read.eat(offset);
+                            return Ok(());
                         }
                     } else {
-                        // long digits
-                        self.read.eat(32 - traversed);
+                        self.read.eat(32 - cnt);
                         is_float = true;
                         continue;
                     }
@@ -1305,10 +1300,9 @@ where
                     self.read.eat(cnt);
                     return Ok(());
                 }
-            } else {
-                // long digits
-                self.read.eat(32);
             }
+            // long digits
+            self.read.eat(32);
         }
 
         // has less than 32 bytes
