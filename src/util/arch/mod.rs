@@ -3,7 +3,6 @@ cfg_if::cfg_if! {
         mod x86_64;
         pub use x86_64::*;
     } else if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
-        pub(crate) mod fallback;
         mod aarch64;
         pub use aarch64::*;
     } else {
