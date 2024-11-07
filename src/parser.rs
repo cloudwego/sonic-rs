@@ -1262,7 +1262,8 @@ where
         }
 
         // SIMD path for long number
-        while let Some(chunk) = self.read.peek_n(32) {
+        const LANES: usize = i8x32::LANES;
+        while let Some(chunk) = self.read.peek_n(LANES) {
             let v = unsafe { i8x32::from_slice_unaligned_unchecked(chunk) };
             let zero = i8x32::splat(b'0' as i8);
             let nine = i8x32::splat(b'9' as i8);
@@ -1275,8 +1276,13 @@ where
                     // check the first digit after the dot
                     self.skip_single_digit()?;
 
-                    // check the remaining digits
+                    // check the overflow
                     cnt += 2;
+                    if cnt >= LANES {
+                        is_float = true;
+                        continue;
+                    }
+
                     nondigits = nondigits.wrapping_shr(cnt as u32);
                     if nondigits != 0 {
                         let offset = nondigits.trailing_zeros() as usize;
