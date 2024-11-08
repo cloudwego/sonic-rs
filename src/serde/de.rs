@@ -385,7 +385,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
             // get n to check trailing characters in later
             let n = if cfg.utf8_lossy && self.parser.read.next_invalid_utf8() != usize::MAX {
                 // repr the invalid utf8, not need to care about the invalid UTF8 char in non-string
-                // parts, it will cause erros when parsing.
+                // parts, it will cause errors when parsing.
                 val.parse_with_padding(String::from_utf8_lossy(json).as_bytes(), cfg)?
             } else {
                 val.parse_with_padding(json, cfg)?
