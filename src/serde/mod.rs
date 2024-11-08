@@ -30,7 +30,7 @@ mod test {
     use serde::{de::IgnoredAny, Deserialize, Serialize};
 
     use super::*;
-    use crate::Result;
+    use crate::{Result, Value};
 
     macro_rules! hashmap {
         () => {
@@ -340,6 +340,7 @@ mod test {
         test_json_failed(r#""-1e""#);
     }
 
+    #[cfg(not(feature = "utf8_lossy"))]
     #[test]
     fn test_invalid_utf8() {
         let data = [b'"', 0, 0, 0, 0x80, 0x90, b'"'];
@@ -347,6 +348,19 @@ mod test {
         assert_eq!(
             value.err().unwrap().to_string(),
             "Invalid UTF-8 characters in json at line 1 column 4\n\n\t\"\0\0\0��\"\n\t....^..\n"
+        );
+
+        #[derive(Debug, Deserialize, Serialize, PartialEq)]
+        struct TestStruct {
+            char_: char,
+        }
+
+        // char's deserialize will iterator on the `str`
+        let data = [34, 255, 34];
+        let value: crate::Result<char> = from_slice(&data);
+        assert_eq!(
+            value.err().unwrap().to_string(),
+            "Invalid UTF-8 characters in json at line 1 column 1\n\n\t\"�\"\n\t.^.\n"
         );
     }
 
@@ -694,5 +708,29 @@ mod test {
         let expect: MapKeys = serde_json::from_str(&s).unwrap();
         let got: MapKeys = crate::from_str(&s).unwrap();
         assert_eq!(expect, got);
+    }
+
+    #[test]
+    fn test_utf8_lossy() {
+        let data = [&[b'\"', 0xff, b'\"'][..], br#""\uD800""#, br#""\udc00""#];
+
+        for d in data {
+            let mut de = Deserializer::from_slice(d).utf8_lossy();
+            let value: String = de.deserialize().unwrap();
+            assert_eq!(value, "�");
+        }
+
+        for d in data {
+            let mut de = Deserializer::from_slice(d).utf8_lossy();
+            let value: Value = de.deserialize().unwrap();
+            assert_eq!(value, "�");
+        }
+
+        for d in data {
+            let mut de = Deserializer::from_slice(d);
+            let err: crate::Error = de.deserialize::<String>().expect_err("should error");
+            eprintln!("{}", err);
+            assert!(err.is_syntax());
+        }
     }
 }

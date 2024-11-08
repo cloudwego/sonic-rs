@@ -185,7 +185,11 @@ pub(crate) unsafe fn codepoint_to_utf8(cp: u32, c: *mut u8) -> usize {
     }
 }
 
-pub unsafe fn handle_unicode_codepoint_mut(src_ptr: &mut *const u8, dst_ptr: &mut *mut u8) -> bool {
+pub unsafe fn handle_unicode_codepoint_mut(
+    src_ptr: &mut *const u8,
+    dst_ptr: &mut *mut u8,
+    repr: bool,
+) -> bool {
     // hex_to_u32_nocheck fills high 16 bits of the return value
     // with 1s if the conversion isn't valid
     let mut code_point = hex_to_u32_nocheck(&*(src_ptr.add(2) as *const [u8; 4]));
@@ -196,25 +200,34 @@ pub unsafe fn handle_unicode_codepoint_mut(src_ptr: &mut *const u8, dst_ptr: &mu
     // Multilingual Plane.
     if (0xD800..0xDC00).contains(&code_point) {
         if **src_ptr != b'\\' || *src_ptr.add(1) != b'u' {
-            return false;
+            return repr_utf16_surrogate(dst_ptr, repr);
         }
+
         let code_point_2 = hex_to_u32_nocheck(&*(src_ptr.add(2) as *const [u8; 4]));
 
         let low_bit = code_point_2.wrapping_sub(0xdc00);
         if (low_bit >> 10) != 0 {
-            // invalid surrogate
-            return false;
+            return repr_utf16_surrogate(dst_ptr, repr);
         }
 
         code_point = (((code_point - 0xd800) << 10) | low_bit).wrapping_add(0x10000);
         *src_ptr = src_ptr.add(6);
     } else if (0xDC00..0xE000).contains(&code_point) {
-        // invalid surrogate
-        return false;
+        return repr_utf16_surrogate(dst_ptr, repr);
     }
 
     // also checking invalid utf8 here
     let offset = codepoint_to_utf8(code_point, *dst_ptr);
     *dst_ptr = dst_ptr.add(offset);
     offset > 0
+}
+
+unsafe fn repr_utf16_surrogate(dst_ptr: &mut *mut u8, repr: bool) -> bool {
+    if repr {
+        let offset = codepoint_to_utf8(0xFFFD, *dst_ptr);
+        *dst_ptr = dst_ptr.add(offset);
+        offset > 0
+    } else {
+        false
+    }
 }

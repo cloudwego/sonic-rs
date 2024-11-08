@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ops::Deref, ptr::NonNull};
+use std::{marker::PhantomData, ptr::NonNull};
 
 use crate::{
     error::invalid_utf8,
@@ -6,14 +6,6 @@ use crate::{
     util::{private::Sealed, utf8::from_utf8},
     JsonInput, Result,
 };
-// support borrow for owned deserizlie or skip
-pub(crate) enum Reference<'b, 'c, T>
-where
-    T: ?Sized + 'static,
-{
-    Borrowed(&'b T),
-    Copied(&'c T),
-}
 
 pub(crate) struct Position {
     pub line: usize,
@@ -37,20 +29,6 @@ impl Position {
             }
         }
         position
-    }
-}
-
-impl<'b, 'c, T> Deref for Reference<'b, 'c, T>
-where
-    T: ?Sized + 'static,
-{
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        match *self {
-            Reference::Borrowed(b) => b,
-            Reference::Copied(c) => c,
-        }
     }
 }
 
@@ -83,15 +61,11 @@ pub trait Reader<'de>: Sealed {
 
     fn as_u8_slice(&self) -> &'de [u8];
 
-    // we only need validate utf8 for [u8]
-    fn validate_utf8(&mut self, allowed_space: (usize, usize)) -> Result<()> {
-        let _ = allowed_space;
-        Ok(())
-    }
+    fn check_utf8_final(&self) -> Result<()>;
 
-    fn check_utf8_final(&self) -> Result<()> {
-        Ok(())
-    }
+    fn next_invalid_utf8(&self) -> usize;
+
+    fn check_invalid_utf8(&mut self);
 
     fn slice_ref(&self, subset: &'de [u8]) -> JsonSlice<'de>;
 }
@@ -254,19 +228,15 @@ impl<'a> Reader<'a> for Read<'a> {
         }
     }
 
-    fn validate_utf8(&mut self, allowed_space: (usize, usize)) -> Result<()> {
-        if self.next_invalid_utf8 < allowed_space.0 {
-            Err(invalid_utf8(self.slice, self.next_invalid_utf8))
-        } else if self.next_invalid_utf8 < allowed_space.1 {
-            // this space is allowed, should update the next invalid utf8 position
-            self.next_invalid_utf8 = match from_utf8(&self.slice[self.index..]) {
-                Ok(_) => usize::MAX,
-                Err(e) => self.index + e.offset(),
-            };
-            Ok(())
-        } else {
-            Ok(())
-        }
+    fn check_invalid_utf8(&mut self) {
+        self.next_invalid_utf8 = match from_utf8(&self.slice[self.index..]) {
+            Ok(_) => usize::MAX,
+            Err(e) => self.index + e.offset(),
+        };
+    }
+
+    fn next_invalid_utf8(&self) -> usize {
+        self.next_invalid_utf8
     }
 }
 
@@ -371,6 +341,21 @@ impl<'a> Reader<'a> for PaddedSliceRead<'a> {
             let n = end - start;
             std::slice::from_raw_parts(ptr, n)
         }
+    }
+
+    #[inline(always)]
+    fn check_invalid_utf8(&mut self) {
+        /* need to nothing here */
+    }
+
+    #[inline(always)]
+    fn next_invalid_utf8(&self) -> usize {
+        usize::MAX
+    }
+
+    #[inline(always)]
+    fn check_utf8_final(&self) -> Result<()> {
+        Ok(())
     }
 }
 

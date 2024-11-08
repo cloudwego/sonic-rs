@@ -109,10 +109,13 @@ pub(crate) unsafe fn load<V: Simd>(ptr: *const u8) -> V {
     V::from_slice_unaligned_unchecked(chunk)
 }
 
-// return the size of the actual parsed string
+/// Return the size of the actual parsed string, `repr` means repr invalid UTF16 surrogate with
+/// `\uFFFD`
+/// TODO: fix me, there are repeat codes!!!
 #[inline(always)]
 pub(crate) unsafe fn parse_string_inplace(
     src: &mut *mut u8,
+    repr: bool,
 ) -> std::result::Result<usize, ErrorCode> {
     #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
     let mut block: StringBlock<NeonBits>;
@@ -148,7 +151,7 @@ pub(crate) unsafe fn parse_string_inplace(
         'escape: loop {
             let escaped_char: u8 = *src.add(1);
             if escaped_char == b'u' {
-                if !handle_unicode_codepoint_mut(src, &mut dst) {
+                if !handle_unicode_codepoint_mut(src, &mut dst, repr) {
                     return Err(InvalidUnicodeCodePoint);
                 }
             } else {
