@@ -4,4 +4,4 @@ set -ex
 
 cargo install cargo-fuzz
 
-RUST_BACKTRACE=full cargo  +nightly fuzz run fuzz_value 
+RUST_BACKTRACE=full cargo  +nightly fuzz run fuzz_value -- -max_total_time=20m

@@ -1,11 +1,15 @@
 #![no_main]
 #![allow(clippy::mutable_key_type)]
+use std::{borrow::Cow, collections::HashMap, hash::Hash, marker::PhantomData};
 
+use faststr::FastStr;
 use libfuzzer_sys::fuzz_target;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JValue;
 use sonic_rs::{
     from_slice, from_str, to_array_iter, to_array_iter_unchecked, to_object_iter,
-    to_object_iter_unchecked, value::JsonContainerTrait, JsonNumberTrait, JsonValueTrait, Value,
+    to_object_iter_unchecked, value::JsonContainerTrait, Deserializer, JsonNumberTrait,
+    JsonValueTrait, Value,
 };
 
 macro_rules! test_type {
@@ -54,8 +58,8 @@ fuzz_target!(|data: &[u8]| {
             let sv2: Value = from_str(&sout).unwrap();
             let eq = compare_value(&jv2, &sv2);
 
-            // compare use raw
             fuzz_use_raw(data, &sv);
+            fuzz_utf8_lossy(data, &sv);
 
             if jv.is_object() && eq {
                 for ret in to_object_iter(data) {
@@ -119,9 +123,17 @@ fn compare_lazyvalue(jv: &JValue, sv: &sonic_rs::LazyValue) {
 }
 
 fn fuzz_use_raw(json: &[u8], sv: &sonic_rs::Value) {
-    use sonic_rs::{Deserialize, Deserializer, Value};
     let json = unsafe { std::str::from_utf8_unchecked(json) };
     let mut de = Deserializer::from_str(json).use_raw();
+    let value: Value = Deserialize::deserialize(&mut de).unwrap();
+    let out = sonic_rs::to_string(&value).unwrap();
+    let got: Value = sonic_rs::from_str(&out).unwrap();
+    assert_eq!(&got, sv);
+}
+
+fn fuzz_utf8_lossy(json: &[u8], sv: &sonic_rs::Value) {
+    let json = unsafe { std::str::from_utf8_unchecked(json) };
+    let mut de = Deserializer::from_str(json).utf8_lossy();
     let value: Value = Deserialize::deserialize(&mut de).unwrap();
     let out = sonic_rs::to_string(&value).unwrap();
     let got: Value = sonic_rs::from_str(&out).unwrap();
@@ -174,11 +186,6 @@ fn compare_value(jv: &JValue, sv: &sonic_rs::Value) -> bool {
     }
     true
 }
-
-use std::{borrow::Cow, collections::HashMap, hash::Hash, marker::PhantomData};
-
-use faststr::FastStr;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 struct Foo {
