@@ -10,6 +10,8 @@ cargo test --features sort_keys
 
 cargo test --features use_raw
 
+cargo test --features utf8_lossy
+
 examples=$(cargo build --example 2>&1 | grep -v ":")
 
 for example in $examples; do

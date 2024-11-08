@@ -58,3 +58,6 @@ sort_keys = []
 
 # Will record the raw message of number and string when parse JSON into `sonic::Value`, and serialize the value will use the raw message
 use_raw = []
+
+# Allow to parse JSON with invalid UTF-8 and UTF-16 characters. Will replace them with `\uFFFD` (displayed as �).
+utf8_lossy = []

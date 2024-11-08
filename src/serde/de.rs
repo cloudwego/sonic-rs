@@ -14,8 +14,8 @@ use crate::{
         ErrorCode::{self, EofWhileParsing, RecursionLimitExceeded},
         Result,
     },
-    parser::{as_str, ParseStatus, Parser},
-    reader::{Read, Reader, Reference},
+    parser::{as_str, ParseStatus, ParsedSlice, Parser, Reference},
+    reader::{Read, Reader},
     util::num::ParserNumber,
     value::{node::Value, shared::Shared},
     JsonInput,
@@ -49,10 +49,10 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     ///
     /// # Example
     /// ```
-    /// use sonic_rs::{Deserialize, Deserializer, Value};
+    /// use sonic_rs::{Deserializer, Value};
     /// let json = r#"{"a":1.2345678901234567890123}"#;
     /// let mut de = Deserializer::from_str(json).use_rawnumber();
-    /// let value: Value = Deserialize::deserialize(&mut de).unwrap();
+    /// let value: Value = de.deserialize().unwrap();
     /// let out = sonic_rs::to_string(&value).unwrap();
     /// assert_eq!(json, out);
     /// ```
@@ -68,7 +68,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     ///
     /// # Example
     /// ```
-    /// use sonic_rs::{Deserialize, Deserializer, Value};
+    /// use sonic_rs::{Deserializer, Value};
     /// let data = [
     ///     r#"{"a":1.2345678901234567890123}"#,
     ///     r#"{"a":1,"b":"\\u0001"}"#,
@@ -78,13 +78,38 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     ///
     /// for json in data {
     ///     let mut de = Deserializer::from_str(json).use_raw();
-    ///     let value: Value = Deserialize::deserialize(&mut de).unwrap();
+    ///     let value: Value = de.deserialize().unwrap();
     ///     let out = sonic_rs::to_string(&value).unwrap();
     ///     assert_eq!(json, out);
     /// }
     /// ```
     pub fn use_raw(mut self) -> Self {
         self.parser.cfg.use_raw = true;
+        self
+    }
+
+    /// Allow to parse JSON with invalid UTF-8 and UTF-16 characters. Will replace them with
+    /// `\uFFFD` (displayed as �).
+    ///
+    /// # Example
+    /// ```
+    /// use sonic_rs::{Deserializer, Value};
+    /// let data = [
+    ///     &[b'\"', 0xff, b'\"'][..],         // invalid UTF8 char in string
+    ///     br#"{"a":"\ud800","b":"\udc00"}"#, // invalid UTF16 surrogate pair
+    /// ];
+    /// let expect = [r#""�""#, r#"{"a":"�","b":"�"}"#];
+    ///
+    /// let mut exp = expect.iter();
+    /// for json in data {
+    ///     let mut de = Deserializer::from_slice(json).utf8_lossy();
+    ///     let value: Value = de.deserialize().unwrap();
+    ///     let out = sonic_rs::to_string(&value).unwrap();
+    ///     assert_eq!(&out, exp.next().unwrap());
+    /// }
+    /// ```
+    pub fn utf8_lossy(mut self) -> Self {
+        self.parser.cfg.utf8_lossy = true;
         self
     }
 
@@ -352,12 +377,20 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         V: de::Visitor<'de>,
     {
         let mut val = Value::new();
-        let val = if self.parser.read.index() == 0 {
-            // get n to check trailing characters in later
+        if self.parser.read.index() == 0 {
+            // will parse the JSON inplace
             let cfg = self.parser.cfg;
-            let n = val.parse_with_padding(self.parser.read.as_u8_slice(), cfg)?;
+            let json = self.parser.read.as_u8_slice();
+
+            // get n to check trailing characters in later
+            let n = if cfg.utf8_lossy && self.parser.read.next_invalid_utf8() != usize::MAX {
+                // repr the invalid utf8, not need to care about the invalid UTF8 char in non-string
+                // parts, it will cause erros when parsing.
+                val.parse_with_padding(String::from_utf8_lossy(json).as_bytes(), cfg)?
+            } else {
+                val.parse_with_padding(json, cfg)?
+            };
             self.parser.read.eat(n);
-            val
         } else {
             let shared = unsafe {
                 if self.shared.is_none() {
@@ -368,8 +401,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
             };
             // deserialize some json parts into `Value`, not use padding buffer, avoid the memory
             // copy
-            val.parse_without_padding(shared, &mut self.scratch, &mut self.parser)?;
-            val
+            val.parse_without_padding(shared, &mut self.scratch, &mut self.parser)?
         };
 
         let val = ManuallyDrop::new(val);
@@ -629,11 +661,10 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
             return Err(self.parser.error(ErrorCode::EofWhileParsing));
         };
 
-        let start = self.parser.read.index();
         let value = match peek {
             b'"' => match tri!(self.parser.parse_string_raw(&mut self.scratch)) {
-                Reference::Borrowed(b) => visitor.visit_borrowed_bytes(b),
-                Reference::Copied(b) => visitor.visit_bytes(b),
+                ParsedSlice::Borrowed { slice: b, buf: _ } => visitor.visit_borrowed_bytes(b),
+                ParsedSlice::Copied(b) => visitor.visit_bytes(b),
             },
             b'[' => {
                 self.parser.read.backward(1);
@@ -643,9 +674,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         };
 
         // check invalid utf8 with allow space here
-        self.parser
-            .read
-            .validate_utf8((start, self.parser.read.index()))?;
+        let _ = self.parser.check_invalid_utf8(true)?;
         match value {
             Ok(value) => Ok(value),
             Err(err) => Err(self.parser.fix_position(err)),
@@ -1300,6 +1329,11 @@ where
     #[cfg(feature = "use_raw")]
     {
         de = de.use_raw();
+    }
+
+    #[cfg(feature = "utf8_lossy")]
+    {
+        de = de.utf8_lossy();
     }
 
     let value = tri!(de::Deserialize::deserialize(&mut de));

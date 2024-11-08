@@ -1940,6 +1940,7 @@ mod test {
         }
     }
 
+    #[cfg(not(feature = "utf8_lossy"))]
     #[test]
     fn test_parse_escaped() {
         let testdata = [
@@ -1950,6 +1951,7 @@ mod test {
             test_value(data).unwrap();
         }
     }
+
     const TEST_JSON: &str = r#"{
         "bool": true,
         "int": -1,
@@ -1998,6 +2000,7 @@ mod test {
         assert!(!value.pointer(pointer!["unknown"]).is_str());
     }
 
+    #[cfg(not(feature = "utf8_lossy"))]
     #[test]
     fn test_invalid_utf8() {
         use crate::{from_slice, from_slice_unchecked};

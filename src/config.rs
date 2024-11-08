@@ -1,5 +1,6 @@
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct DeserializeCfg {
-    pub(crate) use_rawnumber: bool,
-    pub(crate) use_raw: bool,
+    pub use_rawnumber: bool,
+    pub use_raw: bool,
+    pub utf8_lossy: bool,
 }

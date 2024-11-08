@@ -8,13 +8,13 @@ use std::{
 use faststr::FastStr;
 use serde::de::{self, Expected, Unexpected};
 
-use super::reader::{Reader, Reference};
+use super::reader::Reader;
 #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
 use crate::util::simd::bits::NeonBits;
 use crate::{
     config::DeserializeCfg,
     error::{
-        Error,
+        invalid_utf8, Error,
         ErrorCode::{self, *},
         Result,
     },
@@ -33,6 +33,48 @@ use crate::{
     value::{node::RawStr, visitor::JsonVisitor},
     LazyValue,
 };
+
+// support borrow for owned deserizlie or skip
+pub(crate) enum Reference<'b, 'c, T>
+where
+    T: ?Sized + 'static,
+{
+    Borrowed(&'b T),
+    Copied(&'c T),
+}
+
+impl<'b, 'c, T> Deref for Reference<'b, 'c, T>
+where
+    T: ?Sized + 'static,
+{
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        match *self {
+            Reference::Borrowed(b) => b,
+            Reference::Copied(c) => c,
+        }
+    }
+}
+
+pub(crate) enum ParsedSlice<'b, 'c> {
+    Borrowed {
+        slice: &'b [u8],
+        buf: &'c mut Vec<u8>,
+    },
+    Copied(&'c mut Vec<u8>),
+}
+
+impl<'b, 'c> Deref for ParsedSlice<'b, 'c> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            ParsedSlice::Borrowed { slice, buf: _ } => slice,
+            ParsedSlice::Copied(c) => c.as_slice(),
+        }
+    }
+}
 
 pub(crate) const DEFAULT_KEY_BUF_CAPACITY: usize = 128;
 pub(crate) fn as_str(data: &[u8]) -> &str {
@@ -252,19 +294,6 @@ where
         }
     }
 
-    #[inline(always)]
-    fn parse_string_inplace_impl<V: JsonVisitor<'de>>(&mut self, vis: &mut V) -> Result<()> {
-        unsafe {
-            let mut src = self.read.cur_ptr();
-            let start = self.read.cur_ptr();
-            let cnt = parse_string_inplace(&mut src).map_err(|e| self.error(e))?;
-            self.read.set_ptr(src);
-            let slice = from_raw_parts(start, cnt);
-            let s = from_utf8_unchecked(slice);
-            check_visit!(self, vis.visit_borrowed_str(s))
-        }
-    }
-
     fn check_string_eof_inpadding(&self) -> Result<usize> {
         let json = self.read.as_u8_slice();
         let cur = self.read.index();
@@ -278,8 +307,18 @@ where
     #[inline(always)]
     fn parse_string_inplace<V: JsonVisitor<'de>>(&mut self, vis: &mut V) -> Result<()> {
         if !self.cfg.use_raw {
-            return self.parse_string_inplace_impl(vis);
+            unsafe {
+                let mut src = self.read.cur_ptr();
+                let start = self.read.cur_ptr();
+                let cnt = parse_string_inplace(&mut src, self.cfg.utf8_lossy)
+                    .map_err(|e| self.error(e))?;
+                self.read.set_ptr(src);
+                let slice = from_raw_parts(start, cnt);
+                let s = from_utf8_unchecked(slice);
+                return check_visit!(self, vis.visit_borrowed_str(s));
+            }
         }
+
         unsafe {
             let start_idx = self.read.index();
             let mut src = self.read.cur_ptr();
@@ -290,7 +329,8 @@ where
                     let raw = as_str(&self.read.as_u8_slice()[start_idx - 1..end]);
                     let alloc = vis.allocator().unwrap();
                     let raw = RawStr::new_in(alloc, raw);
-                    let cnt = parse_string_inplace(&mut src).map_err(|e| self.error(e))?;
+                    let cnt = parse_string_inplace(&mut src, self.cfg.utf8_lossy)
+                        .map_err(|e| self.error(e))?;
                     self.read.set_ptr(src);
                     let s = str_from_raw_parts(start, cnt);
                     check_visit!(self, vis.visit_raw_str(s, raw))
@@ -621,11 +661,45 @@ where
         &mut self,
         buf: &'own mut Vec<u8>,
     ) -> Result<Reference<'de, 'own, str>> {
-        let slice = self.parse_string_raw(buf)?;
-        Ok(match slice {
-            Reference::Copied(buf) => Reference::Copied(unsafe { from_utf8_unchecked(buf) }),
-            Reference::Borrowed(buf) => Reference::Borrowed(unsafe { from_utf8_unchecked(buf) }),
-        })
+        match self.parse_string_raw(buf) {
+            Ok(ParsedSlice::Copied(buf)) => {
+                if self.check_invalid_utf8(self.cfg.utf8_lossy)? {
+                    // repr the invalid utf-8
+                    let repr = String::from_utf8_lossy(buf.as_ref()).into_owned();
+                    *buf = repr.into_bytes();
+                }
+                let slice = unsafe { from_utf8_unchecked(buf.as_slice()) };
+                Ok(Reference::Copied(slice))
+            }
+            Ok(ParsedSlice::Borrowed { slice, buf }) => {
+                if self.check_invalid_utf8(self.cfg.utf8_lossy)? {
+                    // repr the invalid utf-8
+                    let repr = String::from_utf8_lossy(slice).into_owned();
+                    *buf = repr.into_bytes();
+                    let slice = unsafe { from_utf8_unchecked(buf) };
+                    Ok(Reference::Copied(slice))
+                } else {
+                    Ok(Reference::Borrowed(unsafe { from_utf8_unchecked(slice) }))
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    pub(crate) fn check_invalid_utf8(&mut self, allowed: bool) -> Result<bool> {
+        // the invalid UTF-8 before the string, must have been checked before.
+        let invalid = self.read.next_invalid_utf8();
+        if invalid >= self.read.index() {
+            return Ok(false);
+        }
+
+        if !allowed {
+            Err(invalid_utf8(self.read.as_u8_slice(), invalid))
+        } else {
+            // this space is allowed, should update the next invalid utf8 position
+            self.read.check_invalid_utf8();
+            Ok(true)
+        }
     }
 
     pub(crate) fn parse_escaped_utf8(&mut self) -> Result<u32> {
@@ -641,24 +715,40 @@ where
             // parse the second utf8 code point of surrogate
             let point2 = if let Some(asc) = self.read.next_n(6) {
                 if asc[0] != b'\\' || asc[1] != b'u' {
-                    return perr!(self, InvalidSurrogateUnicodeCodePoint);
+                    if self.cfg.utf8_lossy {
+                        return Ok(0xFFFD);
+                    } else {
+                        // invalid surrogate
+                        return perr!(self, InvalidSurrogateUnicodeCodePoint);
+                    }
                 }
                 unsafe { hex_to_u32_nocheck(&*(asc.as_ptr().add(2) as *const _ as *const [u8; 4])) }
+            } else if self.cfg.utf8_lossy {
+                return Ok(0xFFFD);
             } else {
-                return perr!(self, EofWhileParsing);
+                // invalid surrogate
+                return perr!(self, InvalidSurrogateUnicodeCodePoint);
             };
 
             /* calcute the real code point */
             let low_bit = point2.wrapping_sub(0xdc00);
             if (low_bit >> 10) != 0 {
-                // invalid surrogate
-                return perr!(self, InvalidSurrogateUnicodeCodePoint);
+                if self.cfg.utf8_lossy {
+                    return Ok(0xFFFD);
+                } else {
+                    // invalid surrogate
+                    return perr!(self, InvalidSurrogateUnicodeCodePoint);
+                }
             }
 
             Ok((((point1 - 0xd800) << 10) | low_bit).wrapping_add(0x10000))
         } else if (0xDC00..0xE000).contains(&point1) {
-            // invalid surrogate
-            perr!(self, InvalidSurrogateUnicodeCodePoint)
+            if self.cfg.utf8_lossy {
+                return Ok(0xFFFD);
+            } else {
+                // invalid surrogate
+                return perr!(self, InvalidSurrogateUnicodeCodePoint);
+            }
         } else {
             Ok(point1)
         }
@@ -697,7 +787,7 @@ where
     pub(crate) unsafe fn parse_string_escaped<'own>(
         &mut self,
         buf: &'own mut Vec<u8>,
-    ) -> Result<Reference<'de, 'own, [u8]>> {
+    ) -> Result<ParsedSlice<'de, 'own>> {
         #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
         let mut block: StringBlock<NeonBits>;
         #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
@@ -725,7 +815,7 @@ where
 
                 // skip the right quote
                 self.read.eat(cnt + 1);
-                return Ok(Reference::Copied(buf.as_slice()));
+                return Ok(ParsedSlice::Copied(buf));
             }
 
             if block.has_backslash() {
@@ -746,7 +836,7 @@ where
             match c {
                 b'"' => {
                     self.read.eat(1);
-                    return Ok(Reference::Copied(buf.as_slice()));
+                    return Ok(ParsedSlice::Copied(buf));
                 }
                 b'\\' => {
                     // skip the backslash
@@ -769,7 +859,7 @@ where
     pub(crate) fn parse_string_raw<'own>(
         &mut self,
         buf: &'own mut Vec<u8>,
-    ) -> Result<Reference<'de, 'own, [u8]>> {
+    ) -> Result<ParsedSlice<'de, 'own>> {
         // now reader is start after `"`, so we can directly skipstring
         let start = self.read.index();
         #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
@@ -784,9 +874,8 @@ where
             if block.has_quote_first() {
                 let cnt = block.quote_index();
                 self.read.eat(cnt + 1);
-                return Ok(Reference::Borrowed(
-                    self.read.slice_unchecked(start, self.read.index() - 1),
-                ));
+                let slice = self.read.slice_unchecked(start, self.read.index() - 1);
+                return Ok(ParsedSlice::Borrowed { slice, buf });
             }
 
             if block.has_unescaped() {
@@ -815,9 +904,8 @@ where
             match c {
                 b'"' => {
                     self.read.eat(1);
-                    return Ok(Reference::Borrowed(
-                        self.read.slice_unchecked(start, self.read.index() - 1),
-                    ));
+                    let slice = self.read.slice_unchecked(start, self.read.index() - 1);
+                    return Ok(ParsedSlice::Borrowed { slice, buf });
                 }
                 b'\\' => {
                     buf.clear();
