@@ -1,5 +1,3 @@
-use serde::de;
-
 use super::traits::BitMask;
 
 macro_rules! impl_bits {
@@ -100,27 +98,5 @@ impl BitMask for NeonBits {
     fn clear_high_bits(&self, n: usize) -> Self {
         debug_assert!(n <= Self::LEN);
         Self(self.0 & u64::MAX >> (n * 4))
-    }
-}
-
-pub fn combine_u16(lo: u16, hi: u16) -> u32 {
-    #[cfg(target_endian = "little")]
-    {
-        (lo as u32) | ((hi as u32) << 16)
-    }
-    #[cfg(target_endian = "big")]
-    {
-        (hi as u32) | ((lo as u32) << 16)
-    }
-}
-
-pub fn combine_u32(lo: u32, hi: u32) -> u64 {
-    #[cfg(target_endian = "little")]
-    {
-        (lo as u64) | ((hi as u64) << 32)
-    }
-    #[cfg(target_endian = "big")]
-    {
-        (hi as u64) | ((lo as u64) << 32)
     }
 }

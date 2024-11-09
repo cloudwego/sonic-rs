@@ -1,6 +1,6 @@
 use std::ops::{BitAnd, BitOr, BitOrAssign};
 
-use super::{bits::combine_u32, Mask, Mask256, Simd, Simd256i, Simd256u};
+use super::{Mask, Mask256, Simd, Simd256i, Simd256u};
 
 #[derive(Debug)]
 #[repr(transparent)]
@@ -22,12 +22,21 @@ impl Mask for Mask512 {
     fn bitmask(self) -> Self::BitMask {
         cfg_if::cfg_if! {
             if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
-                use std::arch::aarch64::uint8x16_t;
                 let (v0, v1) = self.0;
                 let (m0, m1) = v0.0;
                 let (m2, m3) = v1.0;
                 unsafe { super::neon::to_bitmask64(m0.0, m1.0, m2.0, m3.0) }
             } else {
+                fn combine_u32(lo: u32, hi: u32) -> u64 {
+                    #[cfg(target_endian = "little")]
+                    {
+                        (lo as u64) | ((hi as u64) << 32)
+                    }
+                    #[cfg(target_endian = "big")]
+                    {
+                        (hi as u64) | ((lo as u64) << 32)
+                    }
+                }
                 combine_u32(self.0 .0.bitmask(), self.0 .1.bitmask())
             }
         }

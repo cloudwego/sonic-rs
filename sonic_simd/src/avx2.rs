@@ -1,6 +1,5 @@
 use std::{
     arch::x86_64::*,
-    mem::transmute,
     ops::{BitAnd, BitOr, BitOrAssign},
 };
 

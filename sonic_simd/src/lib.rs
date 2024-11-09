@@ -1,5 +1,5 @@
-#[allow(unused_imports)]
-#[allow(unused)]
+#![allow(non_camel_case_types)]
+
 pub mod bits;
 mod traits;
 
@@ -9,7 +9,7 @@ cfg_if::cfg_if! {
         mod sse2;
         use self::sse2::*;
     } else if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
-        pub(crate) mod neon;
+        pub mod neon;
         use self::neon::*;
     } else {
         // TODO: support wasm
@@ -35,12 +35,12 @@ pub use self::traits::{BitMask, Mask, Simd};
 mod v512;
 use self::v512::*;
 
-#[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
 pub type u8x16 = Simd128u;
-
 pub type u8x32 = Simd256u;
 pub type u8x64 = Simd512u;
 
+pub type i8x16 = Simd128i;
 pub type i8x32 = Simd256i;
+pub type i8x64 = Simd512i;
 
 pub type m8x32 = Mask256;

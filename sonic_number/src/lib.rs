@@ -1,3 +1,4 @@
+mod arch;
 mod common;
 mod decimal;
 mod float;
@@ -6,7 +7,7 @@ mod slow;
 mod table;
 
 use self::{common::BiasedFp, float::RawFloat, table::POWER_OF_FIVE_128};
-use crate::{error::ErrorCode, util::arch::simd_str2int};
+use crate::arch::simd_str2int;
 
 const FLOATING_LONGEST_DIGITS: usize = 17;
 const F64_BITS: u32 = 64;
@@ -16,12 +17,18 @@ const F64_EXP_BIAS: i32 = 1023;
 const F64_SIG_MASK: u64 = 0x000F_FFFF_FFFF_FFFF;
 
 #[derive(Debug)]
-pub(crate) enum ParserNumber {
+pub enum ParserNumber {
     Unsigned(u64),
     /// Always less than zero.
     Signed(i64),
     /// Always finite.
     Float(f64),
+}
+
+#[derive(Debug)]
+pub enum Error {
+    InvalidNumber,
+    FloatMustBeFinite,
 }
 
 macro_rules! match_digit {
@@ -45,18 +52,18 @@ macro_rules! digit {
 macro_rules! check_digit {
     ($data:expr, $i:expr) => {
         if !($i < $data.len() && $data[$i].is_ascii_digit()) {
-            return Err(ErrorCode::InvalidNumber);
+            return Err(Error::InvalidNumber);
         }
     };
 }
 
 #[inline(always)]
-fn parse_exponent(data: &[u8], index: &mut usize) -> Result<i32, ErrorCode> {
+fn parse_exponent(data: &[u8], index: &mut usize) -> Result<i32, Error> {
     let mut exponent: i32 = 0;
     let mut negative = false;
 
     if *index >= data.len() {
-        return Err(ErrorCode::InvalidNumber);
+        return Err(Error::InvalidNumber);
     }
 
     match data[*index] {
@@ -114,7 +121,7 @@ fn parse_number_fraction(
     exponent: &mut i32,
     mut need: isize,
     dot_pos: usize,
-) -> Result<bool, ErrorCode> {
+) -> Result<bool, Error> {
     debug_assert!(need < FLOATING_LONGEST_DIGITS as isize);
 
     // native implement:
@@ -152,11 +159,7 @@ fn parse_number_fraction(
 }
 
 #[inline(always)]
-pub(crate) fn parse_number(
-    data: &[u8],
-    index: &mut usize,
-    negative: bool,
-) -> Result<ParserNumber, ErrorCode> {
+pub fn parse_number(data: &[u8], index: &mut usize, negative: bool) -> Result<ParserNumber, Error> {
     let mut significant: u64 = 0;
     let mut exponent: i32 = 0;
     let mut trunc = false;
@@ -250,7 +253,7 @@ pub(crate) fn parse_number(
         }
         let mut digits_cnt = *index - digit_start;
         if digits_cnt == 0 {
-            return Err(ErrorCode::InvalidNumber);
+            return Err(Error::InvalidNumber);
         }
 
         // slow path for too long integer
@@ -331,7 +334,7 @@ fn parse_float(
     negative: bool,
     trunc: bool,
     raw_num: &[u8],
-) -> Result<ParserNumber, ErrorCode> {
+) -> Result<ParserNumber, Error> {
     // parse double fast
     if significant >> 52 == 0 && (-22..=(22 + 15)).contains(&exponent) {
         if let Some(mut float) = parse_float_fast(exponent, significant) {
@@ -375,7 +378,7 @@ fn parse_float(
 
     // check inf for float
     if float.is_infinite() {
-        return Err(ErrorCode::FloatMustBeFinite);
+        return Err(Error::FloatMustBeFinite);
     }
     Ok(ParserNumber::Float(float))
 }
@@ -469,8 +472,7 @@ const POW10_FLOAT: [f64; 23] = [
 
 #[cfg(test)]
 mod test {
-    use super::parse_number;
-    use crate::util::num::ParserNumber;
+    use crate::{parse_number, ParserNumber};
 
     fn test_parse_ok(input: &str, expect: f64) {
         assert_eq!(input.parse::<f64>().unwrap(), expect);

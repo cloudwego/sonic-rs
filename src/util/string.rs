@@ -5,17 +5,16 @@ use std::{
 };
 
 #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
-use crate::util::simd::u8x32;
+use sonic_simd::u8x32;
 #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
-use crate::util::simd::{bits::NeonBits, u8x16};
+use sonic_simd::{bits::NeonBits, u8x16};
+use sonic_simd::{BitMask, Mask, Simd};
+
 use crate::{
     error::ErrorCode::{
         self, ControlCharacterWhileParsingString, InvalidEscape, InvalidUnicodeCodePoint,
     },
-    util::{
-        simd::{BitMask, Mask, Simd},
-        unicode::handle_unicode_codepoint_mut,
-    },
+    util::unicode::handle_unicode_codepoint_mut,
 };
 
 #[inline(always)]

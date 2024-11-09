@@ -7,18 +7,22 @@ pub trait Simd: Sized {
     type Element;
     type Mask: Mask;
 
+    /// # Safety
     unsafe fn from_slice_unaligned_unchecked(slice: &[u8]) -> Self {
         debug_assert!(slice.len() >= Self::LANES);
         Self::loadu(slice.as_ptr())
     }
 
+    /// # Safety
     unsafe fn write_to_slice_unaligned_unchecked(&self, slice: &mut [u8]) {
         debug_assert!(slice.len() >= Self::LANES);
         self.storeu(slice.as_mut_ptr());
     }
 
+    /// # Safety
     unsafe fn loadu(ptr: *const u8) -> Self;
 
+    /// # Safety
     unsafe fn storeu(&self, ptr: *mut u8);
 
     fn eq(&self, rhs: &Self) -> Self::Mask;

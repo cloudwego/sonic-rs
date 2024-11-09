@@ -7,6 +7,7 @@ use serde::{
     de::{self, Expected, Unexpected},
     forward_to_deserialize_any,
 };
+use sonic_number::ParserNumber;
 
 use crate::{
     error::{
@@ -16,11 +17,9 @@ use crate::{
     },
     parser::{as_str, ParseStatus, ParsedSlice, Parser, Reference},
     reader::{Read, Reader},
-    util::num::ParserNumber,
     value::{node::Value, shared::Shared},
     JsonInput,
 };
-
 const MAX_ALLOWED_DEPTH: u8 = u8::MAX;
 
 //////////////////////////////////////////////////////////////////////////////
@@ -262,24 +261,22 @@ impl<'a, R> Drop for DepthGuard<'a, R> {
     }
 }
 
-impl ParserNumber {
-    fn visit<'de, V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: de::Visitor<'de>,
-    {
-        match self {
-            ParserNumber::Float(x) => visitor.visit_f64(x),
-            ParserNumber::Unsigned(x) => visitor.visit_u64(x),
-            ParserNumber::Signed(x) => visitor.visit_i64(x),
-        }
+fn visit_number<'de, V>(num: &ParserNumber, visitor: V) -> Result<V::Value>
+where
+    V: de::Visitor<'de>,
+{
+    match *num {
+        ParserNumber::Float(x) => visitor.visit_f64(x),
+        ParserNumber::Unsigned(x) => visitor.visit_u64(x),
+        ParserNumber::Signed(x) => visitor.visit_i64(x),
     }
+}
 
-    pub(crate) fn invalid_type(self, exp: &dyn Expected) -> Error {
-        match self {
-            ParserNumber::Float(x) => de::Error::invalid_type(Unexpected::Float(x), exp),
-            ParserNumber::Unsigned(x) => de::Error::invalid_type(Unexpected::Unsigned(x), exp),
-            ParserNumber::Signed(x) => de::Error::invalid_type(Unexpected::Signed(x), exp),
-        }
+pub(crate) fn invalid_type_number(num: &ParserNumber, exp: &dyn Expected) -> Error {
+    match *num {
+        ParserNumber::Float(x) => de::Error::invalid_type(Unexpected::Float(x), exp),
+        ParserNumber::Unsigned(x) => de::Error::invalid_type(Unexpected::Unsigned(x), exp),
+        ParserNumber::Signed(x) => de::Error::invalid_type(Unexpected::Signed(x), exp),
     }
 }
 
@@ -305,7 +302,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         };
 
         let value = match peek {
-            c @ b'-' | c @ b'0'..=b'9' => tri!(self.parser.parse_number(c)).visit(visitor),
+            c @ b'-' | c @ b'0'..=b'9' => visit_number(&tri!(self.parser.parse_number(c)), visitor),
             _ => Err(self.peek_invalid_type(peek, &visitor)),
         };
 
@@ -380,6 +377,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         if self.parser.read.index() == 0 {
             // will parse the JSON inplace
             let cfg = self.parser.cfg;
+            dbg!(cfg);
             let json = self.parser.read.as_u8_slice();
 
             // get n to check trailing characters in later
@@ -476,7 +474,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 tri!(self.parser.parse_literal("alse"));
                 visitor.visit_bool(false)
             }
-            c @ b'-' | c @ b'0'..=b'9' => tri!(self.parser.parse_number(c)).visit(visitor),
+            c @ b'-' | c @ b'0'..=b'9' => visit_number(&tri!(self.parser.parse_number(c)), visitor),
             b'"' => match tri!(self.parser.parse_str_impl(&mut self.scratch)) {
                 Reference::Borrowed(s) => visitor.visit_borrowed_str(s),
                 Reference::Copied(s) => visitor.visit_str(s),
