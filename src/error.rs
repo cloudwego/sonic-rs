@@ -12,6 +12,7 @@ use serde::{
     de::{self, Unexpected},
     ser,
 };
+use sonic_number::Error as NumberError;
 use thiserror::Error as ErrorTrait;
 
 use crate::reader::Position;
@@ -289,6 +290,15 @@ pub(crate) enum ErrorCode {
 
     #[error("Expected the key to be string/bool/number when serializing map, now is {0}")]
     SerExpectKeyIsStrOrNum(Unexpected<'static>),
+}
+
+impl From<NumberError> for ErrorCode {
+    fn from(err: NumberError) -> Self {
+        match err {
+            NumberError::InvalidNumber => ErrorCode::InvalidNumber,
+            NumberError::FloatMustBeFinite => ErrorCode::FloatMustBeFinite,
+        }
+    }
 }
 
 impl Error {

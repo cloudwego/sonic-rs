@@ -7,10 +7,11 @@ use std::{
 
 use faststr::FastStr;
 use serde::de::{self, Expected, Unexpected};
-
-use super::reader::Reader;
+use sonic_number::{parse_number, ParserNumber};
 #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
-use crate::util::simd::bits::NeonBits;
+use sonic_simd::bits::NeonBits;
+use sonic_simd::{i8x32, m8x32, u8x32, u8x64, Mask, Simd};
+
 use crate::{
     config::DeserializeCfg,
     error::{
@@ -23,10 +24,10 @@ use crate::{
         tree::{MultiIndex, MultiKey, PointerTreeInner, PointerTreeNode},
         PointerTree,
     },
+    reader::Reader,
+    serde::de::invalid_type_number,
     util::{
         arch::{get_nonspace_bits, prefix_xor},
-        num::{parse_number, ParserNumber},
-        simd::{i8x32, m8x32, u8x32, u8x64, Mask, Simd},
         string::*,
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
@@ -262,10 +263,7 @@ where
         let data = reader.as_u8_slice();
         let ret = parse_number(data, &mut now, neg);
         reader.set_index(now);
-        match ret {
-            Err(code) => perr!(self, code),
-            Ok(num) => Ok(num),
-        }
+        ret.map_err(|err| self.error(err.into()))
     }
 
     // TODO: optimize me, avoid clone twice.
@@ -333,6 +331,7 @@ where
                         .map_err(|e| self.error(e))?;
                     self.read.set_ptr(src);
                     let s = str_from_raw_parts(start, cnt);
+                    dbg!(&s);
                     check_visit!(self, vis.visit_raw_str(s, raw))
                 }
                 ParseStatus::None => {
@@ -528,10 +527,8 @@ where
             _ => return perr!(self, ExpectedObjectCommaOrEnd),
         }
 
-        let key = match self.parse_str_impl(strbuf)? {
-            Reference::Borrowed(s) => FastStr::new(s),
-            Reference::Copied(s) => FastStr::new(s),
-        };
+        let parsed = self.parse_str_impl(strbuf)?;
+        let key = FastStr::new(parsed.deref());
         self.parse_object_clo()?;
         let (raw, status) = if check {
             self.skip_one()
@@ -1492,9 +1489,10 @@ where
         // so, we should check the trailing chars is not the padding chars.
         let last = self.skip_space();
         let exceed = self.read.index() > self.read.as_u8_slice().len();
-        match last {
-            Some(_) if remain & !exceed => perr!(self, TrailingCharacters),
-            _ => Ok(()),
+        if last.is_some() && !exceed {
+            perr!(self, TrailingCharacters)
+        } else {
+            Ok(())
         }
     }
 
@@ -1850,10 +1848,8 @@ where
             }
 
             match self.skip_space() {
-                Some(b',') => match self.skip_space() {
-                    Some(b'"') => continue,
-                    _ => return perr!(self, ExpectObjectKeyOrEnd),
-                },
+                Some(b',') if self.skip_space() == Some(b'"') => continue,
+                Some(b',') => return perr!(self, ExpectObjectKeyOrEnd),
                 Some(b'}') => break,
                 Some(_) => return perr!(self, ExpectedObjectCommaOrEnd),
                 None => return perr!(self, EofWhileParsing),
@@ -2029,7 +2025,7 @@ where
                 de::Error::invalid_type(Unexpected::Bool(false), exp)
             }
             c @ b'-' | c @ b'0'..=b'9' => match self.parse_number(c) {
-                Ok(n) => n.invalid_type(exp),
+                Ok(n) => invalid_type_number(&n, exp),
                 Err(err) => return err,
             },
             b'"' => {
@@ -2045,6 +2041,7 @@ where
             // for correctness, we will parse the whole object or array.
             b'[' => {
                 self.read.backward(1);
+
                 match self.skip_one() {
                     Ok(_) => de::Error::invalid_type(Unexpected::Seq, exp),
                     Err(err) => return err,

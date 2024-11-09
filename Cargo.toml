@@ -15,15 +15,17 @@ version       = "0.3.15"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bumpalo   = "3.13"
-bytes     = "1.8"
-cfg-if    = "1.0"
-faststr   = { version = "0.2", features = ["serde"] }
-itoa      = "1.0"
-ryu       = "1.0"
-serde     = { version = "1.0", features = ["rc", "derive"] }
-simdutf8  = "0.1"
-thiserror = "2.0"
+bumpalo      = "3.13"
+bytes        = "1.8"
+cfg-if       = "1.0"
+faststr      = { version = "0.2", features = ["serde"] }
+itoa         = "1.0"
+ryu          = "1.0"
+serde        = { version = "1.0", features = ["rc", "derive"] }
+simdutf8     = "0.1"
+sonic_number = { path = "./sonic_number" }
+sonic_simd   = { path = "./sonic_simd" }
+thiserror    = "2.0"
 
 [dev-dependencies]
 bytes        = { version = "1.4", features = ["serde"] }

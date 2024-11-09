@@ -1,9 +1,8 @@
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
 
-use crate::{
-    error::make_error,
-    util::{num::ParserNumber, private::Sealed},
-};
+use sonic_number::ParserNumber;
+
+use crate::{error::make_error, util::private::Sealed};
 
 /// Represents a JSON number, whether integer or floating point.
 #[derive(Clone, PartialEq, Eq, Hash)]

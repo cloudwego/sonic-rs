@@ -68,22 +68,10 @@ pub unsafe fn get_nonspace_bits(data: &[u8; 64]) -> u64 {
         vtstq_u8(v, white_mask)
     }
 
-    !crate::util::simd::neon::to_bitmask64(
+    !sonic_simd::neon::to_bitmask64(
         chunk_nonspace_bits(vld1q_u8(data.as_ptr())),
         chunk_nonspace_bits(vld1q_u8(data.as_ptr().offset(16))),
         chunk_nonspace_bits(vld1q_u8(data.as_ptr().offset(32))),
         chunk_nonspace_bits(vld1q_u8(data.as_ptr().offset(48))),
     )
-}
-
-#[inline(always)]
-pub unsafe fn simd_str2int(c: &[u8], need: usize) -> (u64, usize) {
-    debug_assert!(need < 17);
-    let mut sum = 0u64;
-    let mut i = 0;
-    while i < need && c.get_unchecked(i).is_ascii_digit() {
-        sum = (c.get_unchecked(i) - b'0') as u64 + sum * 10;
-        i += 1;
-    }
-    (sum, i)
 }
