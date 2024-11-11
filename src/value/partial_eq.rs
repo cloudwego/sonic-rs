@@ -18,7 +18,9 @@ impl PartialEq for Value {
             ValueRefInner::Number(_) | ValueRefInner::RawNum(_) => {
                 other.as_number() == self.as_number()
             }
-            ValueRefInner::Str(a) => other.as_str().map_or(false, |b| a == b),
+            ValueRefInner::Str(a) | ValueRefInner::RawStr(UnpackedRawStr { raw: _, str: a }) => {
+                other.as_str().map_or(false, |b| a == b)
+            }
             ValueRefInner::Array(_) | ValueRefInner::EmptyArray => {
                 other.as_value_slice() == self.as_value_slice()
             }
@@ -220,7 +222,7 @@ impl_slice_eq!([], Vec<U>);
 
 //////////////////////////////////////////////////////////////////////////////
 
-use super::{array::Array, object::Object};
+use super::{array::Array, node::UnpackedRawStr, object::Object};
 
 macro_rules! impl_container_eq {
     ($($ty:ty)*) => {

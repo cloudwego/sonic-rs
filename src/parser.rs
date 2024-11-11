@@ -285,8 +285,8 @@ where
                 let end = self.read.index();
                 let raw = as_str(&self.read.as_u8_slice()[start - 1..end]);
                 let alloc = vis.allocator().unwrap();
-                let raw = RawStr::new_in(alloc, raw);
                 let s = &*(alloc.alloc_str(s) as *mut str);
+                let raw = RawStr::new_in(alloc, raw);
                 check_visit!(self, vis.visit_raw_str(s, raw))
             },
         }
@@ -331,7 +331,6 @@ where
                         .map_err(|e| self.error(e))?;
                     self.read.set_ptr(src);
                     let s = str_from_raw_parts(start, cnt);
-                    dbg!(&s);
                     check_visit!(self, vis.visit_raw_str(s, raw))
                 }
                 ParseStatus::None => {
