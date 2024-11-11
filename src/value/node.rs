@@ -165,7 +165,7 @@ impl<'a> RawStr<'a> {
         let data_size = raw.len();
         let hdr_size = size_of::<RawStrHeader>();
         // aligned to hder, make sure tagged pointer in Meta
-        let align = align_of::<RawStrHeader>();
+        let align = std::mem::align_of::<RawStrHeader>();
         let layout = Layout::from_size_align(hdr_size + data_size, align).unwrap();
         let hdr = alloc.alloc_layout(layout).as_ptr() as *mut RawStrHeader;
         hdr.write(RawStrHeader {
