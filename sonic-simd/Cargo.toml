@@ -2,6 +2,7 @@
 authors       = ["Volo Team <volo@cloudwego.io>"]
 edition       = "2021"
 license       = "Apache-2.0"
+description   = "Portable SIMD API for sonic-rs"
 name          = "sonic-simd"
 repository    = "https://github.com/cloudwego/sonic-rs"
 version       = "0.1.0"
