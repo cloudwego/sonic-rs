@@ -1,7 +1,0 @@
-[package]
-edition = "2021"
-name    = "sonic_number"
-version = "0.1.0"
-
-[dependencies]
-cfg-if = "1.0"
