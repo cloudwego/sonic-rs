@@ -1,12 +1,8 @@
 [package]
 authors       = ["Volo Team <volo@cloudwego.io>"]
-documentation = "https://docs.rs/sonic-rs"
 edition       = "2021"
-exclude       = ["benchmarks", "assets"]
-keywords      = ["json", "simd", "serde", "serialization"]
 license       = "Apache-2.0"
 name          = "sonic-number"
-readme        = "README.md"
 repository    = "https://github.com/cloudwego/sonic-rs"
 version       = "0.1.0"
 
