@@ -377,7 +377,6 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         if self.parser.read.index() == 0 {
             // will parse the JSON inplace
             let cfg = self.parser.cfg;
-            dbg!(cfg);
             let json = self.parser.read.as_u8_slice();
 
             // get n to check trailing characters in later
