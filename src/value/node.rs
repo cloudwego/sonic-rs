@@ -12,6 +12,7 @@ use std::{
 
 use bumpalo::Bump;
 use faststr::FastStr;
+use ref_cast::RefCast;
 use serde::{
     ser::{Serialize, SerializeMap, SerializeSeq, SerializeStruct},
     Serializer,
@@ -829,7 +830,7 @@ impl JsonContainerTrait for Value {
     #[inline]
     fn as_array(&self) -> Option<&Self::ArrayType> {
         if self.is_array() {
-            Some(unsafe { transmute::<&Self, &Self::ArrayType>(self) })
+            Some(Self::ArrayType::ref_cast(self))
         } else {
             None
         }
@@ -838,7 +839,7 @@ impl JsonContainerTrait for Value {
     #[inline]
     fn as_object(&self) -> Option<&Self::ObjectType> {
         if self.is_object() {
-            Some(unsafe { transmute::<&Self, &Self::ObjectType>(self) })
+            Some(Self::ObjectType::ref_cast(self))
         } else {
             None
         }
@@ -854,7 +855,7 @@ impl JsonValueMutTrait for Value {
     fn as_object_mut(&mut self) -> Option<&mut Self::ObjectType> {
         if self.is_object() {
             self.to_mut();
-            Some(unsafe { transmute::<&mut Self, &mut Self::ObjectType>(self) })
+            Some(Self::ObjectType::ref_cast_mut(self))
         } else {
             None
         }
@@ -864,7 +865,7 @@ impl JsonValueMutTrait for Value {
     fn as_array_mut(&mut self) -> Option<&mut Self::ArrayType> {
         if self.is_array() {
             self.to_mut();
-            Some(unsafe { transmute::<&mut Self, &mut Self::ArrayType>(self) })
+            Some(Self::ArrayType::ref_cast_mut(self))
         } else {
             None
         }

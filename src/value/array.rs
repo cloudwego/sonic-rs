@@ -6,6 +6,8 @@ use std::{
     slice::{from_raw_parts, from_raw_parts_mut},
 };
 
+use ref_cast::RefCast;
+
 use super::node::ValueMut;
 use crate::{
     serde::tri,
@@ -30,7 +32,7 @@ use crate::{
 /// let j = sonic_rs::json!([1, 2, 3]);
 /// assert_eq!(j.as_array().unwrap()[0], 1);
 /// ```
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, RefCast)]
 #[repr(transparent)]
 pub struct Array(pub(crate) Value);
 
