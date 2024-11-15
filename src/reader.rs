@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ptr::NonNull};
+use std::{marker::PhantomData, pin::Pin, ptr::NonNull};
 
 use crate::{
     error::invalid_utf8,
@@ -96,8 +96,8 @@ pub trait Reader<'de>: Sealed {
 /// ```
 pub struct Read<'a> {
     // pin the input JSON, because `slice` will reference it
-    input: Box<JsonSlice<'a>>,
-    slice: &'a [u8],
+    input: Pin<Box<JsonSlice<'a>>>,
+    slice: NonNull<[u8]>,
     pub(crate) index: usize,
     // next invalid utf8 position, if not found, will be usize::MAX
     next_invalid_utf8: usize,
@@ -115,14 +115,18 @@ impl<'a> Read<'a> {
     }
 
     pub(crate) fn new_in<I: JsonInput<'a>>(input: I, need_validate: bool) -> Self {
-        let input = Box::new(input.to_json_slice());
+        let input = Pin::new(Box::new(input.to_json_slice()));
         // #safety: we pinned the input json
-        let slice = unsafe { &*((*input).as_ref() as *const [u8]) };
+
+        let slice = input.as_ref().get_ref().as_ref();
+
         // validate the utf-8 at first for slice
-        let next_invalid_utf8 = match from_utf8(slice) {
-            Err(e) if need_validate => e.offset(),
-            _ => usize::MAX,
-        };
+        let next_invalid_utf8 = need_validate
+            .then(|| from_utf8(slice).err().map(|e| e.offset()))
+            .flatten()
+            .unwrap_or(usize::MAX);
+
+        let slice = NonNull::from(slice);
 
         Self {
             input,
@@ -131,12 +135,17 @@ impl<'a> Read<'a> {
             next_invalid_utf8,
         }
     }
+
+    #[inline(always)]
+    fn slice(&self) -> &'a [u8] {
+        unsafe { self.slice.as_ref() }
+    }
 }
 
 impl<'a> Reader<'a> for Read<'a> {
     #[inline(always)]
     fn remain(&self) -> usize {
-        self.slice.len() - self.index
+        self.slice().len() - self.index
     }
 
     #[inline(always)]
@@ -147,8 +156,8 @@ impl<'a> Reader<'a> for Read<'a> {
     #[inline(always)]
     fn peek_n(&mut self, n: usize) -> Option<&'a [u8]> {
         let end = self.index + n;
-        (end <= self.slice.len()).then(|| {
-            let ptr = self.slice[self.index..].as_ptr();
+        (end <= self.slice().len()).then(|| {
+            let ptr = self.slice()[self.index..].as_ptr();
             unsafe { std::slice::from_raw_parts(ptr, n) }
         })
     }
@@ -160,8 +169,8 @@ impl<'a> Reader<'a> for Read<'a> {
 
     #[inline(always)]
     fn peek(&mut self) -> Option<u8> {
-        if self.index < self.slice.len() {
-            Some(self.slice[self.index])
+        if self.index < self.slice().len() {
+            Some(self.slice()[self.index])
         } else {
             None
         }
@@ -169,14 +178,14 @@ impl<'a> Reader<'a> for Read<'a> {
 
     #[inline(always)]
     fn at(&self, index: usize) -> u8 {
-        self.slice[index]
+        self.slice()[index]
     }
 
     #[inline(always)]
     fn next_n(&mut self, n: usize) -> Option<&'a [u8]> {
         let new_index = self.index + n;
-        if new_index <= self.slice.len() {
-            let ret = &self.slice[self.index..new_index];
+        if new_index <= self.slice().len() {
+            let ret = &self.slice()[self.index..new_index];
             self.index = new_index;
             Some(ret)
         } else {
@@ -211,12 +220,12 @@ impl<'a> Reader<'a> for Read<'a> {
 
     #[inline(always)]
     fn slice_unchecked(&self, start: usize, end: usize) -> &'a [u8] {
-        &self.slice[start..end]
+        &self.slice()[start..end]
     }
 
     #[inline(always)]
     fn as_u8_slice(&self) -> &'a [u8] {
-        self.slice
+        self.slice()
     }
 
     #[inline(always)]
@@ -224,12 +233,12 @@ impl<'a> Reader<'a> for Read<'a> {
         if self.next_invalid_utf8 == usize::MAX {
             Ok(())
         } else {
-            Err(invalid_utf8(self.slice, self.next_invalid_utf8))
+            Err(invalid_utf8(self.slice(), self.next_invalid_utf8))
         }
     }
 
     fn check_invalid_utf8(&mut self) {
-        self.next_invalid_utf8 = match from_utf8(&self.slice[self.index..]) {
+        self.next_invalid_utf8 = match from_utf8(&self.slice()[self.index..]) {
             Ok(_) => usize::MAX,
             Err(e) => self.index + e.offset(),
         };
