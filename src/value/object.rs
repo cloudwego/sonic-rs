@@ -1,6 +1,8 @@
 //! Represents a parsed JSON object.
 use std::{iter::FusedIterator, marker::PhantomData, slice};
 
+use ref_cast::RefCast;
+
 use super::{node::ValueMut, value_trait::JsonValueTrait};
 use crate::{serde::tri, util::reborrow::DormantMutRef, value::node::Value};
 
@@ -34,7 +36,7 @@ use crate::{serde::tri, util::reborrow::DormantMutRef, value::node::Value};
 /// ```
 /// If you care about that, recommend to use `HashMap` or `BTreeMap` instead. The parse performance
 /// is slower than `Object`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, RefCast)]
 #[repr(transparent)]
 pub struct Object(pub(crate) Value);
 

@@ -1,11 +1,11 @@
 [package]
-authors       = ["Volo Team <volo@cloudwego.io>"]
-edition       = "2021"
-license       = "Apache-2.0"
-name          = "sonic-number"
-description   = "Fast number parsing based on SIMD"
-repository    = "https://github.com/cloudwego/sonic-rs"
-version       = "0.1.0"
+authors     = ["Volo Team <volo@cloudwego.io>"]
+description = "Fast number parsing based on SIMD"
+edition     = "2021"
+license     = "Apache-2.0"
+name        = "sonic-number"
+repository  = "https://github.com/cloudwego/sonic-rs"
+version     = "0.1.0"
 
 
 [dependencies]
