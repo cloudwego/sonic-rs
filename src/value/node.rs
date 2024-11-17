@@ -120,7 +120,7 @@ pub(crate) union Data {
     pub(crate) obj_own: ManuallyDrop<Box<Vec<Pair>>>,
     pub(crate) arr_own: ManuallyDrop<Box<Vec<Value>>>,
 
-    pub(crate) parent: u64,
+    pub(crate) parent: *mut Value,
 }
 
 /// inlined string, avoid boxed allocation
@@ -719,13 +719,8 @@ impl Display for Value {
 }
 
 impl Debug for Data {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        unsafe {
-            match self.parent {
-                0 => write!(f, "parent: null"),
-                _ => write!(f, "parent: {}", self.parent),
-            }
-        }
+    fn fmt(&self, _f: &mut Formatter<'_>) -> std::fmt::Result {
+        Ok(())
     }
 }
 
@@ -1430,9 +1425,11 @@ impl Value {
 // a simple wrapper for visitor
 pub(crate) struct DocumentVisitor<'a> {
     pub(crate) shared: &'a mut Shared,
-    pub(crate) buf: TlsBuf,
-    pub(crate) parent: usize,
-    pub(crate) nodes_start: usize,
+    pub(crate) _buf: TlsBuf,
+    pub(crate) value_ptr: *mut Value,
+    pub(crate) value_end: *mut Value,
+    pub(crate) parent: *mut Value,
+    pub(crate) nodes_start: *mut Value,
     pub(crate) root: NonNull<Value>,
 }
 
@@ -1443,22 +1440,43 @@ impl<'a> DocumentVisitor<'a> {
         // half of the valid json length + 2. like as [1,2,3,1,2,3...]
         // if the capacity is not enough, we will return a error.
         let max_len = (json_len / 2) + 2;
-        let buf = TlsBuf::with_capacity(max_len);
+        let mut buf = TlsBuf::with_capacity(max_len);
+        let value_ptr = buf.as_vec_mut().as_mut_ptr() as *mut Value;
+        let value_end = unsafe { value_ptr.add(max_len) };
+        let parent = value_ptr;
         DocumentVisitor {
             shared,
-            buf,
-            parent: 0,
-            nodes_start: 0,
+            _buf: buf,
+            value_ptr,
+            value_end,
+            parent,
+            nodes_start: value_ptr,
             root: NonNull::dangling(),
         }
     }
 
-    fn nodes(&mut self) -> &mut Vec<ManuallyDrop<Value>> {
-        unsafe { NonNull::new_unchecked(self.buf.as_vec_mut() as *mut _).as_mut() }
+    fn nodes(&mut self) -> Option<*mut Value> {
+        if self.value_ptr != self.value_end {
+            unsafe {
+                let ret = Some(self.value_ptr);
+                self.value_ptr = self.value_ptr.add(1);
+                ret
+            }
+        } else {
+            None
+        }
     }
 
     fn index(&mut self) -> usize {
-        self.nodes().len() - self.parent
+        unsafe { self.value_ptr.offset_from(self.parent) as usize }
+    }
+
+    fn current(&mut self) -> *mut Value {
+        unsafe { self.value_ptr.sub(1) }
+    }
+
+    fn parent(&mut self) -> &Value {
+        unsafe { &*self.parent }
     }
 }
 
@@ -1484,23 +1502,23 @@ impl<'a> DocumentVisitor<'a> {
         let ret = self.push_node(Value {
             meta: Meta::pack_dom_node(kind, 0, 0), // update when array ending
             data: Data {
-                parent: self.parent as u64, // record the old parent offset
+                parent: self.parent, // record the old parent offset
             },
         });
-        let len = self.nodes().len();
-        self.parent = len - 1;
+        self.parent = self.current();
         ret
     }
 
     // the array and object's logic is same.
     fn visit_container_end(&mut self, kind: u64, len: usize) -> bool {
+        let index = self.index() as usize;
         let vis = self;
         let parent = vis.parent;
-        let old = unsafe { vis.nodes()[parent].data.parent as usize };
+        let old = unsafe { vis.parent().data.parent };
 
         vis.parent = old;
         if len == 0 {
-            let container = &mut vis.nodes()[parent];
+            let container = unsafe { &mut *parent };
             container.meta = Meta::new(if kind == Meta::OBJ_NODE {
                 Meta::EMPTY_OBJ
             } else {
@@ -1510,14 +1528,13 @@ impl<'a> DocumentVisitor<'a> {
         }
         unsafe {
             // not use `len` in here
-            let visited_children = &vis.nodes()[(parent + 1)..];
+            let visited_children = std::slice::from_raw_parts_mut(parent.add(1), index);
             let real_count = visited_children.len() + Value::HEAD_NODE_COUNT;
             let layout = Layout::array::<Value>(real_count).unwrap();
-            let hdr =
-                vis.shared.get_alloc().alloc_layout(layout).as_ptr() as *mut ManuallyDrop<Value>;
+            let hdr = vis.shared.get_alloc().alloc_layout(layout).as_ptr() as *mut Value;
 
             // copy visited nodes into document
-            let visited_children = &vis.nodes()[(parent + 1)..];
+            let visited_children = std::slice::from_raw_parts_mut(parent.add(1), index);
             let src = visited_children.as_ptr();
             let elems = hdr.add(Value::HEAD_NODE_COUNT);
             std::ptr::copy_nonoverlapping(src, elems, visited_children.len());
@@ -1527,12 +1544,12 @@ impl<'a> DocumentVisitor<'a> {
             meta.shared = vis.shared as *const _;
 
             // update the container header
-            let idx = (parent - vis.parent) as u32;
-            let container = &mut vis.nodes()[parent];
+            let idx = parent.offset_from(vis.parent) as u32;
+            let container = &mut *parent;
             container.meta = Meta::pack_dom_node(kind, idx, len as u32);
             container.data.arr_elems = NonNull::new_unchecked(elems as *mut _);
             // must reset the length, because we copy the children into bumps
-            vis.nodes().set_len(parent + 1);
+            vis.value_ptr = parent.add(1);
         }
         true
     }
@@ -1540,7 +1557,7 @@ impl<'a> DocumentVisitor<'a> {
     fn visit_root(&mut self) {
         // should alloc root node in the bump allocator
         let start = self.nodes_start;
-        let (rm, ru) = unsafe { (self.nodes()[start].meta, self.nodes()[start].data.uval) };
+        let (rm, ru) = unsafe { ((*start).meta, (*start).data.uval) };
         let ptr = self.shared as *const _;
         let (_, root) = self
             .shared
@@ -1555,24 +1572,23 @@ impl<'a> DocumentVisitor<'a> {
 
     #[inline(always)]
     fn push_node(&mut self, node: Value) -> bool {
-        if self.nodes().len() == self.nodes().capacity() {
-            false
-        } else {
-            self.nodes().push(ManuallyDrop::new(node));
-            true
-        }
+        self.nodes()
+            .map(|p| unsafe {
+                p.write(node);
+                true
+            })
+            .unwrap_or(false)
     }
 
     #[inline(always)]
     fn push_meta(&mut self, node: MetaNode) -> bool {
-        if self.nodes().len() == self.nodes().capacity() {
-            false
-        } else {
-            self.nodes().push(ManuallyDrop::new(unsafe {
-                transmute::<MetaNode, Value>(node)
-            }));
-            true
-        }
+        self.nodes()
+            .map(|p| unsafe {
+                let p = p as *mut MetaNode;
+                p.write(node);
+                true
+            })
+            .unwrap_or(false)
     }
 }
 
@@ -1581,8 +1597,7 @@ impl<'de, 'a> JsonVisitor<'de> for DocumentVisitor<'a> {
     fn visit_dom_start(&mut self) -> bool {
         let shared = self.shared as *mut _ as *const _;
         self.push_meta(MetaNode::new(shared));
-        self.nodes_start = self.nodes().len();
-        assert_eq!(self.nodes().len(), 1);
+        self.nodes_start = self.value_ptr;
         true
     }
 
