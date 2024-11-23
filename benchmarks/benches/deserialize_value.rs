@@ -189,7 +189,16 @@ bench_file!(book);
 bench_file!(canada);
 bench_file!(citm_catalog);
 bench_file!(twitter);
+bench_file!(twitter_compact);
 bench_file!(github_events);
 
-criterion_group!(benches, canada, citm_catalog, twitter, github_events, book);
+criterion_group!(
+    benches,
+    canada,
+    citm_catalog,
+    twitter,
+    twitter_compact,
+    github_events,
+    book
+);
 criterion_main!(benches);
