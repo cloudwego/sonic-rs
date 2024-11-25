@@ -14,12 +14,12 @@ impl PartialEq for Value {
         }
         match self.as_ref2() {
             ValueRefInner::Null => other.is_null(),
-            ValueRefInner::Bool(a) => other.as_bool().map_or(false, |b| a == b),
+            ValueRefInner::Bool(a) => other.as_bool() == Some(a),
             ValueRefInner::Number(_) | ValueRefInner::RawNum(_) => {
                 other.as_number() == self.as_number()
             }
             ValueRefInner::Str(a) | ValueRefInner::RawStr(UnpackedRawStr { raw: _, str: a }) => {
-                other.as_str().map_or(false, |b| a == b)
+                other.as_str() == Some(a)
             }
             ValueRefInner::Array(_) | ValueRefInner::EmptyArray => {
                 other.as_value_slice() == self.as_value_slice()
@@ -92,27 +92,27 @@ impl PartialEq<Value> for &str {
 
 #[inline]
 fn eq_i64(value: &Value, other: i64) -> bool {
-    value.as_i64().map_or(false, |i| i == other)
+    value.as_i64() == Some(other)
 }
 
 #[inline]
 fn eq_u64(value: &Value, other: u64) -> bool {
-    value.as_u64().map_or(false, |i| i == other)
+    value.as_u64() == Some(other)
 }
 
 #[inline]
 fn eq_f64(value: &Value, other: f64) -> bool {
-    value.as_f64().map_or(false, |i| i == other)
+    value.as_f64() == Some(other)
 }
 
 #[inline]
 fn eq_bool(value: &Value, other: bool) -> bool {
-    value.as_bool().map_or(false, |i| i == other)
+    value.as_bool() == Some(other)
 }
 
 #[inline]
 fn eq_str(value: &Value, other: &str) -> bool {
-    value.as_str().map_or(false, |i| i == other)
+    value.as_str() == Some(other)
 }
 
 macro_rules! impl_numeric_eq {

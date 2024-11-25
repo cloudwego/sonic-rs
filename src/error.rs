@@ -456,10 +456,7 @@ pub fn make_error(mut msg: String) -> Error {
 }
 
 fn parse_line_col(msg: &mut String) -> Option<(usize, usize)> {
-    let start_of_suffix = match msg.rfind(" at line ") {
-        Some(index) => index,
-        None => return None,
-    };
+    let start_of_suffix = msg.rfind(" at line ")?;
 
     // Find start and end of line number.
     let start_of_line = start_of_suffix + " at line ".len();
