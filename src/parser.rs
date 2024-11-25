@@ -1,16 +1,11 @@
-use std::{
-    num::NonZeroU8,
-    ops::Deref,
-    slice::{from_raw_parts, from_raw_parts_mut},
-    str::from_utf8_unchecked,
-};
-
 use faststr::FastStr;
 use serde::de::{self, Expected, Unexpected};
 use sonic_number::{parse_number, ParserNumber};
 #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
 use sonic_simd::bits::NeonBits;
 use sonic_simd::{i8x32, m8x32, u8x32, u8x64, Mask, Simd};
+use std::slice::from_raw_parts_mut;
+use std::{num::NonZeroU8, ops::Deref, slice::from_raw_parts, str::from_utf8_unchecked};
 
 use crate::{
     config::DeserializeCfg,
@@ -189,6 +184,8 @@ pub(crate) struct Parser<R> {
     error_index: usize,   // mark the error position
     nospace_bits: u64,    // SIMD marked nospace bitmap
     nospace_start: isize, // the start position of nospace_bits
+    str_start: *mut u8,
+    str_quote: u64,
     pub(crate) cfg: DeserializeCfg,
 }
 
@@ -209,6 +206,8 @@ where
             error_index: usize::MAX,
             nospace_bits: 0,
             nospace_start: -128,
+            str_start: std::ptr::null_mut(),
+            str_quote: 0,
             cfg: DeserializeCfg::default(),
         }
     }
@@ -304,39 +303,47 @@ where
 
     #[inline(always)]
     fn parse_string_inplace<V: JsonVisitor<'de>>(&mut self, vis: &mut V) -> Result<()> {
-        if !self.cfg.use_raw {
-            unsafe {
-                let mut src = self.read.cur_ptr();
-                let start = self.read.cur_ptr();
-                let cnt = parse_string_inplace(&mut src, self.cfg.utf8_lossy)
-                    .map_err(|e| self.error(e))?;
-                self.read.set_ptr(src);
-                let slice = from_raw_parts(start, cnt);
-                let s = from_utf8_unchecked(slice);
-                return check_visit!(self, vis.visit_borrowed_str(s));
-            }
-        }
-
         unsafe {
-            let start_idx = self.read.index();
             let mut src = self.read.cur_ptr();
             let start = self.read.cur_ptr();
-            match self.skip_string_unchecked()? {
-                ParseStatus::HasEscaped => {
-                    let end = self.check_string_eof_inpadding()?;
-                    let raw = as_str(&self.read.as_u8_slice()[start_idx - 1..end]);
-                    let alloc = vis.allocator().unwrap();
-                    let raw = RawStr::new_in(alloc, raw);
-                    let cnt = parse_string_inplace(&mut src, self.cfg.utf8_lossy)
-                        .map_err(|e| self.error(e))?;
-                    self.read.set_ptr(src);
-                    let s = str_from_raw_parts(start, cnt);
-                    check_visit!(self, vis.visit_raw_str(s, raw))
-                }
-                ParseStatus::None => {
-                    let end = self.check_string_eof_inpadding()?;
-                    let s = as_str(&self.read.as_u8_slice()[start_idx..end - 1]);
-                    check_visit!(self, vis.visit_borrowed_str(s))
+            if self.str_quote != 0 {
+                let ptr = self.str_start.add(self.str_quote.trailing_zeros() as usize);
+                self.read.set_ptr(ptr.add(1));
+                let len = ptr.offset_from(start) as usize;
+                let s = str_from_raw_parts(start, len);
+                self.str_quote &= self.str_quote.wrapping_sub(1);
+                self.str_quote &= self.str_quote.wrapping_sub(1);
+                return check_visit!(self, vis.visit_borrowed_str(s));
+            } else if !self.cfg.use_raw {
+                let block = parse_string_inplace(&mut src, self.cfg.utf8_lossy)
+                    .map_err(|e| self.error(e))?;
+                self.read.set_ptr(src);
+                let slice = from_raw_parts(start, block.len);
+                let s = from_utf8_unchecked(slice);
+                self.str_start = block.start as *mut u8;
+                self.str_quote = block.quote;
+                return check_visit!(self, vis.visit_borrowed_str(s));
+            } else {
+                let start_idx = self.read.index();
+                let mut src = self.read.cur_ptr();
+                let start = self.read.cur_ptr();
+                match self.skip_string_unchecked()? {
+                    ParseStatus::HasEscaped => {
+                        let end = self.check_string_eof_inpadding()?;
+                        let raw = as_str(&self.read.as_u8_slice()[start_idx - 1..end]);
+                        let alloc = vis.allocator().unwrap();
+                        let raw = RawStr::new_in(alloc, raw);
+                        let block = parse_string_inplace(&mut src, self.cfg.utf8_lossy)
+                            .map_err(|e| self.error(e))?;
+                        self.read.set_ptr(src);
+                        let s = str_from_raw_parts(start, block.len);
+                        check_visit!(self, vis.visit_raw_str(s, raw))
+                    }
+                    ParseStatus::None => {
+                        let end = self.check_string_eof_inpadding()?;
+                        let s = as_str(&self.read.as_u8_slice()[start_idx..end - 1]);
+                        check_visit!(self, vis.visit_borrowed_str(s))
+                    }
                 }
             }
         }
@@ -787,7 +794,7 @@ where
         #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
         let mut block: StringBlock<NeonBits>;
         #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
-        let mut block: StringBlock<u32>;
+        let mut block: StringBlock<u64>;
 
         self.parse_escaped_char(buf)?;
 
@@ -861,7 +868,7 @@ where
         #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
         let mut block: StringBlock<NeonBits>;
         #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
-        let mut block: StringBlock<u32>;
+        let mut block: StringBlock<u64>;
 
         while let Some(chunk) = self.read.peek_n(StringBlock::LANES) {
             let v = unsafe { load(chunk.as_ptr()) };

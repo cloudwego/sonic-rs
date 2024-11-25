@@ -49,6 +49,11 @@ impl Simd for Simd128i {
     fn gt(&self, rhs: &Self) -> Self::Mask {
         unsafe { Mask128(_mm_cmpgt_epi8(self.0, rhs.0)) }
     }
+
+    #[inline(always)]
+    fn element_from(b: u8) -> Self::Element {
+        b as Self::Element
+    }
 }
 
 #[derive(Debug)]
@@ -134,5 +139,10 @@ impl Simd for Simd128u {
     #[inline(always)]
     fn gt(&self, _rhs: &Self) -> Self::Mask {
         todo!()
+    }
+
+    #[inline(always)]
+    fn element_from(b: u8) -> Self::Element {
+        b as Self::Element
     }
 }

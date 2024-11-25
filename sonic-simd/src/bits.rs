@@ -39,6 +39,11 @@ macro_rules! impl_bits {
                     debug_assert!(n <= Self::LEN);
                     *self & ((u64::MAX as $ty) >> n)
                 }
+
+                #[inline]
+                fn clear_lowest_bit(&self) -> Self {
+                    *self & ((*self).wrapping_sub(1))
+                }
             }
         )*
     };
@@ -98,5 +103,10 @@ impl BitMask for NeonBits {
     fn clear_high_bits(&self, n: usize) -> Self {
         debug_assert!(n <= Self::LEN);
         Self(self.0 & u64::MAX >> (n * 4))
+    }
+
+    #[inline]
+    fn clear_lowest_bit(&self) -> Self {
+        unimplemented!("maybe ineffient here")
     }
 }

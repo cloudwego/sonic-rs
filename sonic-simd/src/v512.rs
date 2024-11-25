@@ -121,6 +121,11 @@ impl Simd for Simd512u {
         let hi = self.0 .1.gt(&rhs.0 .1);
         Mask512((lo, hi))
     }
+
+    #[inline(always)]
+    fn element_from(b: u8) -> Self::Element {
+        b as Self::Element
+    }
 }
 
 impl Simd for Simd512i {
@@ -166,5 +171,10 @@ impl Simd for Simd512i {
         let lo = self.0 .0.gt(&rhs.0 .0);
         let hi = self.0 .1.gt(&rhs.0 .1);
         Mask512((lo, hi))
+    }
+
+    #[inline(always)]
+    fn element_from(b: u8) -> Self::Element {
+        b as Self::Element
     }
 }

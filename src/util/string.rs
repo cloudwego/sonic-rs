@@ -1,3 +1,4 @@
+use sonic_simd::u8x64;
 use std::{
     mem::MaybeUninit,
     slice::{from_raw_parts, from_raw_parts_mut},
@@ -35,42 +36,27 @@ pub const ESCAPED_TAB: [u8; 256] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-#[derive(Debug)]
-pub(crate) struct StringBlock<B: BitMask> {
-    pub(crate) bs_bits: B,
-    pub(crate) quote_bits: B,
-    pub(crate) unescaped_bits: B,
+pub(crate) struct StringBlock<S: Simd> {
+    pub(crate) bs_bits: <S::Mask as Mask>::BitMask,
+    pub(crate) quote_bits: <S::Mask as Mask>::BitMask,
+    pub(crate) unescaped_bits: <S::Mask as Mask>::BitMask,
 }
 
 #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
-impl StringBlock<u32> {
-    pub(crate) const LANES: usize = 32;
+impl<S: Simd> StringBlock<S> {
+    pub(crate) const LANES: usize = S::LANES;
 
     #[inline]
-    pub fn new(v: &u8x32) -> Self {
+    pub fn new(v: &S) -> Self {
         Self {
-            bs_bits: (v.eq(&u8x32::splat(b'\\'))).bitmask(),
-            quote_bits: (v.eq(&u8x32::splat(b'"'))).bitmask(),
-            unescaped_bits: (v.le(&u8x32::splat(0x1f))).bitmask(),
+            bs_bits: (v.eq(&S::splat(S::element_from(b'\\')))).bitmask(),
+            quote_bits: (v.eq(&S::splat(S::element_from(b'"')))).bitmask(),
+            unescaped_bits: (v.le(&S::splat(S::element_from(0x1f)))).bitmask(),
         }
     }
 }
 
-#[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
-impl StringBlock<NeonBits> {
-    pub(crate) const LANES: usize = 16;
-
-    #[inline]
-    pub fn new(v: &u8x16) -> Self {
-        Self {
-            bs_bits: (v.eq(&u8x16::splat(b'\\'))).bitmask(),
-            quote_bits: (v.eq(&u8x16::splat(b'"'))).bitmask(),
-            unescaped_bits: (v.le(&u8x16::splat(0x1f))).bitmask(),
-        }
-    }
-}
-
-impl<B: BitMask> StringBlock<B> {
+impl<S: Simd> StringBlock<S> {
     #[inline(always)]
     pub fn has_unescaped(&self) -> bool {
         self.unescaped_bits.before(&self.quote_bits)
@@ -108,6 +94,13 @@ pub(crate) unsafe fn load<V: Simd>(ptr: *const u8) -> V {
     V::from_slice_unaligned_unchecked(chunk)
 }
 
+#[derive(Debug)]
+pub struct StrBits {
+    pub start: *const u8,
+    pub quote: u64,
+    pub len: usize,
+}
+
 /// Return the size of the actual parsed string, `repr` means repr invalid UTF16 surrogate with
 /// `\uFFFD`
 /// TODO: fix me, there are repeat codes!!!
@@ -115,11 +108,11 @@ pub(crate) unsafe fn load<V: Simd>(ptr: *const u8) -> V {
 pub(crate) unsafe fn parse_string_inplace(
     src: &mut *mut u8,
     repr: bool,
-) -> std::result::Result<usize, ErrorCode> {
+) -> std::result::Result<StrBits, ErrorCode> {
     #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
     let mut block: StringBlock<NeonBits>;
     #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
-    let mut block: StringBlock<u32>;
+    let mut block: StringBlock<u8x64>;
 
     let sdst = *src;
     let src: &mut *const u8 = std::mem::transmute(src);
@@ -127,10 +120,19 @@ pub(crate) unsafe fn parse_string_inplace(
     // loop for string without escaped chars
     loop {
         block = StringBlock::new(&unsafe { load(*src) });
+        // string: xxx", 0"xx0"
+        // quote : 000100010001
+        // cc    : 000000100010
         if block.has_quote_first() {
             let idx = block.quote_index();
+            let start = *src;
             *src = src.add(idx + 1);
-            return Ok(src.offset_from(sdst) as usize - 1);
+            let len = src.offset_from(sdst) as usize - 1;
+            let mut quote = block.bs_bits.wrapping_sub(1) & block.quote_bits;
+            // remove current ending quote and the next start quotes
+            quote &= quote.wrapping_sub(1);
+            quote &= quote.wrapping_sub(1);
+            return Ok(StrBits { start, len, quote });
         }
         if block.has_unescaped() {
             return Err(ControlCharacterWhileParsingString);
@@ -173,13 +175,19 @@ pub(crate) unsafe fn parse_string_inplace(
             let v = unsafe { load(*src) };
             let block = StringBlock::new(&v);
             if block.has_quote_first() {
+                let start = *src;
+                // TODO: loop unrolling here
                 while **src != b'"' {
                     *dst = **src;
                     dst = dst.add(1);
                     *src = src.add(1);
                 }
                 *src = src.add(1); // skip ending quote
-                return Ok(dst.offset_from(sdst) as usize);
+                let len = dst.offset_from(sdst) as usize;
+                let mut quote = block.bs_bits.wrapping_sub(1) & block.quote_bits;
+                quote &= quote.wrapping_sub(1);
+                quote &= quote.wrapping_sub(1);
+                return Ok(StrBits { start, len, quote });
             }
             if block.has_unescaped() {
                 return Err(ControlCharacterWhileParsingString);

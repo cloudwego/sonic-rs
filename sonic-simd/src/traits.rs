@@ -29,6 +29,8 @@ pub trait Simd: Sized {
 
     fn splat(elem: Self::Element) -> Self;
 
+    fn element_from(b: u8) -> Self::Element;
+
     /// greater than
     fn gt(&self, rhs: &Self) -> Self::Mask;
 
@@ -65,4 +67,7 @@ pub trait BitMask {
 
     /// clear high n bits.
     fn clear_high_bits(&self, n: usize) -> Self;
+
+    /// clear lowest bit.
+    fn clear_lowest_bit(&self) -> Self;
 }
