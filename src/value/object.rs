@@ -435,6 +435,23 @@ impl Object {
         }
     }
 
+    /// Append the key-value pair to the object. Not check the key is exist or not.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sonic_rs::object;
+    ///
+    /// let mut a = object! {"a": null};
+    /// a.append_pair("b", 1);
+    ///
+    /// assert_eq!(a, object! {"a": null, "b": 1});
+    /// ```
+    #[inline]
+    pub fn append_pair<K: AsRef<str>, V: Into<Value>>(&mut self, key: K, value: V) {
+        let _ = self.0.append_pair((key.as_ref().into(), value.into()));
+    }
+
     /// Reserves capacity for at least additional more elements to be inserted in the given.
     ///
     /// # Examples

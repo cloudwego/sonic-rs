@@ -2,6 +2,10 @@
 //! various traits and methods imported if you need.
 
 pub use crate::{
+    index::Index,
+    input::JsonInput,
+    reader::Read,
     serde::JsonNumberTrait,
     value::{JsonContainerTrait, JsonValueMutTrait, JsonValueTrait},
+    writer::WriteExt,
 };
