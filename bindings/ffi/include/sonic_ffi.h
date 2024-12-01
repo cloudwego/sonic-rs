@@ -11,6 +11,9 @@
 
 #define SONIC_RS_SERIALIZE_PRETTY 1
 
+/**
+ * A string allocated in Rust, ending with `\0`. Used for serialize output and error message.
+ */
 typedef struct SonicCString {
   const void *buf;
   uintptr_t len;
@@ -50,4 +53,4 @@ void sonic_rs_drop_value(void *value);
 /**
  * # Safety
  */
-void sonic_rs_drop_string(void *buf, uint64_t len);
+void sonic_rs_drop_string(uint8_t *buf, uint64_t len);

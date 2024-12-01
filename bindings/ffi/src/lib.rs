@@ -133,7 +133,7 @@ pub unsafe extern "C" fn sonic_rs_drop_value(value: *mut c_void) {
 
 /// # Safety
 #[no_mangle]
-pub unsafe extern "C" fn sonic_rs_drop_string(buf: *mut c_void, len: u64) {
-    let s = Vec<u8>::from_raw_parts(buf as *mut u8, len, len);
-    std::mem::drop(s);
+pub unsafe extern "C" fn sonic_rs_drop_string(buf: *mut u8, len: u64) {
+    let buf = Vec::<u8>::from_raw_parts(buf, len as usize, len as usize);
+    std::mem::drop(buf);
 }
