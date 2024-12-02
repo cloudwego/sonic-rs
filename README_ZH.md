@@ -28,7 +28,7 @@ sonic-rs 是一个基于 SIMD 的高性能 JSON 库。它参考了其他开源�
 
 ## 如何使用 sonic-rs
 
-要确保在 sonic-rs 中使用 SIMD 指令，您需要添加 rustflags `-C target-cpu=native` 并在主机上进行编译。例如，Rust 标志可以在 Cargo [config](.cargo/config) 中配置。
+要确保在 sonic-rs 中使用 SIMD 指令，您需要添加 rustflags `-C target-cpu=native` 并在主机上进行编译。例如，Rust 标志可以在 Cargo [config](.cargo/config.toml) 中配置。
 
 在 Cargo 依赖中添加 sonic-rs:
 ```
