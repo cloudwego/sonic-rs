@@ -16,7 +16,7 @@ version       = "0.3.16"
 
 [dependencies]
 bumpalo      = "3.13"
-bytes        = "1.8"
+bytes        = "1.9"
 cfg-if       = "1.0"
 faststr      = { version = "0.2", features = ["serde"] }
 itoa         = "1.0"
