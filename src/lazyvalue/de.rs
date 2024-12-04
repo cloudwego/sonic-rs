@@ -4,6 +4,7 @@ use ::serde::{de, de::Visitor, Deserialize, Deserializer};
 use faststr::FastStr;
 
 use super::{owned::OwnedLazyValue, value::LazyValue};
+use crate::lazyvalue::value::HasEsc;
 
 impl<'de: 'a, 'a> Deserialize<'de> for LazyValue<'a> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -26,14 +27,14 @@ impl<'de: 'a, 'a> Deserialize<'de> for LazyValue<'a> {
             where
                 E: de::Error,
             {
-                LazyValue::new(FastStr::new(v).into(), true).map_err(de::Error::custom)
+                Ok(LazyValue::new(FastStr::new(v).into(), HasEsc::Yes))
             }
 
             fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                LazyValue::new(FastStr::new(v).into(), false).map_err(de::Error::custom)
+                Ok(LazyValue::new(FastStr::new(v).into(), HasEsc::None))
             }
         }
 
@@ -63,14 +64,14 @@ impl<'de> Deserialize<'de> for OwnedLazyValue {
             where
                 E: de::Error,
             {
-                OwnedLazyValue::new(FastStr::new(v).into(), true).map_err(de::Error::custom)
+                Ok(OwnedLazyValue::new(FastStr::new(v).into(), HasEsc::Yes))
             }
 
             fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                OwnedLazyValue::new(FastStr::new(v).into(), false).map_err(de::Error::custom)
+                Ok(OwnedLazyValue::new(FastStr::new(v).into(), HasEsc::None))
             }
         }
 

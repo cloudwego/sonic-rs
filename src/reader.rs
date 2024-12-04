@@ -1,8 +1,11 @@
 use std::{marker::PhantomData, pin::Pin, ptr::NonNull};
 
+use faststr::FastStr;
+
 use crate::{
     error::invalid_utf8,
     input::JsonSlice,
+    parser::as_str,
     util::{private::Sealed, utf8::from_utf8},
     JsonInput, Result,
 };
@@ -70,6 +73,36 @@ pub trait Reader<'de>: Sealed {
     fn slice_ref(&self, subset: &'de [u8]) -> JsonSlice<'de>;
 }
 
+enum PinnedInput<'a> {
+    FastStr(Pin<Box<FastStr>>),
+    Slice(&'a [u8]),
+}
+
+impl<'a> PinnedInput<'a> {
+    unsafe fn as_ptr(&self) -> NonNull<[u8]> {
+        match self {
+            Self::FastStr(f) => f.as_bytes().into(),
+            Self::Slice(slice) => (*slice).into(),
+        }
+    }
+
+    fn slice_ref(&self, subset: &'a [u8]) -> JsonSlice<'a> {
+        match self {
+            Self::FastStr(f) => JsonSlice::FastStr(f.slice_ref(as_str(subset))),
+            Self::Slice(_) => JsonSlice::Raw(subset),
+        }
+    }
+}
+
+impl<'a> From<JsonSlice<'a>> for PinnedInput<'a> {
+    fn from(input: JsonSlice<'a>) -> Self {
+        match input {
+            JsonSlice::Raw(slice) => Self::Slice(slice),
+            JsonSlice::FastStr(f) => Self::FastStr(Pin::new(Box::new(f))),
+        }
+    }
+}
+
 /// JSON input source that reads from a string/bytes-like JSON input.
 ///
 /// Support most common types: &str, &[u8], &FastStr, &Bytes and &String
@@ -96,7 +129,7 @@ pub trait Reader<'de>: Sealed {
 /// ```
 pub struct Read<'a> {
     // pin the input JSON, because `slice` will reference it
-    input: Pin<Box<JsonSlice<'a>>>,
+    input: PinnedInput<'a>,
     slice: NonNull<[u8]>,
     pub(crate) index: usize,
     // next invalid utf8 position, if not found, will be usize::MAX
@@ -107,26 +140,27 @@ impl<'a> Read<'a> {
     /// Make a `Read` from string/bytes-like JSON input.
     pub fn from<I: JsonInput<'a>>(input: I) -> Self {
         let need = input.need_utf8_valid();
-        Self::new_in(input, need)
+        Self::new_in(input.to_json_slice(), need)
     }
 
-    pub(crate) fn new(slice: &'a [u8], need_validate: bool) -> Self {
-        Self::new_in(slice, need_validate)
+    pub(crate) fn new(slice: &'a [u8], validate_utf8: bool) -> Self {
+        Self::new_in(slice.to_json_slice(), validate_utf8)
     }
 
-    pub(crate) fn new_in<I: JsonInput<'a>>(input: I, need_validate: bool) -> Self {
-        let input = Pin::new(Box::new(input.to_json_slice()));
+    pub(crate) fn new_in(input: JsonSlice<'a>, validate_utf8: bool) -> Self {
+        let input: PinnedInput<'a> = input.into();
         // #safety: we pinned the input json
-
-        let slice = input.as_ref().get_ref().as_ref();
+        let slice = unsafe { input.as_ptr() };
 
         // validate the utf-8 at first for slice
-        let next_invalid_utf8 = need_validate
-            .then(|| from_utf8(slice).err().map(|e| e.offset()))
+        let next_invalid_utf8 = validate_utf8
+            .then(|| {
+                from_utf8(unsafe { slice.as_ref() })
+                    .err()
+                    .map(|e| e.offset())
+            })
             .flatten()
             .unwrap_or(usize::MAX);
-
-        let slice = NonNull::from(slice);
 
         Self {
             input,

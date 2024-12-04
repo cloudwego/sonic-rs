@@ -1,17 +1,23 @@
 use std::{
     borrow::Cow,
-    fmt,
-    fmt::{Debug, Display},
+    fmt::{self, Debug, Display},
     hash::Hash,
     str::from_utf8_unchecked,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicPtr, Ordering},
+        Arc,
+    },
 };
 
 use faststr::FastStr;
 
 use crate::{
-    from_str, get_unchecked, index::Index, input::JsonSlice, serde::Number, JsonType,
-    JsonValueTrait, RawNumber, Result,
+    from_str, get_unchecked,
+    index::Index,
+    input::JsonSlice,
+    lazyvalue::iterator::{ArrayJsonIter, ObjectJsonIter},
+    serde::Number,
+    JsonType, JsonValueTrait, RawNumber,
 };
 
 /// LazyValue wrappers a unparsed raw JSON text. It is borrowed from the origin JSON text.
@@ -111,17 +117,100 @@ use crate::{
 ///      println!("checked {key} with {trans_value:?}");
 ///  }
 /// ```
+#[derive(Clone)]
 pub struct LazyValue<'a> {
     // the raw slice from origin json
     pub(crate) raw: JsonSlice<'a>,
-    pub(crate) unescape: Option<Arc<str>>,
+    pub(crate) inner: Inner,
+}
+
+pub(crate) struct Inner {
+    pub(crate) status: HasEsc,
+    pub(crate) unescaped: AtomicPtr<()>,
+}
+
+impl Inner {
+    pub(crate) fn no_escaped(&self) -> bool {
+        self.status == HasEsc::None
+    }
+
+    pub(crate) fn parse_from(&self, raw: &[u8]) -> Option<&str> {
+        let ptr = self.unescaped.load(Ordering::Acquire);
+        if !ptr.is_null() {
+            return Some(unsafe { &*(ptr as *const String) });
+        }
+
+        unsafe {
+            let parsed: String = crate::from_slice_unchecked(raw).ok()?;
+            let parsed = Arc::into_raw(Arc::new(parsed)) as *mut ();
+            match self.unescaped.compare_exchange_weak(
+                ptr,
+                parsed,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => Some(&*(parsed as *const String)),
+                Err(e) => {
+                    Arc::decrement_strong_count(parsed);
+                    Some(&*(e as *const String))
+                }
+            }
+        }
+    }
+}
+impl Default for Inner {
+    fn default() -> Self {
+        Self {
+            status: HasEsc::None,
+            unescaped: AtomicPtr::new(std::ptr::null_mut()),
+        }
+    }
+}
+
+impl Clone for Inner {
+    fn clone(&self) -> Self {
+        let ptr = if !self.no_escaped() {
+            // possible is parsing
+            let ptr = self.unescaped.load(Ordering::Acquire);
+            if !ptr.is_null() {
+                unsafe { Arc::increment_strong_count(ptr as *const String) };
+            }
+            ptr
+        } else {
+            std::ptr::null_mut()
+        };
+        Self {
+            status: self.status,
+            unescaped: AtomicPtr::new(ptr),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HasEsc {
+    None,
+    Yes,
+    Possible,
 }
 
 impl Default for LazyValue<'_> {
     fn default() -> Self {
         Self {
             raw: JsonSlice::Raw(&b"null"[..]),
-            unescape: None,
+            inner: Inner::default(),
+        }
+    }
+}
+
+impl Drop for Inner {
+    fn drop(&mut self) {
+        if self.no_escaped() {
+            return;
+        }
+
+        let ptr = self.unescaped.load(Ordering::Acquire);
+        if !ptr.is_null() {
+            unsafe { Arc::decrement_strong_count(ptr as *const String) };
         }
     }
 }
@@ -129,8 +218,9 @@ impl Default for LazyValue<'_> {
 impl<'a> Debug for LazyValue<'a> {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
-            .debug_tuple("LazyValue")
-            .field(&format_args!("{}", &self.as_raw_str()))
+            .debug_struct("LazyValue")
+            .field("raw json", &format_args!("{}", &self.as_raw_str()))
+            .field("has_escaped", &self.inner.status)
             .finish()
     }
 }
@@ -144,15 +234,6 @@ impl<'a> Display for LazyValue<'a> {
 impl PartialEq for LazyValue<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.raw.as_ref() == other.raw.as_ref()
-    }
-}
-
-impl<'a> Clone for LazyValue<'a> {
-    fn clone(&self) -> Self {
-        Self {
-            raw: self.raw.clone(),
-            unescape: self.unescape.clone(),
-        }
     }
 }
 
@@ -208,16 +289,18 @@ impl<'a> JsonValueTrait for LazyValue<'a> {
 
     fn as_str(&self) -> Option<&str> {
         if !self.is_str() {
-            None
-        } else if let Some(escaped) = self.unescape.as_ref() {
-            Some(escaped.as_ref())
-        } else {
+            return None;
+        }
+
+        if self.inner.no_escaped() {
             // remove the quotes
             let origin = {
                 let raw = self.as_raw_str().as_bytes();
                 &raw[1..raw.len() - 1]
             };
             Some(unsafe { from_utf8_unchecked(origin) })
+        } else {
+            self.inner.parse_from(self.raw.as_ref())
         }
     }
 
@@ -318,6 +401,22 @@ impl<'a> LazyValue<'a> {
         }
     }
 
+    pub fn into_object_iter(mut self) -> Option<ObjectJsonIter<'a>> {
+        if self.is_object() {
+            Some(ObjectJsonIter::new_inner(std::mem::take(&mut self.raw)))
+        } else {
+            None
+        }
+    }
+
+    pub fn into_array_iter(mut self) -> Option<ArrayJsonIter<'a>> {
+        if self.is_array() {
+            Some(ArrayJsonIter::new_inner(std::mem::take(&mut self.raw)))
+        } else {
+            None
+        }
+    }
+
     /// get with index from lazyvalue
     pub(crate) fn get_index(&'a self, index: usize) -> Option<Self> {
         let path = [index];
@@ -340,14 +439,14 @@ impl<'a> LazyValue<'a> {
         }
     }
 
-    pub(crate) fn new(raw: JsonSlice<'a>, has_escaped: bool) -> Result<Self> {
-        let unescape = if has_escaped {
-            let unescape: Arc<str> = unsafe { crate::from_slice_unchecked(raw.as_ref()) }?;
-            Some(unescape)
-        } else {
-            None
-        };
-        Ok(Self { raw, unescape })
+    pub(crate) fn new(raw: JsonSlice<'a>, status: HasEsc) -> Self {
+        Self {
+            raw,
+            inner: Inner {
+                status,
+                unescaped: AtomicPtr::new(std::ptr::null_mut()),
+            },
+        }
     }
 }
 

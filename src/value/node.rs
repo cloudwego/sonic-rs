@@ -362,6 +362,7 @@ struct NodeInDom<'a> {
 }
 
 impl<'a> NodeInDom<'a> {
+    #[inline(always)]
     fn get_inner(&self) -> ValueRefInner<'a> {
         let typ = self.node.meta.get_type();
         match typ {
@@ -374,24 +375,28 @@ impl<'a> NodeInDom<'a> {
         }
     }
 
+    #[inline(always)]
     fn unpack_str(&self) -> &'a str {
         let len = self.node.meta.unpack_dom_node().len as usize;
         let ptr = unsafe { self.node.data.dom_str.as_ptr() };
         unsafe { str_from_raw_parts(ptr, len) }
     }
 
+    #[inline(always)]
     fn unpack_value_slice(&self) -> &'a [Value] {
         let len = self.node.meta.unpack_dom_node().len as usize;
         let elems = unsafe { self.node.data.arr_elems.as_ptr() };
         unsafe { from_raw_parts(elems, len) }
     }
 
+    #[inline(always)]
     fn unpack_pair_slice(&self) -> &'a [Pair] {
         let len = self.node.meta.unpack_dom_node().len as usize;
         let pairs = unsafe { self.node.data.obj_pairs.as_ptr() };
         unsafe { from_raw_parts(pairs, len) }
     }
 
+    #[inline(always)]
     fn unpack_raw_str(&self) -> UnpackedRawStr<'a> {
         let rawstr = self.node.meta.unpack_rawstr_node();
         let sp = unsafe { self.node.data.dom_str.as_ptr() };
