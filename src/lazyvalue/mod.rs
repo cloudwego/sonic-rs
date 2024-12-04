@@ -3,7 +3,7 @@
 mod get;
 mod iterator;
 mod owned;
-mod value;
+pub(crate) mod value;
 
 #[doc(inline)]
 pub use self::{
