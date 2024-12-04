@@ -2,7 +2,7 @@ use faststr::FastStr;
 
 use crate::{
     error::Result,
-    input::JsonInput,
+    input::{JsonInput, JsonSlice},
     lazyvalue::LazyValue,
     parser::{Parser, DEFAULT_KEY_BUF_CAPACITY},
     reader::{Read, Reader},
@@ -39,7 +39,7 @@ pub struct ObjectJsonIter<'de> {
     strbuf: Vec<u8>,
     first: bool,
     ending: bool,
-    check: bool,
+    skip_strict: bool,
 }
 
 /// A lazied iterator for JSON array text. It will parse the JSON when iterating.
@@ -73,21 +73,36 @@ pub struct ArrayJsonIter<'de> {
     parser: Parser<Read<'de>>,
     first: bool,
     ending: bool,
-    check: bool,
+    skip_strict: bool,
 }
 
 impl<'de> ObjectJsonIter<'de> {
-    fn new<I: JsonInput<'de>>(json: I, check: bool) -> Self {
+    // input is inner json, expected always be validated and well-formed
+    pub(crate) fn new_inner(input: JsonSlice<'de>) -> Self {
         Self {
-            parser: Parser::new(Read::new_in(json, check)),
+            parser: Parser::new(Read::new_in(input, false)),
             strbuf: Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY),
             first: true,
             ending: false,
-            check,
+            skip_strict: false,
         }
     }
 
-    fn next_entry_impl(&mut self, check: bool) -> Option<Result<(FastStr, LazyValue<'de>)>> {
+    pub(crate) fn new<I: JsonInput<'de>>(input: I, skip_strict: bool) -> Self {
+        let validate_utf8 = skip_strict
+            .then_some(input.need_utf8_valid())
+            .unwrap_or_default();
+
+        Self {
+            parser: Parser::new(Read::new_in(input.to_json_slice(), validate_utf8)),
+            strbuf: Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY),
+            first: true,
+            ending: false,
+            skip_strict,
+        }
+    }
+
+    fn next_entry_impl(&mut self) -> Option<Result<(FastStr, LazyValue<'de>)>> {
         if self.ending {
             return None;
         }
@@ -102,12 +117,12 @@ impl<'de> ObjectJsonIter<'de> {
 
         match self
             .parser
-            .parse_entry_lazy(&mut self.strbuf, &mut self.first, check)
+            .parse_entry_lazy(&mut self.strbuf, &mut self.first, self.skip_strict)
         {
             Ok(ret) => {
-                if let Some((key, val, has_escaped)) = ret {
+                if let Some((key, val, status)) = ret {
                     let val = self.parser.read.slice_ref(val);
-                    Some(LazyValue::new(val, has_escaped).map(|v| (key, v)))
+                    Some(Ok(LazyValue::new(val, status.into())).map(|v| (key, v)))
                 } else {
                     self.ending = true;
                     None
@@ -122,16 +137,30 @@ impl<'de> ObjectJsonIter<'de> {
 }
 
 impl<'de> ArrayJsonIter<'de> {
-    fn new<I: JsonInput<'de>>(input: I, check: bool) -> Self {
+    // input is inner json, expected always be validated and well-formed
+    pub(crate) fn new_inner(input: JsonSlice<'de>) -> Self {
         Self {
-            parser: Parser::new(Read::new_in(input, check)),
+            parser: Parser::new(Read::new_in(input, false)),
             first: true,
             ending: false,
-            check,
+            skip_strict: false,
         }
     }
 
-    fn next_elem_impl(&mut self, check: bool) -> Option<Result<LazyValue<'de>>> {
+    pub(crate) fn new<I: JsonInput<'de>>(input: I, skip_strict: bool) -> Self {
+        let validate_utf8 = skip_strict
+            .then_some(input.need_utf8_valid())
+            .unwrap_or_default();
+
+        Self {
+            parser: Parser::new(Read::new_in(input.to_json_slice(), validate_utf8)),
+            first: true,
+            ending: false,
+            skip_strict,
+        }
+    }
+
+    fn next_elem_impl(&mut self) -> Option<Result<LazyValue<'de>>> {
         if self.ending {
             return None;
         }
@@ -144,11 +173,14 @@ impl<'de> ArrayJsonIter<'de> {
             }
         }
 
-        match self.parser.parse_array_elem_lazy(&mut self.first, check) {
+        match self
+            .parser
+            .parse_array_elem_lazy(&mut self.first, self.skip_strict)
+        {
             Ok(ret) => {
-                if let Some((val, has_escaped)) = ret {
+                if let Some((val, status)) = ret {
                     let val = self.parser.read.slice_ref(val);
-                    Some(LazyValue::new(val, has_escaped))
+                    Some(Ok(LazyValue::new(val, status.into())))
                 } else {
                     self.ending = true;
                     None
@@ -317,7 +349,7 @@ impl<'de> Iterator for ObjectJsonIter<'de> {
     type Item = Result<(FastStr, LazyValue<'de>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.next_entry_impl(self.check)
+        self.next_entry_impl()
     }
 }
 
@@ -325,7 +357,7 @@ impl<'de> Iterator for ArrayJsonIter<'de> {
     type Item = Result<LazyValue<'de>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.next_elem_impl(self.check)
+        self.next_elem_impl()
     }
 }
 

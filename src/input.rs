@@ -21,6 +21,12 @@ impl<'de> JsonSlice<'de> {
     }
 }
 
+impl Default for JsonSlice<'_> {
+    fn default() -> Self {
+        JsonSlice::Raw(&b"null"[..])
+    }
+}
+
 impl<'de> From<FastStr> for JsonSlice<'de> {
     fn from(value: FastStr) -> Self {
         JsonSlice::FastStr(value)

@@ -19,10 +19,10 @@ pub mod writer;
 
 // re-export FastStr
 // re-export the serde trait
-pub use ::serde::{Deserialize, Serialize};
 pub use faststr::FastStr;
 #[doc(inline)]
 pub use reader::Read;
+pub use serde::{Deserialize, Serialize};
 
 #[doc(inline)]
 pub use crate::error::{Error, Result};
@@ -41,9 +41,9 @@ pub use crate::lazyvalue::{
 pub use crate::pointer::{JsonPointer, PointerNode, PointerTree};
 #[doc(inline)]
 pub use crate::serde::{
-    from_reader, from_slice, from_slice_unchecked, from_str, to_string, to_string_pretty, to_vec,
-    to_vec_pretty, to_writer, to_writer_pretty, Deserializer, JsonNumberTrait, Number, RawNumber,
-    Serializer, StreamDeserializer,
+    from_reader, from_slice, from_slice_unchecked, from_str, to_lazyvalue, to_string,
+    to_string_pretty, to_vec, to_vec_pretty, to_writer, to_writer_pretty, Deserializer,
+    JsonNumberTrait, Number, RawNumber, Serializer, StreamDeserializer,
 };
 #[doc(inline)]
 pub use crate::value::{
