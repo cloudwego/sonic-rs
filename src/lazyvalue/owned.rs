@@ -13,7 +13,10 @@ use crate::{
     from_str, get_unchecked,
     index::Index,
     input::{self, JsonSlice},
-    lazyvalue::value::Inner,
+    lazyvalue::{
+        iterator::{OwnedArrayJsonIter, OwnedObjectJsonIter},
+        value::Inner,
+    },
     parser::Parser,
     serde::Number,
     ArrayJsonIter, JsonInput, JsonType, JsonValueTrait, LazyValue, ObjectJsonIter, Result,
@@ -195,21 +198,21 @@ impl OwnedLazyValue {
         self.raw.clone()
     }
 
-    pub fn into_object_iter(mut self) -> Option<ObjectJsonIter<'static>> {
+    pub fn into_object_iter(mut self) -> Option<OwnedObjectJsonIter> {
         if self.is_object() {
-            Some(ObjectJsonIter::new_inner(
+            Some(OwnedObjectJsonIter(ObjectJsonIter::new_inner(
                 std::mem::take(&mut self.raw).into(),
-            ))
+            )))
         } else {
             None
         }
     }
 
-    pub fn into_array_iter(mut self) -> Option<ArrayJsonIter<'static>> {
+    pub fn into_array_iter(mut self) -> Option<OwnedArrayJsonIter> {
         if self.is_array() {
-            Some(ArrayJsonIter::new_inner(
+            Some(OwnedArrayJsonIter(ArrayJsonIter::new_inner(
                 std::mem::take(&mut self.raw).into(),
-            ))
+            )))
         } else {
             None
         }
