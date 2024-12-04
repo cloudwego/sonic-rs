@@ -20,6 +20,7 @@ use crate::{
         Result,
     },
     index::Index,
+    lazyvalue::value::HasEsc,
     pointer::{
         tree::{MultiIndex, MultiKey, PointerTreeInner, PointerTreeNode},
         PointerTree,
@@ -197,6 +198,15 @@ pub(crate) struct Parser<R> {
 pub(crate) enum ParseStatus {
     None,
     HasEscaped,
+}
+
+impl From<ParseStatus> for HasEsc {
+    fn from(value: ParseStatus) -> Self {
+        match value {
+            ParseStatus::None => HasEsc::None,
+            ParseStatus::HasEscaped => HasEsc::Yes,
+        }
+    }
 }
 
 impl<'de, R> Parser<R>
@@ -480,7 +490,7 @@ where
         &mut self,
         first: &mut bool,
         check: bool,
-    ) -> Result<Option<(&'de [u8], bool)>> {
+    ) -> Result<Option<(&'de [u8], ParseStatus)>> {
         if *first && self.skip_space() != Some(b'[') {
             return perr!(self, ExpectedArrayStart);
         }
@@ -502,7 +512,7 @@ where
         } else {
             self.skip_one_unchecked()
         }?;
-        Ok(Some((raw, status == ParseStatus::HasEscaped)))
+        Ok(Some((raw, status)))
     }
 
     #[inline]
@@ -511,7 +521,7 @@ where
         strbuf: &mut Vec<u8>,
         first: &mut bool,
         check: bool,
-    ) -> Result<Option<(FastStr, &'de [u8], bool)>> {
+    ) -> Result<Option<(FastStr, &'de [u8], ParseStatus)>> {
         if *first && self.skip_space() != Some(b'{') {
             return perr!(self, ExpectedObjectStart);
         }
@@ -534,7 +544,7 @@ where
         } else {
             self.skip_one_unchecked()
         }?;
-        Ok(Some((key, raw, status == ParseStatus::HasEscaped)))
+        Ok(Some((key, raw, status)))
     }
 
     // Not use non-recurse version here, because it maybe 5% slower than recurse version.
@@ -1738,7 +1748,7 @@ where
 
         if !node.order.is_empty() {
             slice = self.read.slice_unchecked(start, self.read.index());
-            let lv = LazyValue::new(slice.into(), status == ParseStatus::HasEscaped)?;
+            let lv = LazyValue::new(slice.into(), status.into());
             for p in &node.order {
                 out[*p] = lv.clone();
             }

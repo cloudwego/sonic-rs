@@ -3,14 +3,20 @@ use std::{
     fmt::{Debug, Display},
     hash::Hash,
     str::from_utf8_unchecked,
-    sync::Arc,
+    sync::atomic::AtomicPtr,
 };
 
 use faststr::FastStr;
 
+use super::value::HasEsc;
 use crate::{
-    from_str, get_unchecked, index::Index, input::JsonSlice, serde::Number, JsonType,
-    JsonValueTrait, LazyValue, Result,
+    from_str, get_unchecked,
+    index::Index,
+    input::{self, JsonSlice},
+    lazyvalue::value::Inner,
+    parser::Parser,
+    serde::Number,
+    ArrayJsonIter, JsonInput, JsonType, JsonValueTrait, LazyValue, ObjectJsonIter, Result,
 };
 
 /// OwnedLazyValue wrappers a unparsed raw JSON text. It is owned.
@@ -66,10 +72,11 @@ use crate::{
 /// assert_eq!(data.borrowed_lv.as_raw_str(), "\"hello\"");
 /// assert_eq!(data.owned_lv.as_raw_str(), "\"world\"");
 /// ```
+#[derive(Clone)]
 pub struct OwnedLazyValue {
     // the raw slice from origin json
     pub(crate) raw: FastStr,
-    unescape: Option<Arc<str>>,
+    pub(crate) inner: Inner,
 }
 
 impl JsonValueTrait for OwnedLazyValue {
@@ -101,16 +108,18 @@ impl JsonValueTrait for OwnedLazyValue {
 
     fn as_str(&self) -> Option<&str> {
         if !self.is_str() {
-            None
-        } else if let Some(escaped) = self.unescape.as_ref() {
-            Some(escaped.as_ref())
-        } else {
+            return None;
+        }
+
+        if self.inner.no_escaped() {
             // remove the quotes
             let origin = {
                 let raw = self.as_raw_str().as_bytes();
                 &raw[1..raw.len() - 1]
             };
             Some(unsafe { from_utf8_unchecked(origin) })
+        } else {
+            self.inner.parse_from(self.raw.as_ref())
         }
     }
 
@@ -186,6 +195,52 @@ impl OwnedLazyValue {
         self.raw.clone()
     }
 
+    pub fn into_object_iter(mut self) -> Option<ObjectJsonIter<'static>> {
+        if self.is_object() {
+            Some(ObjectJsonIter::new_inner(
+                std::mem::take(&mut self.raw).into(),
+            ))
+        } else {
+            None
+        }
+    }
+
+    pub fn into_array_iter(mut self) -> Option<ArrayJsonIter<'static>> {
+        if self.is_array() {
+            Some(ArrayJsonIter::new_inner(
+                std::mem::take(&mut self.raw).into(),
+            ))
+        } else {
+            None
+        }
+    }
+
+    /// parse the json as OwnedLazyValue
+    ///
+    /// # Examples
+    /// ```
+    /// use faststr::FastStr;
+    /// use sonic_rs::{JsonPointer, OwnedLazyValue};
+    ///
+    /// let lv = OwnedLazyValue::get_from(r#"{"a": "hello world"}"#, &["a"]).unwrap();
+    /// assert_eq!(lv.as_raw_str(), "\"hello world\"");
+    ///
+    /// let lv = OwnedLazyValue::get_from(
+    ///     &FastStr::new(r#"  {"a": "hello world"}  "#),
+    ///     &JsonPointer::new(),
+    /// )
+    /// .unwrap();
+    /// assert_eq!(lv.as_raw_str(), r#"{"a": "hello world"}"#);
+    /// ```
+    pub fn get_from<'de, Input, Path: IntoIterator>(json: Input, path: Path) -> Result<Self>
+    where
+        Input: JsonInput<'de>,
+        Path::Item: Index,
+    {
+        let lv = crate::get(json, path)?;
+        Ok(Self::from(lv))
+    }
+
     /// get with index from lazyvalue
     pub(crate) fn get_index(&self, index: usize) -> Option<Self> {
         let path = [index];
@@ -200,18 +255,19 @@ impl OwnedLazyValue {
         lv.map(|v| v.into())
     }
 
-    pub(crate) fn new(raw: JsonSlice, has_escaped: bool) -> Result<Self> {
+    pub(crate) fn new(raw: JsonSlice, status: HasEsc) -> Self {
         let raw = match raw {
             JsonSlice::Raw(r) => FastStr::new(unsafe { from_utf8_unchecked(r) }),
             JsonSlice::FastStr(f) => f.clone(),
         };
-        let unescape = if has_escaped {
-            let unescape: Arc<str> = unsafe { crate::from_slice_unchecked(raw.as_ref()) }?;
-            Some(unescape)
-        } else {
-            None
-        };
-        Ok(Self { raw, unescape })
+
+        Self {
+            raw,
+            inner: Inner {
+                status,
+                unescaped: AtomicPtr::new(std::ptr::null_mut()),
+            },
+        }
     }
 }
 
@@ -223,7 +279,7 @@ impl<'de> From<LazyValue<'de>> for OwnedLazyValue {
         };
         Self {
             raw,
-            unescape: lv.unescape,
+            inner: lv.inner,
         }
     }
 }
@@ -247,7 +303,7 @@ impl Default for OwnedLazyValue {
     fn default() -> Self {
         Self {
             raw: FastStr::new("null"),
-            unescape: None,
+            inner: Inner::default(),
         }
     }
 }
@@ -255,15 +311,6 @@ impl Default for OwnedLazyValue {
 impl PartialEq for OwnedLazyValue {
     fn eq(&self, other: &Self) -> bool {
         self.raw == other.raw
-    }
-}
-
-impl Clone for OwnedLazyValue {
-    fn clone(&self) -> Self {
-        Self {
-            raw: self.raw.clone(),
-            unescape: self.unescape.clone(),
-        }
     }
 }
 

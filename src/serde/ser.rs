@@ -8,20 +8,26 @@ use core::{
 };
 use std::io;
 
-use ::serde::ser::{self, Impossible, Serialize};
-use serde::de::Unexpected;
+use faststr::FastStr;
+use serde::{
+    de::Unexpected,
+    ser::{self, Impossible, Serialize},
+};
 
 use super::de::tri;
 use crate::{
     error::{Error, ErrorCode, Result},
     format::{CompactFormatter, Formatter, PrettyFormatter},
+    lazyvalue::value::HasEsc,
     writer::WriteExt,
+    OwnedLazyValue,
 };
-
 /// A structure for serializing Rust values into JSON.
 pub struct Serializer<W, F = CompactFormatter> {
     writer: W,
     formatter: F,
+    // TODO: record has_escape to optimize lazyvalue
+    // has_escape: bool,
 }
 
 impl<W> Serializer<W>
@@ -1297,6 +1303,26 @@ where
         String::from_utf8_unchecked(vec)
     };
     Ok(string)
+}
+
+/// Serialize the given data structure as a OwnedLazyValue of JSON.
+#[inline]
+pub fn to_lazyvalue<T>(value: &T) -> Result<OwnedLazyValue>
+where
+    T: ?Sized + Serialize,
+{
+    let vec = tri!(to_vec(value));
+    let string = unsafe {
+        // We do not emit Invalid UTF-8.
+        String::from_utf8_unchecked(vec)
+    };
+
+    let status = if !string.is_empty() && string.as_bytes()[0] == b'"' {
+        HasEsc::Possible
+    } else {
+        HasEsc::None
+    };
+    Ok(OwnedLazyValue::new(FastStr::new(string).into(), status))
 }
 
 /// Serialize the given data structure as a pretty-printed String of JSON.
