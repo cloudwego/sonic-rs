@@ -4,7 +4,7 @@ use crate::{
     error::Result,
     input::{JsonInput, JsonSlice},
     lazyvalue::LazyValue,
-    parser::{Parser, DEFAULT_KEY_BUF_CAPACITY},
+    parser::{Pair, Parser, DEFAULT_KEY_BUF_CAPACITY},
     reader::{Read, Reader},
 };
 /// A lazied iterator for JSON object text. It will parse the JSON when iterating.
@@ -119,7 +119,7 @@ impl<'de> ObjectJsonIter<'de> {
             .parse_entry_lazy(&mut self.strbuf, &mut self.first, self.skip_strict)
         {
             Ok(ret) => {
-                if let Some((key, val, status)) = ret {
+                if let Some(Pair { key, val, status }) = ret {
                     let val = self.parser.read.slice_ref(val);
                     Some(Ok(LazyValue::new(val, status.into())).map(|v| (key, v)))
                 } else {

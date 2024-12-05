@@ -7,60 +7,58 @@ env:
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
 
-jobs:
+jobs: 
   test-stable:
-    name: Rust stable ${{matrix.os}}
-    runs-on: ${{matrix.os}}-latest
-    strategy:
-        fail-fast: false
-        matrix:
-            os: [ubuntu, macos]
+    name: Rust stable ubuntu-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
         - uses: actions/checkout@v4
         - uses: dtolnay/rust-toolchain@stable
-        - uses: Swatinem/rust-cache@v1
         - run: ./scripts/test.sh
 
-  test-stable-self:
-    name: Rust stable on self-hosted
-    runs-on: [self-hosted]
-    steps:
-    - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
-    - uses: Swatinem/rust-cache@v1
-    - run: ./scripts/test.sh
-
-  test-nightly:
-    name: Rust nightly ${{matrix.os}}
-    runs-on: ${{matrix.os}}-latest
+  test-stable-hosted:
     strategy:
         fail-fast: false
         matrix:
-            os: [ubuntu, macos]
+            os:
+              - [self-hosted, Linux, X64]
+              - [self-hosted, Linux, ARM64]
+    name: Rust stable
+    runs-on: ${{matrix.os}}
+    timeout-minutes: 45
+    steps:
+        - uses: actions/checkout@v4
+        - uses: dtolnay/rust-toolchain@stable
+        - run: ./scripts/test.sh
+    
+  test-nightly:
+    name: Rust nightly ubuntu-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
         - uses: actions/checkout@v4
         - uses: dtolnay/rust-toolchain@nightly
-        - uses: Swatinem/rust-cache@v1
         - run: ./scripts/test.sh
-    
-  test-nightlye-self:
-    name: Rust nightly on self-hosted
-    runs-on: [self-hosted]
-    steps:
-    - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@nightly
-    - uses: Swatinem/rust-cache@v1
-    - run: ./scripts/test.sh
 
-  clippy_lint:
-    name: Format check ${{matrix.os}}
-    runs-on: ${{matrix.os}}-latest
+  test-nightly-hosted:
     strategy:
-        fail-fast: false
-        matrix:
-            os: [ubuntu, macos]
+      fail-fast: false
+      matrix:
+        os:
+          - [self-hosted, Linux, X64]
+          - [self-hosted, Linux, ARM64]
+    name: Rust nightly ${{matrix.os}}
+    runs-on: ${{matrix.os}}
+    timeout-minutes: 45
+    steps:
+        - uses: actions/checkout@v4
+        - uses: dtolnay/rust-toolchain@nightly
+        - run: ./scripts/test.sh
+        
+  clippy_lint:
+    name: Format check
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v3
@@ -73,7 +71,7 @@ jobs:
           cargo fmt -- --check
 
   sanitize:
-    runs-on: [self-hosted, X64]
+    runs-on: [self-hosted, Linux, X64]
     steps:
     - uses: actions/checkout@v3
     - uses: dtolnay/rust-toolchain@stable
@@ -86,7 +84,7 @@ jobs:
       run: ./scripts/sanitize.sh
         
   fuzz:
-    runs-on: [self-hosted, X64]
+    runs-on: [self-hosted, Linux, X64]
     steps:
     - uses: actions/checkout@v3
     - uses: dtolnay/rust-toolchain@stable
