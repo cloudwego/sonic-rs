@@ -196,6 +196,12 @@ fn skip_container_loop(
     None
 }
 
+pub(crate) struct Pair<'de> {
+    pub key: Cow<'de, str>,
+    pub val: &'de [u8],
+    pub status: ParseStatus,
+}
+
 pub(crate) struct Parser<R> {
     pub(crate) read: R,
     error_index: usize,   // mark the error position
@@ -532,7 +538,7 @@ where
         strbuf: &mut Vec<u8>,
         first: &mut bool,
         check: bool,
-    ) -> Result<Option<(Cow<'de, str>, &'de [u8], ParseStatus)>> {
+    ) -> Result<Option<Pair<'de>>> {
         if *first && self.skip_space() != Some(b'{') {
             return perr!(self, ExpectedObjectStart);
         }
@@ -554,7 +560,12 @@ where
         } else {
             self.skip_one_unchecked()
         }?;
-        Ok(Some((parsed.into(), raw, status)))
+
+        Ok(Some(Pair {
+            key: parsed.into(),
+            val: raw,
+            status,
+        }))
     }
 
     // Not use non-recurse version here, because it maybe 5% slower than recurse version.
