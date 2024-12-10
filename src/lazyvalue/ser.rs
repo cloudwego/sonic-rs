@@ -15,19 +15,6 @@ impl<'a> serde::ser::Serialize for LazyValue<'a> {
     }
 }
 
-impl serde::ser::Serialize for OwnedLazyValue {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let raw = self.as_raw_str();
-        let mut s = serializer.serialize_struct(super::TOKEN, 1)?;
-        // will directly write raw in `LazyValueStrEmitter::seriazlie_str`
-        s.serialize_field(super::TOKEN, raw)?;
-        s.end()
-    }
-}
-
 #[cfg(test)]
 mod test {
     use ::serde::{Deserialize, Serialize};

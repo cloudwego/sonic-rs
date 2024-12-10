@@ -1,6 +1,6 @@
 use bumpalo::Bump;
 
-use super::node::RawStr;
+use super::{node::RawStr, JsonType};
 
 pub(crate) trait JsonVisitor<'de> {
     fn visit_dom_start(&mut self) -> bool {
@@ -84,5 +84,9 @@ pub(crate) trait JsonVisitor<'de> {
 
     fn allocator(&mut self) -> Option<&mut Bump> {
         None
+    }
+
+    fn visit_raw(&mut self, _value: &str) -> bool {
+        false
     }
 }
