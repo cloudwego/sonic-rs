@@ -669,7 +669,7 @@ where
                     vec.push(self.get_owned_lazyvalue(false)?);
                     match self.skip_space() {
                         Some(b']') => return Ok(vec.into()),
-                        Some(b',') => self.skip_space(),
+                        Some(b',') => {}
                         _ => return perr!(self, ExpectedArrayCommaOrEnd),
                     };
                 }
