@@ -387,51 +387,6 @@ impl JsonValueTrait for OwnedLazyValue {
 }
 
 impl OwnedLazyValue {
-    /// Export the raw JSON text as `str`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use sonic_rs::{get, LazyValue};
-    ///
-    /// let lv: LazyValue = sonic_rs::get(r#"{"a": "hello world"}"#, &["a"]).unwrap();
-    /// assert_eq!(lv.as_raw_str(), "\"hello world\"");
-    /// ```
-    pub fn as_raw_str(&self) -> &str {
-        // # Safety
-        // it is validate when using to_object_iter/get ...
-        // if use `get_unchecked` unsafe apis, it must ensured by the user at first
-        // match &self.0 {
-        //     LazyPacked::Parsed(v) => v.as_raw_str(),
-        //     LazyPacked::Raw(raw) => raw.raw.as_str(),
-        //     LazyPacked::NonEscStrRaw(s) => s.as_str(),
-        // }
-        todo!()
-    }
-
-    /// Export the raw json text as faststr.
-    ///
-    /// # Note
-    /// If the input json is not bytes or faststr, there will be a string copy.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use faststr::FastStr;
-    /// use sonic_rs::LazyValue;
-    ///
-    /// let lv: LazyValue = sonic_rs::get(r#"{"a": "hello world"}"#, &["a"]).unwrap();
-    /// // will copy the raw_str into a new faststr
-    /// assert_eq!(lv.as_raw_faststr(), "\"hello world\"");
-    ///
-    /// let fs = FastStr::new(r#"{"a": "hello world"}"#);
-    /// let lv: LazyValue = sonic_rs::get(&fs, &["a"]).unwrap();
-    /// assert_eq!(lv.as_raw_faststr(), "\"hello world\""); // zero-copy
-    /// ```
-    pub fn as_raw_faststr(&self) -> FastStr {
-        todo!()
-    }
-
     /// parse the json as OwnedLazyValue
     ///
     /// # Examples
@@ -488,16 +443,6 @@ impl OwnedLazyValue {
         }
     }
 
-    /// get with index from lazyvalue
-    pub(crate) fn get_index(&self, index: usize) -> Option<Self> {
-        todo!()
-    }
-
-    /// get with key from lazyvalue
-    pub(crate) fn get_key(&self, key: &str) -> Option<Self> {
-        todo!()
-    }
-
     pub(crate) fn new(raw: JsonSlice, status: HasEsc) -> Self {
         let raw = match raw {
             JsonSlice::Raw(r) => FastStr::new(unsafe { from_utf8_unchecked(r) }),
@@ -527,7 +472,7 @@ impl<'de> From<LazyValue<'de>> for OwnedLazyValue {
 
 impl Display for OwnedLazyValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(self.as_raw_str())
+        todo!()
     }
 }
 
@@ -579,11 +524,6 @@ impl serde::ser::Serialize for OwnedLazyValue {
             LazyPacked::Parsed(Parsed::Bool(b)) => b.serialize(serializer),
             LazyPacked::Parsed(Parsed::Null) => serializer.serialize_none(),
         }
-        // let raw = self.as_raw_str();
-        // let mut s = serializer.serialize_struct(super::TOKEN, 1)?;
-        // // will directly write raw in `LazyValueStrEmitter::seriazlie_str`
-        // s.serialize_field(super::TOKEN, raw)?;
-        // s.end()
     }
 }
 
@@ -723,6 +663,25 @@ mod test {
             }
 
             obj.append_pair(FastStr::new("foo"), to_lazyvalue("bar").unwrap());
+        }
+
+        dbg!(crate::to_string(&lv).unwrap());
+    }
+
+    #[test]
+    fn test_owned_array() {
+        let mut lv: OwnedLazyValue =
+            crate::get_from_faststr(&FastStr::new(r#"["a", "hello world"]"#), pointer![])
+                .unwrap()
+                .into();
+        dbg!(&lv);
+
+        if let Some(arr) = lv.as_array_mut() {
+            for v in arr.iter_mut() {
+                dbg!(v);
+            }
+
+            arr.push(to_lazyvalue("bar").unwrap());
         }
 
         dbg!(crate::to_string(&lv).unwrap());
