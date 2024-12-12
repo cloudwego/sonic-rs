@@ -18,11 +18,11 @@ pub mod value;
 pub mod writer;
 
 // re-export FastStr
+pub use ::faststr::FastStr;
 // re-export the serde trait
-pub use faststr::FastStr;
+pub use ::serde::{Deserialize, Serialize};
 #[doc(inline)]
 pub use reader::Read;
-pub use serde::{Deserialize, Serialize};
 
 #[doc(inline)]
 pub use crate::error::{Error, Result};
