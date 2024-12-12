@@ -117,6 +117,17 @@ pub(crate) struct LazyRaw {
     pub(crate) parsed: AtomicPtr<Parsed>,
 }
 
+impl Drop for LazyRaw {
+    fn drop(&mut self) {
+        let ptr = self.parsed.get_mut();
+        if !(*ptr).is_null() {
+            unsafe {
+                drop(Box::from_raw(*ptr));
+            }
+        }
+    }
+}
+
 impl Debug for LazyRaw {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let ptr = self.parsed.load(Ordering::Relaxed);
@@ -635,6 +646,7 @@ mod test {
 
         let input = r#"{
           "a": "hello world",
+          "a\\": "\\hello \" world",
           "b": true,
           "c": [0, 1, 2],
           "d": {
@@ -643,8 +655,10 @@ mod test {
          }"#;
         let own_a = OwnedLazyValue::from(get(input, &["a"]).unwrap());
         let own_c = OwnedLazyValue::from(get(input, &["c"]).unwrap());
+        let own = OwnedLazyValue::from(get(input, pointer![]).unwrap());
         // use as_xx to get the parsed value
         assert_eq!(own_a.as_str().unwrap(), "hello world");
+        assert_eq!(own.get("a\\").as_str().unwrap(), "\\hello \" world");
         assert_eq!(own_c.as_str(), None);
         assert!(own_c.is_array());
     }
