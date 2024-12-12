@@ -2,8 +2,8 @@
 
 mod get;
 mod iterator;
-mod owned;
-mod value;
+pub(crate) mod owned;
+pub(crate) mod value;
 
 #[doc(inline)]
 pub use self::{
@@ -16,10 +16,12 @@ pub use self::{
         to_array_iter, to_array_iter_unchecked, to_object_iter, to_object_iter_unchecked,
         ArrayJsonIter, ObjectJsonIter,
     },
-    owned::OwnedLazyValue,
+    owned::{LazyArray, LazyObject, OwnedLazyValue},
     value::LazyValue,
 };
 
 pub(crate) mod de;
 pub(crate) mod ser;
 pub(crate) const TOKEN: &str = "$sonic_rs::LazyValue";
+
+pub(crate) const OWNED_LAZY_VALUE_TOKEN: &str = "$sonic::OwnedLv";

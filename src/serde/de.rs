@@ -18,7 +18,7 @@ use crate::{
     parser::{as_str, ParseStatus, ParsedSlice, Parser, Reference},
     reader::{Read, Reader},
     value::{node::Value, shared::Shared},
-    JsonInput,
+    JsonInput, OwnedLazyValue,
 };
 const MAX_ALLOWED_DEPTH: u8 = u8::MAX;
 
@@ -366,6 +366,23 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
             visitor.visit_str(as_str(raw))
         } else {
             visitor.visit_borrowed_str(as_str(raw))
+        }
+    }
+
+    fn deserialize_owned_lazyvalue<V>(&mut self, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        let val = ManuallyDrop::new(self.parser.get_owned_lazyvalue(false)?);
+        // #Safety
+        // the json is validate before parsing json, and we pass the document using visit_bytes
+        // here.
+        unsafe {
+            let binary = &*slice_from_raw_parts(
+                &val as *const _ as *const u8,
+                std::mem::size_of::<OwnedLazyValue>(),
+            );
+            visitor.visit_bytes(binary)
         }
     }
 
@@ -742,6 +759,8 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 return self.deserialize_rawnumber(visitor);
             } else if name == crate::lazyvalue::TOKEN {
                 return self.deserialize_lazyvalue(visitor);
+            } else if name == crate::lazyvalue::OWNED_LAZY_VALUE_TOKEN {
+                return self.deserialize_owned_lazyvalue(visitor);
             } else if name == crate::value::de::TOKEN {
                 return self.deserialize_value(visitor);
             }

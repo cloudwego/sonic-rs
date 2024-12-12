@@ -9,7 +9,7 @@ use serde_json::Value as JValue;
 use sonic_rs::{
     from_slice, from_str, to_array_iter, to_array_iter_unchecked, to_object_iter,
     to_object_iter_unchecked, value::JsonContainerTrait, Deserializer, JsonNumberTrait,
-    JsonValueTrait, Value,
+    JsonValueTrait, LazyValue, OwnedLazyValue, Value,
 };
 
 macro_rules! test_type {
@@ -62,14 +62,18 @@ fuzz_target!(|data: &[u8]| {
             fuzz_utf8_lossy(data, &sv);
 
             if jv.is_object() && eq {
+                let owned: OwnedLazyValue = sonic_rs::from_slice(data).unwrap();
                 for ret in to_object_iter(data) {
                     let (k, lv) = ret.unwrap();
                     let jv = jv.get(k.as_str()).unwrap();
+                    let ov = owned.get(k.as_str()).unwrap();
+                    compare_owned_lazyvalue(jv, ov);
                     compare_lazyvalue(jv, &lv);
 
                     let gv = sonic_rs::get(data, &[k.as_str()]).unwrap();
                     compare_lazyvalue(jv, &gv);
                 }
+                compare_owned_lazyvalue(&jv, &owned);
 
                 // fuzzing unchecked apis
                 unsafe {
@@ -83,14 +87,18 @@ fuzz_target!(|data: &[u8]| {
                     }
                 }
             } else if jv.is_array() {
+                let owned: OwnedLazyValue = sonic_rs::from_slice(data).unwrap();
                 for (i, ret) in to_array_iter(data).enumerate() {
                     let lv = ret.unwrap();
                     let jv = jv.get(i).unwrap();
                     compare_lazyvalue(jv, &lv);
+                    let ov = owned.get(i).unwrap();
+                    compare_owned_lazyvalue(jv, ov);
 
                     let gv = sonic_rs::get(data, [i]).unwrap();
                     compare_lazyvalue(jv, &gv);
                 }
+                compare_owned_lazyvalue(&jv, &owned);
 
                 // fuzzing unchecked apis
                 unsafe {
@@ -116,10 +124,47 @@ fuzz_target!(|data: &[u8]| {
     );
 });
 
-fn compare_lazyvalue(jv: &JValue, sv: &sonic_rs::LazyValue) {
+fn compare_lazyvalue(jv: &JValue, sv: &LazyValue) {
     let out = sv.as_raw_str().as_bytes();
     let sv2: sonic_rs::Value = sonic_rs::from_slice(out).unwrap();
     compare_value(jv, &sv2);
+}
+
+fn compare_owned_lazyvalue(jv: &JValue, sv: &OwnedLazyValue) {
+    match *jv {
+        JValue::Object(ref obj) => {
+            assert!(sv.is_object());
+            for (k, v) in obj {
+                let got = sv.get(k).unwrap();
+                compare_owned_lazyvalue(v, got);
+            }
+        }
+        JValue::Array(ref arr) => {
+            assert!(sv.is_array());
+            for (i, v) in arr.iter().enumerate() {
+                let got = sv.get(i).unwrap();
+                compare_owned_lazyvalue(v, got);
+            }
+        }
+        JValue::Bool(b) => assert!(sv.is_boolean() && sv.as_bool().unwrap() == b),
+        JValue::Null => assert!(sv.is_null()),
+        JValue::Number(ref num) => {
+            let got = sv.as_number().unwrap();
+            if num.is_f64() {
+                assert_eq!(num.as_f64(), got.as_f64());
+            }
+            if num.is_u64() {
+                assert_eq!(num.as_u64(), got.as_u64());
+            }
+            if num.is_i64() {
+                assert_eq!(num.as_i64(), got.as_i64());
+            }
+        }
+        JValue::String(ref s) => {
+            assert!(sv.is_str());
+            assert_eq!(sv.as_str().unwrap(), s);
+        }
+    }
 }
 
 fn fuzz_use_raw(json: &[u8], sv: &sonic_rs::Value) {
