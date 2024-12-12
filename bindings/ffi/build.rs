@@ -8,7 +8,6 @@ fn main() {
 
 fn setup_cbindgen() {
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-    // 拼凑完整的文件路径
     cbindgen::Builder::new()
         .with_crate(crate_dir)
         .with_language(C)
