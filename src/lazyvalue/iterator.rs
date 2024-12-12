@@ -94,9 +94,7 @@ impl Iterator for OwnedArrayJsonIter {
     type Item = Result<OwnedLazyValue>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0
-            .next_elem_impl()
-            .map(|v| v.map(|v| OwnedLazyValue::from(v)))
+        self.0.next_elem_impl().map(|v| v.map(OwnedLazyValue::from))
     }
 }
 

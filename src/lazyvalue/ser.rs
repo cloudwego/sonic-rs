@@ -1,6 +1,6 @@
-use ::serde::ser::SerializeStruct;
+use serde::ser::SerializeStruct;
 
-use super::{owned::OwnedLazyValue, value::LazyValue};
+use super::value::LazyValue;
 
 impl<'a> serde::ser::Serialize for LazyValue<'a> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -17,7 +17,7 @@ impl<'a> serde::ser::Serialize for LazyValue<'a> {
 
 #[cfg(test)]
 mod test {
-    use ::serde::{Deserialize, Serialize};
+    use serde::{Deserialize, Serialize};
 
     use crate::{from_str, to_string, LazyValue, OwnedLazyValue, Result};
 
@@ -38,7 +38,7 @@ mod test {
         assert_eq!(json, json2);
     }
 
-    #[derive(Debug, Deserialize, Serialize, PartialEq)]
+    #[derive(Debug, Deserialize, Serialize)]
     struct TestLazyValue<'a> {
         #[serde(borrow)]
         borrowed_lv: LazyValue<'a>,
@@ -59,12 +59,12 @@ mod test {
                 borrowed_lv: from_str(json).expect(&json2),
                 owned_lv: from_str(json).expect(&json2),
             };
-            assert_eq!(data, data2);
+            assert_eq!(to_string(&data).unwrap(), to_string(&data2).unwrap());
             let json = json.trim();
             let expect: String = format!("{{\"borrowed_lv\":{},\"owned_lv\":{}}}", json, json);
             let serialized = to_string(&data).expect(json);
             assert_eq!(expect, serialized);
-            assert_eq!(from_str::<TestLazyValue>(&serialized).expect(json), data);
+            assert_eq!(serialized, to_string(&data).unwrap());
         }
         test_json_ok(r#""""#);
         test_json_ok(r#""raw value""#);

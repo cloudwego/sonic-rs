@@ -13,14 +13,8 @@ pub enum JsonSlice<'de> {
 }
 
 impl<'de> JsonSlice<'de> {
-    pub(crate) fn slice_ref(&self, subset: &'de str) -> Self {
-        match self {
-            JsonSlice::Raw(_) => JsonSlice::Raw(subset.as_bytes()),
-            JsonSlice::FastStr(f) => JsonSlice::FastStr(f.slice_ref(subset)),
-        }
-    }
-
-    pub(crate) unsafe fn into_faststr(&self) -> FastStr {
+    #[inline(always)]
+    pub(crate) unsafe fn as_faststr(&self) -> FastStr {
         match self {
             JsonSlice::Raw(sub) => FastStr::new(as_str(sub)),
             JsonSlice::FastStr(f) => f.clone(),

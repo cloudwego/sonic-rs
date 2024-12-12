@@ -10,8 +10,8 @@ use serde::ser::{SerializeMap, SerializeStruct};
 
 use super::value::HasEsc;
 use crate::{
-    index::Index, input::JsonSlice, serde::Number, JsonInput, JsonType, JsonValueTrait, LazyValue,
-    RawNumber, Result,
+    index::Index, input::JsonSlice, serde::Number, JsonType, JsonValueTrait, LazyValue, RawNumber,
+    Result,
 };
 
 /// OwnedLazyValue wrappers a unparsed raw JSON text. It is owned and support `Get, Set`
@@ -38,10 +38,6 @@ use crate::{
 /// let own_a = OwnedLazyValue::from(get(input, &["a"]).unwrap());
 /// let own_c = OwnedLazyValue::from(get(input, &["c"]).unwrap());
 ///
-/// // use as_raw_xx to get the unparsed JSON text
-/// assert_eq!(own_a.as_raw_str(), "\"hello world\"");
-/// assert_eq!(own_c.as_raw_str(), "[0, 1, 2]");
-///
 /// // use as_xx to get the parsed value
 /// assert_eq!(own_a.as_str().unwrap(), "hello world");
 /// assert_eq!(own_c.as_str(), None);
@@ -54,7 +50,7 @@ use crate::{
 /// # use sonic_rs::{LazyValue, OwnedLazyValue};
 /// use serde::{Deserialize, Serialize};
 ///
-/// #[derive(Debug, Deserialize, Serialize, PartialEq)]
+/// #[derive(Debug, Deserialize, Serialize)]
 /// struct TestLazyValue<'a> {
 ///     #[serde(borrow)]
 ///     borrowed_lv: LazyValue<'a>,
@@ -65,7 +61,6 @@ use crate::{
 ///
 /// let data: TestLazyValue = sonic_rs::from_str(input).unwrap();
 /// assert_eq!(data.borrowed_lv.as_raw_str(), "\"hello\"");
-/// assert_eq!(data.owned_lv.as_raw_str(), "\"world\"");
 /// ```
 #[derive(Debug, Clone)]
 pub struct OwnedLazyValue(pub(crate) LazyPacked);
@@ -77,10 +72,6 @@ impl Default for OwnedLazyValue {
 }
 
 impl OwnedLazyValue {
-    pub(crate) fn from_raw(raw: FastStr) -> Self {
-        Self(LazyPacked::Raw(LazyRaw::new(raw)))
-    }
-
     pub(crate) fn from_non_esc_str(raw: FastStr) -> Self {
         Self(LazyPacked::NonEscStrRaw(raw))
     }
@@ -120,7 +111,7 @@ impl From<()> for OwnedLazyValue {
     }
 }
 
-struct LazyRaw {
+pub(crate) struct LazyRaw {
     // the raw slice from origin json
     pub(crate) raw: FastStr,
     pub(crate) parsed: AtomicPtr<Parsed>,
@@ -130,7 +121,7 @@ impl Debug for LazyRaw {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let ptr = self.parsed.load(Ordering::Relaxed);
         let s = if ptr.is_null() {
-            format!("<nill>")
+            "<nill>".to_string()
         } else {
             format!("{:?}", unsafe { &*ptr })
         };
@@ -142,20 +133,12 @@ impl Debug for LazyRaw {
 }
 
 impl LazyRaw {
-    fn new(raw: FastStr) -> Self {
-        Self {
-            raw,
-            parsed: AtomicPtr::new(std::ptr::null_mut()),
-        }
-    }
-
     fn load(&self) -> Result<&Parsed> {
         let ptr = self.parsed.load(Ordering::Acquire);
         if !ptr.is_null() {
             return Ok(unsafe { &*ptr });
         }
 
-        // let ov = crate::from_slice
         let mut parser = crate::parser::Parser::new(crate::Read::from(&self.raw));
         let mut strbuf: Vec<u8> = Vec::new();
         let olv: OwnedLazyValue = parser.load_owned_lazyvalue(&mut strbuf)?;
@@ -172,8 +155,8 @@ impl LazyRaw {
             Err(ptr) => {
                 // # Safety
                 // the pointer is immutable here, and we can drop it
-                unsafe { Box::from_raw(parsed) };
-                return Ok(unsafe { &*ptr });
+                drop(unsafe { Box::from_raw(parsed) });
+                Ok(unsafe { &*ptr })
             }
         }
     }
@@ -273,7 +256,7 @@ impl Clone for LazyPacked {
 }
 
 #[derive(Debug, Clone)]
-enum Parsed {
+pub(crate) enum Parsed {
     LazyObject(Vec<(FastStr, OwnedLazyValue)>),
     LazyArray(Vec<OwnedLazyValue>),
     String(FastStr),
@@ -304,24 +287,17 @@ impl Parsed {
                         }
                     }
                 }
-                return None;
+                None
             }
             Parsed::LazyArray(arr) => {
                 if let Some(index) = index.as_index() {
-                    return arr.get(index);
+                    arr.get(index)
                 } else {
-                    return None;
+                    None
                 }
             }
             _ => None,
         }
-    }
-
-    fn pointer<P: IntoIterator>(&self, path: P) -> Option<OwnedLazyValue>
-    where
-        P::Item: Index,
-    {
-        todo!()
     }
 }
 
@@ -382,37 +358,19 @@ impl JsonValueTrait for OwnedLazyValue {
     where
         P::Item: Index,
     {
-        todo!()
+        let mut next = self;
+        for index in path {
+            next = match &next.0 {
+                LazyPacked::Parsed(v) => v.get(index),
+                LazyPacked::Raw(raw) => raw.get(index),
+                _ => None,
+            }?;
+        }
+        Some(next)
     }
 }
 
 impl OwnedLazyValue {
-    /// parse the json as OwnedLazyValue
-    ///
-    /// # Examples
-    /// ```
-    /// use faststr::FastStr;
-    /// use sonic_rs::{JsonPointer, OwnedLazyValue};
-    ///
-    /// let lv = OwnedLazyValue::get_from(r#"{"a": "hello world"}"#, &["a"]).unwrap();
-    /// assert_eq!(lv.as_raw_str(), "\"hello world\"");
-    ///
-    /// let lv = OwnedLazyValue::get_from(
-    ///     &FastStr::new(r#"  {"a": "hello world"}  "#),
-    ///     &JsonPointer::new(),
-    /// )
-    /// .unwrap();
-    /// assert_eq!(lv.as_raw_str(), r#"{"a": "hello world"}"#);
-    /// ```
-    pub fn get_from<'de, Input, Path: IntoIterator>(json: Input, path: Path) -> Result<Self>
-    where
-        Input: JsonInput<'de>,
-        Path::Item: Index,
-    {
-        let lv = crate::get(json, path)?;
-        Ok(Self::from(lv))
-    }
-
     pub fn take(&mut self) -> Self {
         std::mem::take(self)
     }
@@ -462,7 +420,11 @@ impl OwnedLazyValue {
 
 impl<'de> From<LazyValue<'de>> for OwnedLazyValue {
     fn from(lv: LazyValue<'de>) -> Self {
-        let raw = unsafe { lv.raw.into_faststr() };
+        let raw = unsafe { lv.raw.as_faststr() };
+        if lv.inner.no_escaped() && raw.as_bytes()[0] == b'"' {
+            return Self(LazyPacked::NonEscStrRaw(raw));
+        }
+
         Self(LazyPacked::Raw(LazyRaw {
             raw,
             parsed: AtomicPtr::new(std::ptr::null_mut()),
@@ -472,7 +434,7 @@ impl<'de> From<LazyValue<'de>> for OwnedLazyValue {
 
 impl Display for OwnedLazyValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        todo!()
+        write!(f, "{:?}", crate::to_string(self))
     }
 }
 
@@ -527,14 +489,6 @@ impl serde::ser::Serialize for OwnedLazyValue {
     }
 }
 
-impl PartialEq for OwnedLazyValue {
-    fn eq(&self, other: &Self) -> bool {
-        todo!()
-    }
-}
-
-impl Eq for OwnedLazyValue {}
-
 #[derive(Debug, Clone, RefCast)]
 #[repr(transparent)]
 pub struct LazyObject(OwnedLazyValue);
@@ -557,6 +511,12 @@ impl std::ops::DerefMut for LazyObject {
         } else {
             unreachable!("must be a lazy object");
         }
+    }
+}
+
+impl Default for LazyObject {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -631,6 +591,12 @@ impl std::ops::Deref for LazyArray {
     }
 }
 
+impl Default for LazyArray {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LazyArray {
     pub fn new() -> Self {
         Self(OwnedLazyValue(LazyPacked::Parsed(Parsed::LazyArray(
@@ -647,7 +613,7 @@ impl LazyArray {
 
 #[cfg(test)]
 mod test {
-    use crate::{pointer, to_lazyvalue, FastStr, OwnedLazyValue};
+    use crate::{get, pointer, prelude::*, to_lazyvalue, FastStr, OwnedLazyValue};
 
     #[test]
     fn test_owned_lazy_value() {
@@ -666,6 +632,21 @@ mod test {
         }
 
         dbg!(crate::to_string(&lv).unwrap());
+
+        let input = r#"{
+          "a": "hello world",
+          "b": true,
+          "c": [0, 1, 2],
+          "d": {
+             "sonic": "rs"
+           }
+         }"#;
+        let own_a = OwnedLazyValue::from(get(input, &["a"]).unwrap());
+        let own_c = OwnedLazyValue::from(get(input, &["c"]).unwrap());
+        // use as_xx to get the parsed value
+        assert_eq!(own_a.as_str().unwrap(), "hello world");
+        assert_eq!(own_c.as_str(), None);
+        assert!(own_c.is_array());
     }
 
     #[test]

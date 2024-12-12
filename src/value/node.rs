@@ -3,7 +3,7 @@ use std::{
     alloc::Layout,
     fmt::{Debug, Display, Formatter},
     marker::PhantomData,
-    mem::{transmute, ManuallyDrop, MaybeUninit},
+    mem::{transmute, ManuallyDrop},
     ptr::NonNull,
     slice::from_raw_parts,
     str::from_utf8_unchecked,
@@ -121,12 +121,6 @@ pub(crate) union Data {
     pub(crate) arr_own: ManuallyDrop<Box<Vec<Value>>>,
 
     pub(crate) parent: u64,
-}
-
-pub(crate) struct RawValue {
-    pub(crate) raw: FastStr,
-    pub(crate) flags: u8,
-    pub(crate) value: MaybeUninit<Value>,
 }
 
 /// inlined string, avoid boxed allocation
