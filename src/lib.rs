@@ -3,7 +3,7 @@
 #![doc(test(attr(warn(unused))))]
 
 mod config;
-mod error;
+pub mod error;
 mod index;
 mod input;
 mod parser;
