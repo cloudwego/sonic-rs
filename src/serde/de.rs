@@ -3,7 +3,6 @@
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
 use std::{marker::PhantomData, mem::ManuallyDrop, ptr::slice_from_raw_parts, sync::Arc};
 
-use faststr::FastStr;
 use serde::{
     de::{self, Expected, Unexpected},
     forward_to_deserialize_any,
@@ -1370,14 +1369,6 @@ where
     T: de::Deserialize<'a>,
 {
     from_trait(Read::new(json, true))
-}
-
-/// TODO: export
-pub(crate) fn from_faststr<'a, T>(json: &'a FastStr) -> Result<T>
-where
-    T: de::Deserialize<'a>,
-{
-    from_trait(Read::from(json))
 }
 
 /// Deserialize an instance of type `T` from bytes of JSON text.

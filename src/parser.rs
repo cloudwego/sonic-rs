@@ -33,7 +33,7 @@ use crate::{
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
     value::{node::RawStr, visitor::JsonVisitor},
-    LazyValue, Number, OwnedLazyValue, Value,
+    LazyValue, Number, OwnedLazyValue,
 };
 
 // support borrow for owned deserizlie or skip
@@ -585,7 +585,7 @@ where
             Some(b'"') => match self.skip_string()? {
                 ParseStatus::None => {
                     let slice = self.read.slice_unchecked(start, self.read.index());
-                    let raw = unsafe { self.read.slice_ref(slice).into_faststr() };
+                    let raw = unsafe { self.read.slice_ref(slice).as_faststr() };
                     return Ok(OwnedLazyValue::from_non_esc_str(raw));
                 }
                 ParseStatus::HasEscaped => {}
@@ -604,17 +604,17 @@ where
         }
         let end = self.read.index();
         let sub = self.read.slice_unchecked(start, end);
-        let raw = unsafe { self.read.slice_ref(sub).into_faststr() };
-        Ok(OwnedLazyValue::from_raw(raw))
+        let raw = unsafe { self.read.slice_ref(sub).as_faststr() };
+        Ok(OwnedLazyValue::new(raw.into(), HasEsc::Possible))
     }
 
     #[inline(always)]
     fn parse_faststr(&mut self, strbuf: &mut Vec<u8>) -> Result<FastStr> {
         match self.parse_str_impl(strbuf)? {
             Reference::Borrowed(s) => {
-                return Ok(unsafe { self.read.slice_ref(s.as_bytes()).into_faststr() });
+                return Ok(unsafe { self.read.slice_ref(s.as_bytes()).as_faststr() });
             }
-            Reference::Copied(s) => return Ok(FastStr::new(s)),
+            Reference::Copied(s) => Ok(FastStr::new(s)),
         }
     }
 
@@ -626,10 +626,13 @@ where
                 Ok(OwnedLazyValue::from(num))
             }
             Some(b'"') => match self.parse_str_impl(strbuf)? {
-                Reference::Borrowed(s) => return perr!(self, InvalidJsonValue),
+                Reference::Borrowed(s) => {
+                    let raw = unsafe { self.read.slice_ref(s.as_bytes()).as_faststr() };
+                    Ok(OwnedLazyValue::from_faststr(raw))
+                }
                 Reference::Copied(s) => {
                     let raw = FastStr::new(s);
-                    return Ok(OwnedLazyValue::from_faststr(raw));
+                    Ok(OwnedLazyValue::from_faststr(raw))
                 }
             },
             Some(b'{') => {
@@ -673,7 +676,7 @@ where
                     };
                 }
             }
-            _ => return perr!(self, InvalidJsonValue),
+            _ => perr!(self, InvalidJsonValue),
         }
     }
 

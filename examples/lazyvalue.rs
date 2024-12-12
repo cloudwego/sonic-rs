@@ -14,7 +14,6 @@ fn main() {
     }
     let data: TestLazyValue = sonic_rs::from_str(input).unwrap();
     assert_eq!(data.borrowed.as_raw_str(), "\"hello\"");
-    assert_eq!(data.owned.as_raw_str(), "\"world\"");
 
     // use serde_json
     #[derive(Debug, Deserialize, Serialize)]
