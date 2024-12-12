@@ -19,10 +19,10 @@ pub mod writer;
 
 // re-export FastStr
 // re-export the serde trait
-pub use ::serde::{Deserialize, Serialize};
 pub use faststr::FastStr;
 #[doc(inline)]
 pub use reader::Read;
+pub use serde::{Deserialize, Serialize};
 
 #[doc(inline)]
 pub use crate::error::{Error, Result};
