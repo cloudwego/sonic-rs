@@ -442,7 +442,7 @@ impl ser::Error for Error {
 
 // TODO: remove me in 0.4 version.
 #[cold]
-pub fn make_error(mut msg: String) -> Error {
+pub(crate) fn make_error(mut msg: String) -> Error {
     let (line, column) = parse_line_col(&mut msg).unwrap_or((0, 0));
     Error {
         err: Box::new(ErrorImpl {
