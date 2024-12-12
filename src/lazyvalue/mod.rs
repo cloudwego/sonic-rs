@@ -14,11 +14,9 @@ pub use self::{
     },
     iterator::{
         to_array_iter, to_array_iter_unchecked, to_object_iter, to_object_iter_unchecked,
-        ArrayJsonIter, ObjectJsonIter, OwnedArrayJsonIter, OwnedObjectJsonIter,
+        ArrayJsonIter, ObjectJsonIter,
     },
-    owned::LazyArray,
-    owned::LazyObject,
-    owned::OwnedLazyValue,
+    owned::{LazyArray, LazyObject, OwnedLazyValue},
     value::LazyValue,
 };
 

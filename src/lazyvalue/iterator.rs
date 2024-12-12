@@ -6,7 +6,6 @@ use crate::{
     lazyvalue::LazyValue,
     parser::{Parser, DEFAULT_KEY_BUF_CAPACITY},
     reader::{Read, Reader},
-    OwnedLazyValue,
 };
 /// A lazied iterator for JSON object text. It will parse the JSON when iterating.
 ///
@@ -74,28 +73,6 @@ pub struct ArrayJsonIter<'de> {
     first: bool,
     ending: bool,
     skip_strict: bool,
-}
-
-pub struct OwnedArrayJsonIter(pub(crate) ArrayJsonIter<'static>);
-
-pub struct OwnedObjectJsonIter(pub(crate) ObjectJsonIter<'static>);
-
-impl Iterator for OwnedObjectJsonIter {
-    type Item = Result<(FastStr, OwnedLazyValue)>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0
-            .next_entry_impl()
-            .map(|v| v.map(|(k, v)| (k, OwnedLazyValue::from(v))))
-    }
-}
-
-impl Iterator for OwnedArrayJsonIter {
-    type Item = Result<OwnedLazyValue>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.next_elem_impl().map(|v| v.map(OwnedLazyValue::from))
-    }
 }
 
 impl<'de> ObjectJsonIter<'de> {

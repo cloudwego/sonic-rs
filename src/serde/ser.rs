@@ -1317,12 +1317,10 @@ where
         String::from_utf8_unchecked(vec)
     };
 
-    let status = if !string.is_empty() && string.as_bytes()[0] == b'"' {
-        HasEsc::Possible
-    } else {
-        HasEsc::None
-    };
-    Ok(OwnedLazyValue::new(FastStr::new(string).into(), status))
+    Ok(OwnedLazyValue::new(
+        FastStr::new(string).into(),
+        HasEsc::Possible,
+    ))
 }
 
 /// Serialize the given data structure as a pretty-printed String of JSON.
