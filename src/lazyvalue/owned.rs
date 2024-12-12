@@ -10,8 +10,8 @@ use serde::ser::{SerializeMap, SerializeStruct};
 
 use super::value::HasEsc;
 use crate::{
-    index::Index, input::JsonSlice, serde::Number, JsonType, JsonValueTrait, LazyValue, RawNumber,
-    Result,
+    index::Index, input::JsonSlice, prelude::*, serde::Number, JsonType, JsonValueTrait, LazyValue,
+    RawNumber, Result,
 };
 
 /// OwnedLazyValue wrappers a unparsed raw JSON text. It is owned and support `Get, Set`
@@ -180,7 +180,6 @@ impl LazyRaw {
             return Ok(v);
         }
 
-        // let ov = crate::from_slice
         let mut parser = crate::parser::Parser::new(crate::Read::from(&self.raw));
         let mut strbuf: Vec<u8> = Vec::new();
         let olv: OwnedLazyValue = parser.load_owned_lazyvalue(&mut strbuf)?;
@@ -191,20 +190,35 @@ impl LazyRaw {
     }
 
     fn get<I: Index>(&self, idx: I) -> Option<&OwnedLazyValue> {
-        let parsed = self.load().ok()?;
-        parsed.get(idx)
+        match self.get_type() {
+            JsonType::Array if idx.as_index().is_some() => {
+                let parsed = self.load().ok()?;
+                parsed.get(idx)
+            }
+            JsonType::Object if idx.as_key().is_some() => {
+                let parsed = self.load().ok()?;
+                parsed.get(idx)
+            }
+            _ => None,
+        }
     }
 
     fn as_number(&self) -> Option<Number> {
-        match self.load().ok()? {
-            Parsed::Number(n) => Some(n.clone()),
+        match self.get_type() {
+            JsonType::Number => match self.load().ok()? {
+                Parsed::Number(n) => Some(n.clone()),
+                _ => None,
+            },
             _ => None,
         }
     }
 
     fn as_str(&self) -> Option<&str> {
-        match self.load().ok()? {
-            Parsed::String(s) => Some(s.as_str()),
+        match self.get_type() {
+            JsonType::String => match self.load().ok()? {
+                Parsed::String(s) => Some(s.as_str()),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -310,6 +324,29 @@ impl Parsed {
             _ => None,
         }
     }
+
+    fn get_mut<I: Index>(&mut self, index: I) -> Option<&mut OwnedLazyValue> {
+        match self {
+            Parsed::LazyObject(obj) => {
+                if let Some(key) = index.as_key() {
+                    for (k, v) in obj {
+                        if k == key {
+                            return Some(v);
+                        }
+                    }
+                }
+                None
+            }
+            Parsed::LazyArray(arr) => {
+                if let Some(index) = index.as_index() {
+                    arr.get_mut(index)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 impl JsonValueTrait for OwnedLazyValue {
@@ -381,15 +418,19 @@ impl JsonValueTrait for OwnedLazyValue {
     }
 }
 
-impl OwnedLazyValue {
-    pub fn take(&mut self) -> Self {
-        std::mem::take(self)
-    }
+impl JsonValueMutTrait for OwnedLazyValue {
+    type ValueType = OwnedLazyValue;
+    type ArrayType = LazyArray;
+    type ObjectType = LazyObject;
 
-    pub fn as_object_mut(&mut self) -> Option<&mut LazyObject> {
+    fn as_object_mut(&mut self) -> Option<&mut LazyObject> {
         if let LazyPacked::Raw(raw) = &mut self.0 {
-            let parsed = raw.parse().ok()?;
-            self.0 = LazyPacked::Parsed(parsed);
+            if raw.get_type() == JsonType::Object {
+                let parsed = raw.parse().ok()?;
+                self.0 = LazyPacked::Parsed(parsed);
+            } else {
+                return None;
+            }
         }
 
         if let LazyPacked::Parsed(Parsed::LazyObject(_)) = &mut self.0 {
@@ -399,10 +440,14 @@ impl OwnedLazyValue {
         }
     }
 
-    pub fn as_array_mut(&mut self) -> Option<&mut LazyArray> {
+    fn as_array_mut(&mut self) -> Option<&mut LazyArray> {
         if let LazyPacked::Raw(raw) = &mut self.0 {
-            let parsed = raw.parse().ok()?;
-            self.0 = LazyPacked::Parsed(parsed);
+            if raw.get_type() == JsonType::Array {
+                let parsed = raw.parse().ok()?;
+                self.0 = LazyPacked::Parsed(parsed);
+            } else {
+                return None;
+            }
         }
 
         if let LazyPacked::Parsed(Parsed::LazyArray(_)) = &mut self.0 {
@@ -410,6 +455,87 @@ impl OwnedLazyValue {
         } else {
             None
         }
+    }
+
+    fn get_mut<I: Index>(&mut self, index: I) -> Option<&mut OwnedLazyValue> {
+        if matches!(self.0, LazyPacked::Raw(_)) {
+            self.get_mut_from_raw(index)
+        } else if let LazyPacked::Parsed(parsed) = &mut self.0 {
+            parsed.get_mut(index)
+        } else {
+            None
+        }
+    }
+
+    fn pointer_mut<P: IntoIterator>(&mut self, path: P) -> Option<&mut OwnedLazyValue>
+    where
+        P::Item: Index,
+    {
+        let mut next = self;
+        for index in path {
+            if matches!(next.0, LazyPacked::Raw(_)) {
+                next = next.get_mut_from_raw(index)?;
+            } else {
+                next = match &mut next.0 {
+                    LazyPacked::Parsed(v) => v.get_mut(index),
+                    _ => None,
+                }?;
+            }
+        }
+        Some(next)
+    }
+}
+
+impl JsonContainerTrait for OwnedLazyValue {
+    type ArrayType = LazyArray;
+    type ObjectType = LazyObject;
+
+    #[inline]
+    fn as_array(&self) -> Option<&Self::ArrayType> {
+        let parsed = match &self.0 {
+            LazyPacked::Raw(raw) => {
+                if raw.get_type() == JsonType::Array {
+                    raw.load().ok()?
+                } else {
+                    return None;
+                }
+            }
+            LazyPacked::Parsed(parsed) => parsed,
+            _ => return None,
+        };
+
+        if let Parsed::LazyArray(_) = parsed {
+            Some(LazyArray::ref_cast(self))
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    fn as_object(&self) -> Option<&Self::ObjectType> {
+        let parsed = match &self.0 {
+            LazyPacked::Raw(raw) => {
+                if raw.get_type() == JsonType::Object {
+                    raw.load().ok()?
+                } else {
+                    return None;
+                }
+            }
+            LazyPacked::Parsed(parsed) => parsed,
+            _ => return None,
+        };
+
+        if let Parsed::LazyObject(_) = parsed {
+            Some(LazyObject::ref_cast(self))
+        } else {
+            None
+        }
+    }
+}
+
+impl OwnedLazyValue {
+    pub fn take(&mut self) -> Self {
+        std::mem::take(self)
     }
 
     pub(crate) fn new(raw: JsonSlice, status: HasEsc) -> Self {
@@ -425,6 +551,32 @@ impl OwnedLazyValue {
                 raw,
                 parsed: AtomicPtr::new(std::ptr::null_mut()),
             }))
+        }
+    }
+
+    fn get_mut_from_raw<I: Index>(&mut self, index: I) -> Option<&mut Self> {
+        let raw = if let LazyPacked::Raw(raw) = &mut self.0 {
+            raw
+        } else {
+            return None;
+        };
+
+        match raw.get_type() {
+            JsonType::Array if index.as_index().is_some() => {
+                let parsed = raw.parse().ok()?;
+                *self = Self(LazyPacked::Parsed(parsed));
+            }
+            JsonType::Object if index.as_key().is_some() => {
+                let parsed = raw.parse().ok()?;
+                *self = Self(LazyPacked::Parsed(parsed));
+            }
+            _ => return None,
+        }
+
+        if let LazyPacked::Parsed(parsed) = &mut self.0 {
+            parsed.get_mut(index)
+        } else {
+            None
         }
     }
 }
@@ -470,26 +622,12 @@ impl serde::ser::Serialize for OwnedLazyValue {
                 s.end()
             }
             LazyPacked::Parsed(Parsed::LazyObject(vec)) => {
-                #[cfg(feature = "sort_keys")]
-                {
-                    // TODO: sort the keys use thread-local buffer
-                    let mut kvs: Vec<&(FastStr, OwnedLazyValue)> = vec.iter().collect();
-                    kvs.sort_by(|(k1, _), (k2, _)| k1.as_str().cmp(k2.as_str()));
-                    let mut map = serializer.serialize_map(Some(kvs.len()))?;
-                    for (k, v) in kvs {
-                        map.serialize_entry(k, v)?;
-                    }
-                    map.end()
+                // if expected to be sort-keys, should use `sonic_rs::Value`
+                let mut map = serializer.serialize_map(Some(vec.len()))?;
+                for (k, v) in vec {
+                    map.serialize_entry(k, v)?;
                 }
-
-                #[cfg(not(feature = "sort_keys"))]
-                {
-                    let mut map = serializer.serialize_map(Some(vec.len()))?;
-                    for (k, v) in vec {
-                        map.serialize_entry(k, v)?;
-                    }
-                    map.end()
-                }
+                map.end()
             }
             LazyPacked::Parsed(Parsed::LazyArray(vec)) => vec.serialize(serializer),
             LazyPacked::Parsed(Parsed::String(s)) => s.serialize(serializer),
@@ -624,8 +762,7 @@ impl LazyArray {
 
 #[cfg(test)]
 mod test {
-    use crate::{get, pointer, prelude::*, to_lazyvalue, FastStr, OwnedLazyValue};
-
+    use crate::{get, pointer, prelude::*, to_lazyvalue, to_string, FastStr, OwnedLazyValue};
     #[test]
     fn test_owned_lazy_value() {
         let mut lv: OwnedLazyValue =
@@ -680,5 +817,77 @@ mod test {
         }
 
         dbg!(crate::to_string(&lv).unwrap());
+    }
+
+    #[test]
+    fn test_owned_value_pointer() {
+        let input = FastStr::from(String::from(
+            r#"{
+          "a": "hello world",
+          "b": true,
+          "c": [0, 1, 2],
+          "d": {
+             "sonic": "rs"
+           }
+         }"#,
+        ));
+        let root: OwnedLazyValue =
+            unsafe { crate::get_unchecked(&input, pointer![]).unwrap() }.into();
+        test_pointer(&root);
+        test_pointer(&root.clone());
+        test_pointer(&to_lazyvalue(&root).unwrap());
+
+        fn test_pointer(lv: &OwnedLazyValue) {
+            assert!(lv.pointer(pointer!["aa"]).is_none());
+            assert!(lv.get("aa").is_none());
+            assert_eq!(lv.pointer(pointer!["a"]).as_str(), Some("hello world"));
+            assert_eq!(lv.get("a").as_str(), Some("hello world"));
+            assert_eq!(lv.pointer(pointer!["b"]).as_bool(), Some(true));
+            assert_eq!(lv.get("b").as_bool(), Some(true));
+            assert_eq!(lv.pointer(pointer!["c", 1]).as_i64(), Some(1));
+            assert_eq!(lv.pointer(pointer!["c", 3]).as_i64(), None);
+        }
+    }
+
+    #[test]
+    fn test_owned_value_mut() {
+        let input = FastStr::from(String::from(
+            r#"{
+          "a": "hello world",
+          "b": true,
+          "c": [0, 1, 2],
+          "d": {
+             "sonic": "rs"
+           }
+         }"#,
+        ));
+        let mut root: OwnedLazyValue =
+            unsafe { crate::get_unchecked(&input, pointer![]).unwrap() }.into();
+        let mut root2 = root.clone();
+        let mut root3 = to_lazyvalue(&root2).unwrap();
+        test_pointer(&mut root);
+        test_pointer(&mut root2);
+        test_pointer(&mut root3);
+
+        fn test_pointer(lv: &mut OwnedLazyValue) {
+            assert!(lv.pointer_mut(pointer!["aa"]).is_none());
+            assert!(lv.get_mut("aa").is_none());
+            assert_eq!(
+                lv.pointer_mut(pointer!["a"]).unwrap().as_str(),
+                Some("hello world")
+            );
+            assert_eq!(lv.get_mut("a").unwrap().as_str(), Some("hello world"));
+            assert_eq!(lv.pointer_mut(pointer!["b"]).unwrap().as_bool(), Some(true));
+            assert_eq!(lv.get_mut("b").unwrap().as_bool(), Some(true));
+            let sub = lv.pointer_mut(pointer!["c", 1]).unwrap();
+            assert_eq!(sub.as_i64(), Some(1));
+            *sub = to_lazyvalue(&3).unwrap();
+            assert_eq!(sub.as_i64(), Some(3));
+            assert!(lv.pointer_mut(pointer!["c", 3]).is_none());
+            assert_eq!(lv.pointer_mut(pointer!["c", 1]).unwrap().as_i64(), Some(3));
+        }
+
+        assert_eq!(to_string(&root).unwrap(), to_string(&root2).unwrap());
+        assert_eq!(to_string(&root).unwrap(), to_string(&root3).unwrap());
     }
 }
