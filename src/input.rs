@@ -13,11 +13,18 @@ pub enum JsonSlice<'de> {
 }
 
 impl<'de> JsonSlice<'de> {
-    pub fn slice_ref(&self, subset: &'de [u8]) -> Self {
+    #[inline(always)]
+    pub(crate) unsafe fn as_faststr(&self) -> FastStr {
         match self {
-            JsonSlice::Raw(_) => JsonSlice::Raw(subset),
-            JsonSlice::FastStr(f) => JsonSlice::FastStr(f.slice_ref(as_str(subset))),
+            JsonSlice::Raw(sub) => FastStr::new(as_str(sub)),
+            JsonSlice::FastStr(f) => f.clone(),
         }
+    }
+}
+
+impl Default for JsonSlice<'_> {
+    fn default() -> Self {
+        JsonSlice::Raw(&b"null"[..])
     }
 }
 
