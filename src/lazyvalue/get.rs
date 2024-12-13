@@ -6,7 +6,7 @@ use crate::{
     error::Result,
     index::Index,
     input::JsonInput,
-    parser::{ParseStatus, Parser},
+    parser::Parser,
     pointer::PointerTree,
     reader::{Read, Reader},
     util::utf8::from_utf8,
@@ -180,7 +180,7 @@ where
     let reader = Read::new(slice, false);
     let mut parser = Parser::new(reader);
     let (sub, status) = parser.get_from_with_iter_unchecked(path)?;
-    LazyValue::new(json.from_subset(sub), status == ParseStatus::HasEscaped)
+    Ok(LazyValue::new(json.from_subset(sub), status.into()))
 }
 
 /// get_many returns multiple fields from the `PointerTree`.
@@ -389,7 +389,7 @@ where
     let reader = Read::new(slice, false);
     let mut parser = Parser::new(reader);
     let (sub, status) = parser.get_from_with_iter(path)?;
-    let lv = LazyValue::new(json.from_subset(sub), status == ParseStatus::HasEscaped)?;
+    let lv = LazyValue::new(json.from_subset(sub), status.into());
 
     // validate the utf-8 if slice
     let index = parser.read.index();

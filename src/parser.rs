@@ -21,6 +21,7 @@ use crate::{
         Result,
     },
     index::Index,
+    lazyvalue::value::HasEsc,
     pointer::{
         tree::{MultiIndex, MultiKey, PointerTreeInner, PointerTreeNode},
         PointerTree,
@@ -33,7 +34,7 @@ use crate::{
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
     value::{node::RawStr, visitor::JsonVisitor},
-    JsonValueMutTrait, JsonValueTrait, LazyValue,
+    JsonValueMutTrait, JsonValueTrait, LazyValue, Number, OwnedLazyValue,
 };
 
 // support borrow for owned deserizlie or skip
@@ -198,6 +199,15 @@ pub(crate) struct Parser<R> {
 pub(crate) enum ParseStatus {
     None,
     HasEscaped,
+}
+
+impl From<ParseStatus> for HasEsc {
+    fn from(value: ParseStatus) -> Self {
+        match value {
+            ParseStatus::None => HasEsc::None,
+            ParseStatus::HasEscaped => HasEsc::Yes,
+        }
+    }
 }
 
 impl<'de, R> Parser<R>
@@ -481,7 +491,7 @@ where
         &mut self,
         first: &mut bool,
         check: bool,
-    ) -> Result<Option<(&'de [u8], bool)>> {
+    ) -> Result<Option<(&'de [u8], ParseStatus)>> {
         if *first && self.skip_space() != Some(b'[') {
             return perr!(self, ExpectedArrayStart);
         }
@@ -503,7 +513,7 @@ where
         } else {
             self.skip_one_unchecked()
         }?;
-        Ok(Some((raw, status == ParseStatus::HasEscaped)))
+        Ok(Some((raw, status)))
     }
 
     #[inline]
@@ -512,7 +522,7 @@ where
         strbuf: &mut Vec<u8>,
         first: &mut bool,
         check: bool,
-    ) -> Result<Option<(FastStr, &'de [u8], bool)>> {
+    ) -> Result<Option<(FastStr, &'de [u8], ParseStatus)>> {
         if *first && self.skip_space() != Some(b'{') {
             return perr!(self, ExpectedObjectStart);
         }
@@ -535,7 +545,7 @@ where
         } else {
             self.skip_one_unchecked()
         }?;
-        Ok(Some((key, raw, status == ParseStatus::HasEscaped)))
+        Ok(Some((key, raw, status)))
     }
 
     // Not use non-recurse version here, because it maybe 5% slower than recurse version.
@@ -553,6 +563,122 @@ where
             None => return perr!(self, EofWhileParsing),
         }?;
         Ok(())
+    }
+
+    #[inline(always)]
+    pub(crate) fn match_literal(&mut self, literal: &'static str) -> Result<bool> {
+        if let Some(chunk) = self.read.next_n(literal.len()) {
+            if chunk != literal.as_bytes() {
+                perr!(self, InvalidLiteral)
+            } else {
+                Ok(true)
+            }
+        } else {
+            perr!(self, EofWhileParsing)
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn get_owned_lazyvalue(&mut self, strict: bool) -> Result<OwnedLazyValue> {
+        let c = self.skip_space();
+        let start = self.read.index() - 1;
+        match c {
+            Some(b'"') => match self.skip_string()? {
+                ParseStatus::None => {
+                    let slice = self.read.slice_unchecked(start, self.read.index());
+                    let raw = unsafe { self.read.slice_ref(slice).as_faststr() };
+                    return Ok(OwnedLazyValue::from_non_esc_str(raw));
+                }
+                ParseStatus::HasEscaped => {}
+            },
+            Some(b't') if self.match_literal("rue")? => return Ok(true.into()),
+            Some(b'f') if self.match_literal("alse")? => return Ok(false.into()),
+            Some(b'n') if self.match_literal("ull")? => return Ok(().into()),
+            _ => {
+                self.read.backward(1);
+                if strict {
+                    self.skip_one()?;
+                } else {
+                    self.skip_one_unchecked()?;
+                }
+            }
+        }
+        let end = self.read.index();
+        let sub = self.read.slice_unchecked(start, end);
+        let raw = unsafe { self.read.slice_ref(sub).as_faststr() };
+        Ok(OwnedLazyValue::new(raw.into(), HasEsc::Possible))
+    }
+
+    #[inline(always)]
+    fn parse_faststr(&mut self, strbuf: &mut Vec<u8>) -> Result<FastStr> {
+        match self.parse_str_impl(strbuf)? {
+            Reference::Borrowed(s) => {
+                return Ok(unsafe { self.read.slice_ref(s.as_bytes()).as_faststr() });
+            }
+            Reference::Copied(s) => Ok(FastStr::new(s)),
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) fn load_owned_lazyvalue(&mut self, strbuf: &mut Vec<u8>) -> Result<OwnedLazyValue> {
+        match self.skip_space() {
+            Some(c @ b'-' | c @ b'0'..=b'9') => {
+                let num: Number = self.parse_number(c)?.into();
+                Ok(OwnedLazyValue::from(num))
+            }
+            Some(b'"') => match self.parse_str_impl(strbuf)? {
+                Reference::Borrowed(s) => {
+                    let raw = unsafe { self.read.slice_ref(s.as_bytes()).as_faststr() };
+                    Ok(OwnedLazyValue::from_faststr(raw))
+                }
+                Reference::Copied(s) => {
+                    let raw = FastStr::new(s);
+                    Ok(OwnedLazyValue::from_faststr(raw))
+                }
+            },
+            Some(b'{') => {
+                // parsing empty object
+                match self.skip_space() {
+                    Some(b'}') => return Ok(Vec::<(FastStr, OwnedLazyValue)>::new().into()),
+                    Some(b'"') => {}
+                    _ => return perr!(self, ExpectObjectKeyOrEnd),
+                }
+
+                // loop for each object key and value
+                let mut vec = Vec::with_capacity(32);
+                loop {
+                    let key = self.parse_faststr(strbuf)?;
+                    self.parse_object_clo()?;
+                    let olv = self.get_owned_lazyvalue(false)?;
+                    vec.push((key, olv));
+                    match self.skip_space() {
+                        Some(b'}') => return Ok(vec.into()),
+                        Some(b',') => match self.skip_space() {
+                            Some(b'"') => continue,
+                            _ => return perr!(self, ExpectObjectKeyOrEnd),
+                        },
+                        _ => return perr!(self, ExpectedArrayCommaOrEnd),
+                    }
+                }
+            }
+            Some(b'[') => {
+                if let Some(b']') = self.skip_space() {
+                    return Ok(Vec::<OwnedLazyValue>::new().into());
+                }
+
+                let mut vec = Vec::with_capacity(32);
+                self.read.backward(1);
+                loop {
+                    vec.push(self.get_owned_lazyvalue(false)?);
+                    match self.skip_space() {
+                        Some(b']') => return Ok(vec.into()),
+                        Some(b',') => {}
+                        _ => return perr!(self, ExpectedArrayCommaOrEnd),
+                    };
+                }
+            }
+            _ => perr!(self, InvalidJsonValue),
+        }
     }
 
     #[inline(always)]
@@ -1739,7 +1865,7 @@ where
 
         if !node.order.is_empty() {
             slice = self.read.slice_unchecked(start, self.read.index());
-            let lv = LazyValue::new(slice.into(), status == ParseStatus::HasEscaped)?;
+            let lv = LazyValue::new(slice.into(), status.into());
             for p in &node.order {
                 out[*p] = lv.clone();
             }
