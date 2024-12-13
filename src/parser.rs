@@ -34,7 +34,7 @@ use crate::{
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
     value::{node::RawStr, visitor::JsonVisitor},
-    JsonValueMutTrait, JsonValueTrait, LazyValue, Number, OwnedLazyValue, Value,
+    JsonValueMutTrait, JsonValueTrait, LazyValue, Number, OwnedLazyValue,
 };
 
 // support borrow for owned deserizlie or skip
