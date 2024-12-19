@@ -890,4 +890,21 @@ mod test {
         assert_eq!(to_string(&root).unwrap(), to_string(&root2).unwrap());
         assert_eq!(to_string(&root).unwrap(), to_string(&root3).unwrap());
     }
+
+    #[test]
+    fn test_owned_from_invalid() {
+        for json in [
+            r#"", 
+            r#"{"a":"#,
+            r#"{"a":123"#,
+            r#"{"a":}"#,
+            r#"{"a": x}"#,
+            r#"{"a":1.}"#,
+            r#"{"a:1.}"#,
+            r#"{"a" 1}"#,
+            r#"{"a"[1}}"#,
+        ] {
+            crate::from_str::<OwnedLazyValue>(json).expect_err(json);
+        }
+    }
 }

@@ -581,28 +581,34 @@ where
     #[inline(always)]
     pub(crate) fn get_owned_lazyvalue(&mut self, strict: bool) -> Result<OwnedLazyValue> {
         let c = self.skip_space();
-        let start = self.read.index() - 1;
-        match c {
-            Some(b'"') => match self.skip_string()? {
-                ParseStatus::None => {
-                    let slice = self.read.slice_unchecked(start, self.read.index());
-                    let raw = unsafe { self.read.slice_ref(slice).as_faststr() };
-                    return Ok(OwnedLazyValue::from_non_esc_str(raw));
+        let start = match c {
+            Some(b'"') => {
+                let start = self.read.index() - 1;
+                match self.skip_string()? {
+                    ParseStatus::None => {
+                        let slice = self.read.slice_unchecked(start, self.read.index());
+                        let raw = unsafe { self.read.slice_ref(slice).as_faststr() };
+                        return Ok(OwnedLazyValue::from_non_esc_str(raw));
+                    }
+                    ParseStatus::HasEscaped => {}
                 }
-                ParseStatus::HasEscaped => {}
-            },
+                start
+            }
             Some(b't') if self.match_literal("rue")? => return Ok(true.into()),
             Some(b'f') if self.match_literal("alse")? => return Ok(false.into()),
             Some(b'n') if self.match_literal("ull")? => return Ok(().into()),
+            None => return perr!(self, EofWhileParsing),
             _ => {
+                let start = self.read.index() - 1;
                 self.read.backward(1);
                 if strict {
                     self.skip_one()?;
                 } else {
                     self.skip_one_unchecked()?;
                 }
+                start
             }
-        }
+        };
         let end = self.read.index();
         let sub = self.read.slice_unchecked(start, end);
         let raw = unsafe { self.read.slice_ref(sub).as_faststr() };
