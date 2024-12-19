@@ -373,7 +373,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     where
         V: de::Visitor<'de>,
     {
-        let val = ManuallyDrop::new(self.parser.get_owned_lazyvalue(false)?);
+        let val = ManuallyDrop::new(self.parser.get_owned_lazyvalue(true)?);
         // #Safety
         // the json is validate before parsing json, and we pass the document using visit_bytes
         // here.

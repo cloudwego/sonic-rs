@@ -111,9 +111,22 @@ pub fn sonic_rs_fuzz_data(data: &[u8]) {
                 }
             }
         }
-        Err(_) => {
-            let _ = from_slice::<Value>(data)
-                .expect_err(&format!("parse invalid json {:?} failed", data));
+        Err(e) => {
+            let _ = from_slice::<Value>(data).expect_err(&format!(
+                "parse invalid json {:?} failed, should return error {e} ",
+                data
+            ));
+
+            // LazyValue should return error if the json is invalid
+            let msg = e.to_string();
+            if (msg.starts_with("expected ") || msg.starts_with("EOF"))
+                && simdutf8::basic::from_utf8(data).is_ok()
+            {
+                let _ = from_slice::<OwnedLazyValue>(data).expect_err(&format!(
+                    "parse invalid json {:?} failed, should return error {msg}",
+                    data
+                ));
+            }
         }
     }
 
