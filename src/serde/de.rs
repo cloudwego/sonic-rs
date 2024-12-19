@@ -935,13 +935,13 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
     }
 }
 
-struct SeqAccess<'a, R: 'a> {
+pub struct SeqAccess<'a, R: 'a> {
     de: &'a mut Deserializer<R>,
     first: bool, // first is marked as
 }
 
 impl<'a, R: 'a> SeqAccess<'a, R> {
-    fn new(de: &'a mut Deserializer<R>) -> Self {
+    pub fn new(de: &'a mut Deserializer<R>) -> Self {
         SeqAccess { de, first: true }
     }
 }
@@ -973,13 +973,13 @@ impl<'de, 'a, R: Reader<'de> + 'a> de::SeqAccess<'de> for SeqAccess<'a, R> {
     }
 }
 
-struct MapAccess<'a, R: 'a> {
+pub struct MapAccess<'a, R: 'a> {
     de: &'a mut Deserializer<R>,
     first: bool,
 }
 
 impl<'a, R: 'a> MapAccess<'a, R> {
-    fn new(de: &'a mut Deserializer<R>) -> Self {
+    pub fn new(de: &'a mut Deserializer<R>) -> Self {
         MapAccess { de, first: true }
     }
 }
