@@ -175,9 +175,9 @@ impl LazyRaw {
     fn parse(&mut self) -> Result<Parsed> {
         let ptr = self.parsed.get_mut();
         if !(*ptr).is_null() {
-            let v = unsafe { std::ptr::read(*ptr) };
+            let v = unsafe { Box::from_raw(*ptr) };
             *ptr = std::ptr::null_mut();
-            return Ok(v);
+            return Ok(*v);
         }
 
         let mut parser = crate::parser::Parser::new(crate::Read::from(&self.raw));
