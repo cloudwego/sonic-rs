@@ -114,6 +114,24 @@ impl WriteExt for Writer<BytesMut> {
     }
 }
 
+impl WriteExt for Writer<&mut BytesMut> {
+    #[inline(always)]
+    unsafe fn flush_len(&mut self, additional: usize) -> io::Result<()> {
+        let new_len = self.get_ref().len() + additional;
+        self.get_mut().set_len(new_len);
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
+        self.get_mut().reserve(additional);
+        unsafe {
+            let ptr = self.get_mut().as_mut_ptr().add(self.get_ref().len()) as *mut MaybeUninit<u8>;
+            Ok(from_raw_parts_mut(ptr, additional))
+        }
+    }
+}
+
 impl<W: WriteExt + ?Sized> WriteExt for IoBufWriter<W> {
     fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
         self.get_mut().reserve_with(additional)
