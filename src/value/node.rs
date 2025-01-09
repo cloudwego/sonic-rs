@@ -92,8 +92,8 @@ pub struct Value {
 // | static str  |   0    |   8    |                   |           string length        +         *const u8       | excced will fallback |
 // |  faststr    |   1    |   0    |                                                    +       Box<FastStr>      |                      |
 // |rawnum_fastst|   1    |   1    |                                                    +       Box<FastStr>      |                      |
-// |  arr_mut    |   1    |   2    |                                                    +       Box<Vec<Node>>    |                      |
-// |  obj_mut    |   1    |   3    |                                                    +       Box<Vec<Pair>>    |                      |
+// |  arr_mut    |   1    |   2    |                                                    +       Arc<Vec<Node>>    |                      |
+// |  obj_mut    |   1    |   3    |                                                    +       Arc<Vec<Pair>>    |                      |
 // |  str_node   |   2    |        node idx            |           string length        +         *const u8       |    max len 2^32      |
 // | raw_num_node|   3    |        node idx            |           string length        +         *const u8       |    max len 2^32      |
 // |  arr_node   |   4    |        node idx            |           array length         +         *const Node     |    max len 2^32      |
@@ -117,8 +117,8 @@ pub(crate) union Data {
     pub(crate) root: NonNull<Value>,
 
     pub(crate) str_own: ManuallyDrop<Box<FastStr>>,
-    pub(crate) obj_own: ManuallyDrop<Box<Vec<Pair>>>,
-    pub(crate) arr_own: ManuallyDrop<Box<Vec<Value>>>,
+    pub(crate) obj_own: ManuallyDrop<Arc<Vec<Pair>>>,
+    pub(crate) arr_own: ManuallyDrop<Arc<Vec<Value>>>,
 
     pub(crate) parent: u64,
 }
@@ -426,8 +426,8 @@ enum ValueDetail<'a> {
     StaticStr(&'static str),
     FastStr(&'a FastStr),
     RawNumFasStr(&'a FastStr),
-    Array(&'a Vec<Value>),
-    Object(&'a Vec<Pair>),
+    Array(&'a Arc<Vec<Value>>),
+    Object(&'a Arc<Vec<Pair>>),
     Root(NodeInDom<'a>),
     NodeInDom(NodeInDom<'a>),
     EmptyArray,
@@ -484,7 +484,7 @@ impl<'a> From<&'a [Pair]> for Value {
         Self {
             meta: Meta::new(Meta::OBJ_MUT),
             data: Data {
-                obj_own: ManuallyDrop::new(Box::new(newd)),
+                obj_own: ManuallyDrop::new(Arc::new(newd)),
             },
         }
     }
@@ -541,8 +541,8 @@ impl Value {
             Meta::F64 | Meta::I64 | Meta::U64 => ValueMut::Number,
             Meta::STATIC_STR | Meta::STR_NODE | Meta::FASTSTR | Meta::ESC_RAW_NODE => ValueMut::Str,
             Meta::RAWNUM_FASTSTR | Meta::RAWNUM_NODE => ValueMut::RawNum,
-            Meta::ARR_MUT => ValueMut::Array(unsafe { &mut self.data.arr_own }),
-            Meta::OBJ_MUT => ValueMut::Object(unsafe { &mut self.data.obj_own }),
+            Meta::ARR_MUT => ValueMut::Array(unsafe { Arc::make_mut(&mut self.data.arr_own) }),
+            Meta::OBJ_MUT => ValueMut::Object(unsafe { Arc::make_mut(&mut self.data.obj_own) }),
             Meta::ROOT_NODE | Meta::EMPTY_ARR | Meta::EMPTY_OBJ => {
                 /* convert to mutable */
                 self.to_mut();
@@ -674,10 +674,32 @@ impl Clone for Value {
             ValueDetail::StaticStr(s) => Value::from_static_str(s),
             ValueDetail::FastStr(s) => s.into(),
             ValueDetail::RawNumFasStr(s) => Value::new_rawnum_faststr(s),
-            ValueDetail::Array(a) => a.as_slice().into(),
-            ValueDetail::Object(o) => o.as_slice().into(),
+            ValueDetail::Array(a) => a.clone().into(),
+            ValueDetail::Object(o) => o.clone().into(),
             ValueDetail::EmptyArray => Value::new_array(),
             ValueDetail::EmptyObject => Value::new_object(),
+        }
+    }
+}
+
+impl From<Arc<Vec<Value>>> for Value {
+    fn from(value: Arc<Vec<Value>>) -> Self {
+        Self {
+            meta: Meta::new(Meta::ARR_MUT),
+            data: Data {
+                arr_own: ManuallyDrop::new(value),
+            },
+        }
+    }
+}
+
+impl From<Arc<Vec<Pair>>> for Value {
+    fn from(value: Arc<Vec<Pair>>) -> Self {
+        Self {
+            meta: Meta::new(Meta::OBJ_MUT),
+            data: Data {
+                obj_own: ManuallyDrop::new(value),
+            },
         }
     }
 }
@@ -1057,7 +1079,7 @@ impl Value {
     #[doc(hidden)]
     #[inline]
     pub fn new_array_with(capacity: usize) -> Self {
-        let arr_own = ManuallyDrop::new(Box::new(Vec::<Value>::with_capacity(capacity)));
+        let arr_own = ManuallyDrop::new(Arc::new(Vec::<Value>::with_capacity(capacity)));
         Value {
             meta: Meta::new(Meta::ARR_MUT),
             data: Data { arr_own },
@@ -1175,7 +1197,7 @@ impl Value {
 
     #[doc(hidden)]
     pub fn new_object_with(capacity: usize) -> Self {
-        let obj_own = ManuallyDrop::new(Box::new(Vec::with_capacity(capacity)));
+        let obj_own = ManuallyDrop::new(Arc::new(Vec::with_capacity(capacity)));
         Value {
             meta: Meta::new(Meta::OBJ_MUT),
             data: Data { obj_own },
@@ -1780,6 +1802,41 @@ impl Serialize for Value {
                 let mut struct_ = tri!(serializer.serialize_struct(TOKEN, 1));
                 tri!(struct_.serialize_field(TOKEN, raw));
                 struct_.end()
+            }
+        }
+    }
+}
+
+impl From<Value> for serde_json::Value {
+    #[inline]
+    fn from(val: Value) -> Self {
+        match val.as_ref() {
+            ValueRef::Null => serde_json::Value::Null,
+            ValueRef::Bool(b) => serde_json::Value::Bool(b),
+            ValueRef::Number(n) => {
+                if let Some(n) = n.as_i64() {
+                    serde_json::Value::Number(n.into())
+                } else if let Some(n) = n.as_u64() {
+                    serde_json::Value::Number(n.into())
+                } else {
+                    serde_json::Number::from_f64(n.as_f64().unwrap())
+                        .map_or(serde_json::Value::Null, serde_json::Value::Number)
+                }
+            }
+            ValueRef::String(s) => serde_json::Value::String(s.to_string()),
+            ValueRef::Array(a) => {
+                let mut arr = Vec::with_capacity(a.len());
+                for n in a {
+                    arr.push(serde_json::Value::from(n.clone()));
+                }
+                serde_json::Value::Array(arr)
+            }
+            ValueRef::Object(o) => {
+                let mut obj = serde_json::Map::with_capacity(o.len());
+                for (k, v) in o {
+                    obj.insert(k.to_string(), serde_json::Value::from(v.clone()));
+                }
+                serde_json::Value::Object(obj)
             }
         }
     }
