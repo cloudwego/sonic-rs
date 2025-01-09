@@ -2,7 +2,7 @@ use std::{borrow::Cow, fmt::Debug, str::FromStr};
 
 use faststr::FastStr;
 
-use super::{array::Array, node::ValueMut, object::Object, JsonValueMutTrait};
+use super::{array::Array, node::ValueMut, object::Object};
 use crate::{serde::number::N, value::node::Value, Number};
 
 impl From<Number> for Value {
@@ -543,7 +543,7 @@ impl From<serde_json::Value> for Value {
                 let mut object = Object::with_capacity(obj.len()).0;
                 for (k, v) in obj {
                     let value: Value = v.into();
-                    object.as_object_mut().unwrap().insert(&k, value);
+                    object.append_pair((k.as_str().into(), value));
                 }
                 object
             }

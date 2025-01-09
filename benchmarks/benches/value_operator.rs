@@ -173,8 +173,8 @@ fn bench_modify_and_clone(c: &mut Criterion) {
             b.iter_batched(
                 || data.clone(),
                 |mut value| {
-                    value.as_object_mut().unwrap().insert("inserted", true);
-                    for _ in 0..10 {
+                    for i in 0..10 {
+                        value.as_object_mut().unwrap().insert("inserted", i);
                         let _ = value.clone();
                     }
                 },
@@ -190,11 +190,11 @@ fn bench_modify_and_clone(c: &mut Criterion) {
             b.iter_batched(
                 || data.clone(),
                 |mut value| {
-                    value
-                        .as_object_mut()
-                        .unwrap()
-                        .insert("inserted".to_string(), serde_json::Value::Bool(true));
-                    for _ in 0..10 {
+                    for i in 0..10 {
+                        value
+                            .as_object_mut()
+                            .unwrap()
+                            .insert("inserted".to_string(), serde_json::Value::from(i));
                         let _ = value.clone();
                     }
                 },
