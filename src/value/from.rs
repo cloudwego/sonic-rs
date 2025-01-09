@@ -2,7 +2,7 @@ use std::{borrow::Cow, fmt::Debug, str::FromStr};
 
 use faststr::FastStr;
 
-use super::{array::Array, node::ValueMut, object::Object};
+use super::{array::Array, node::ValueMut, object::Object, JsonValueMutTrait};
 use crate::{serde::number::N, value::node::Value, Number};
 
 impl From<Number> for Value {
@@ -509,6 +509,45 @@ impl From<Object> for Value {
     #[inline]
     fn from(val: Object) -> Self {
         val.0
+    }
+}
+
+impl From<serde_json::Value> for Value {
+    #[inline]
+    fn from(val: serde_json::Value) -> Self {
+        match val {
+            serde_json::Value::Null => Value::new_null(),
+            serde_json::Value::Bool(b) => Value::new_bool(b),
+            serde_json::Value::Number(n) => {
+                if let Some(u) = n.as_u64() {
+                    Value::new_u64(u)
+                } else if let Some(i) = n.as_i64() {
+                    Value::new_i64(i)
+                } else {
+                    if let Some(n) = n.as_f64() {
+                        Value::new_f64(n).unwrap_or(Value::new_null())
+                    } else {
+                        Value::new_null()
+                    }
+                }
+            }
+            serde_json::Value::String(s) => Value::copy_str(&s),
+            serde_json::Value::Array(arr) => {
+                let mut array = Array::with_capacity(arr.len()).0;
+                for v in arr {
+                    array.append_value(v.into());
+                }
+                array
+            }
+            serde_json::Value::Object(obj) => {
+                let mut object = Object::with_capacity(obj.len()).0;
+                for (k, v) in obj {
+                    let value: Value = v.into();
+                    object.as_object_mut().unwrap().insert(&k, value);
+                }
+                object
+            }
+        }
     }
 }
 
