@@ -24,13 +24,15 @@ ref-cast     = "1.0"
 ryu          = "1.0"
 serde        = { version = "1.0", features = ["rc", "derive"] }
 serde_json   = { version = "1.0", features = ["float_roundtrip", "arbitrary_precision"] }
-simdutf8     =  "0.1"
+simdutf8     = "0.1"
 sonic-number = { path = "./sonic-number", version = "0.1" }
 sonic-simd   = { path = "./sonic-simd", version = "0.1" }
 thiserror    = "2.0"
 
 [dev-dependencies]
-bytes        = { version = "1.4", features = ["serde"] }
+bytes 
+
+       = { version = "1.4", features = ["serde"] }
 chrono       = { version = "0.4", features = ["serde"] }
 encoding_rs  = "0.8"
 paste        = "1.0"
