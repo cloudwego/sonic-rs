@@ -115,42 +115,6 @@ fn bench_value_clone(c: &mut Criterion) {
     });
 }
 
-fn bench_convert_value(c: &mut Criterion) {
-    let core_ids = core_affinity::get_core_ids().unwrap();
-    core_affinity::set_for_current(core_ids[0]);
-
-    let mut data = Vec::new();
-    let root = env!("CARGO_MANIFEST_DIR").to_owned();
-    std::fs::File::open(root + concat!("/benches/testdata/twitter.json"))
-        .unwrap()
-        .read_to_end(&mut data)
-        .unwrap();
-
-    let sonic_value: sonic_rs::Value = sonic_rs::from_slice(&data).unwrap();
-    let serde_value: serde_json::Value = serde_json::from_slice(&data).unwrap();
-
-    let mut group = c.benchmark_group("value");
-    group.bench_with_input("sonic-rs::value_convert", &sonic_value, |b, data| {
-        b.iter_batched(
-            || data,
-            |value| {
-                let _: serde_json::Value = value.clone().into();
-            },
-            BatchSize::SmallInput,
-        )
-    });
-
-    group.bench_with_input("serde_json::value_convert", &serde_value, |b, data| {
-        b.iter_batched(
-            || data,
-            |value| {
-                let _: sonic_rs::Value = value.clone().into();
-            },
-            BatchSize::SmallInput,
-        )
-    });
-}
-
 fn bench_modify_and_clone(c: &mut Criterion) {
     let core_ids = core_affinity::get_core_ids().unwrap();
     core_affinity::set_for_current(core_ids[0]);
@@ -312,7 +276,6 @@ criterion_group!(
     benches,
     bench_get,
     bench_value_clone,
-    bench_convert_value,
     bench_modify_and_clone,
     bench_object_insert,
     bench_object_get

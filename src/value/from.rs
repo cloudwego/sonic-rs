@@ -512,45 +512,6 @@ impl From<Object> for Value {
     }
 }
 
-impl From<serde_json::Value> for Value {
-    #[inline]
-    fn from(val: serde_json::Value) -> Self {
-        match val {
-            serde_json::Value::Null => Value::new_null(),
-            serde_json::Value::Bool(b) => Value::new_bool(b),
-            serde_json::Value::Number(n) => {
-                if let Some(u) = n.as_u64() {
-                    Value::new_u64(u)
-                } else if let Some(i) = n.as_i64() {
-                    Value::new_i64(i)
-                } else if let Some(n) = n.as_f64() {
-                    Value::new_f64(n)
-                        .expect("serde_json Number's as_f64 api will not return NaN or Infinity")
-                } else {
-                    let n = n.as_str();
-                    Value::new_rawnum(n)
-                }
-            }
-            serde_json::Value::String(s) => Value::copy_str(&s),
-            serde_json::Value::Array(arr) => {
-                let mut array = Array::with_capacity(arr.len()).0;
-                for v in arr {
-                    array.append_value(v.into());
-                }
-                array
-            }
-            serde_json::Value::Object(obj) => {
-                let mut object = Object::with_capacity(obj.len()).0;
-                for (k, v) in obj {
-                    let value: Value = v.into();
-                    object.append_pair((k.as_str().into(), value));
-                }
-                object
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
 
