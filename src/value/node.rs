@@ -1815,12 +1815,13 @@ impl From<Value> for serde_json::Value {
             ValueRef::Bool(b) => serde_json::Value::Bool(b),
             ValueRef::Number(n) => {
                 if let Some(n) = n.as_i64() {
-                    serde_json::Value::Number(n.into())
+                    serde_json::Value::from(n)
                 } else if let Some(n) = n.as_u64() {
-                    serde_json::Value::Number(n.into())
+                    serde_json::Value::from(n)
+                } else if let Some(n) = n.as_f64() {
+                    serde_json::Value::from(n)
                 } else {
-                    serde_json::Number::from_f64(n.as_f64().unwrap())
-                        .map_or(serde_json::Value::Null, serde_json::Value::Number)
+                    unreachable!("invalid number")
                 }
             }
             ValueRef::String(s) => serde_json::Value::String(s.to_string()),
