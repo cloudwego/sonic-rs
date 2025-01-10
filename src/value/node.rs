@@ -6,7 +6,7 @@ use std::{
     mem::{transmute, ManuallyDrop},
     ptr::NonNull,
     slice::from_raw_parts,
-    str::{from_utf8_unchecked, FromStr},
+    str::from_utf8_unchecked,
     sync::Arc,
 };
 
@@ -1841,9 +1841,9 @@ impl From<Value> for serde_json::Value {
                 }
                 serde_json::Value::Object(obj)
             }
-            ValueRefInner::RawNum(raw) => serde_json::Value::Number(
-                serde_json::Number::from_string_unchecked(raw.to_string()),
-            ),
+            ValueRefInner::RawNum(raw) => {
+                serde_json::Number::from_string_unchecked(raw.to_string()).into()
+            }
             ValueRefInner::RawStr(UnpackedRawStr { raw, str: _ }) => {
                 serde_json::Value::String(raw.to_string())
             }
