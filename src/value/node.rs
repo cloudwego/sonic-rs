@@ -1812,9 +1812,7 @@ mod test {
     use std::path::Path;
 
     use super::*;
-    use crate::{
-        error::make_error, from_slice, from_str, pointer, util::mock::MockString, Deserializer,
-    };
+    use crate::{error::make_error, from_slice, from_str, pointer, util::mock::MockString};
 
     #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
     struct ValueInStruct {
