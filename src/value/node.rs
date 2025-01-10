@@ -1842,7 +1842,7 @@ mod test {
         let dom: Result<Value> = from_slice(data.as_bytes());
 
         if let Ok(serde_value) = serde_value {
-            let dom: Value = dom.unwrap();
+            let dom = dom.unwrap();
             let sonic_out = crate::to_string(&dom)?;
             let serde_value2: serde_json::Value = serde_json::from_str(&sonic_out).unwrap();
 
@@ -1871,8 +1871,7 @@ mod test {
 
     fn diff_json(data: &str) {
         let serde_value: serde_json::Value = serde_json::from_str(data).unwrap();
-        let mut de = Deserializer::from_str(data).use_rawnumber();
-        let dom: Value = de.deserialize().unwrap();
+        let dom: Value = from_slice(data.as_bytes()).unwrap();
         let sonic_out = crate::to_string(&dom).unwrap();
         let serde_value2: serde_json::Value = serde_json::from_str(&sonic_out).unwrap();
         let expect = serde_json::to_string_pretty(&serde_value).unwrap();
