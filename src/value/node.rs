@@ -6,7 +6,7 @@ use std::{
     mem::{transmute, ManuallyDrop},
     ptr::NonNull,
     slice::from_raw_parts,
-    str::from_utf8_unchecked,
+    str::{from_utf8_unchecked, FromStr},
     sync::Arc,
 };
 
@@ -1810,10 +1810,10 @@ impl Serialize for Value {
 impl From<Value> for serde_json::Value {
     #[inline]
     fn from(val: Value) -> Self {
-        match val.as_ref() {
-            ValueRef::Null => serde_json::Value::Null,
-            ValueRef::Bool(b) => serde_json::Value::Bool(b),
-            ValueRef::Number(n) => {
+        match val.as_ref2() {
+            ValueRefInner::Null => serde_json::Value::Null,
+            ValueRefInner::Bool(b) => serde_json::Value::Bool(b),
+            ValueRefInner::Number(n) => {
                 if let Some(n) = n.as_i64() {
                     serde_json::Value::from(n)
                 } else if let Some(n) = n.as_u64() {
@@ -1824,20 +1824,28 @@ impl From<Value> for serde_json::Value {
                     unreachable!("invalid number")
                 }
             }
-            ValueRef::String(s) => serde_json::Value::String(s.to_string()),
-            ValueRef::Array(a) => {
+            ValueRefInner::Str(s) => serde_json::Value::String(s.to_string()),
+            ValueRefInner::Array(a) => {
                 let mut arr = Vec::with_capacity(a.len());
                 for n in a {
                     arr.push(serde_json::Value::from(n.clone()));
                 }
                 serde_json::Value::Array(arr)
             }
-            ValueRef::Object(o) => {
+            ValueRefInner::EmptyArray => serde_json::Value::Array(Vec::new()),
+            ValueRefInner::EmptyObject => serde_json::Value::Object(serde_json::Map::new()),
+            ValueRefInner::Object(o) => {
                 let mut obj = serde_json::Map::with_capacity(o.len());
                 for (k, v) in o {
                     obj.insert(k.to_string(), serde_json::Value::from(v.clone()));
                 }
                 serde_json::Value::Object(obj)
+            }
+            ValueRefInner::RawNum(raw) => serde_json::Value::Number(
+                serde_json::Number::from_string_unchecked(raw.to_string()),
+            ),
+            ValueRefInner::RawStr(UnpackedRawStr { raw, str: _ }) => {
+                serde_json::Value::String(raw.to_string())
             }
         }
     }

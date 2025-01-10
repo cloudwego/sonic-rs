@@ -523,12 +523,11 @@ impl From<serde_json::Value> for Value {
                     Value::new_u64(u)
                 } else if let Some(i) = n.as_i64() {
                     Value::new_i64(i)
+                } else if let Some(n) = n.as_f64() {
+                    Value::new_f64(n).unwrap_or(Value::new_null())
                 } else {
-                    if let Some(n) = n.as_f64() {
-                        Value::new_f64(n).unwrap_or(Value::new_null())
-                    } else {
-                        Value::new_null()
-                    }
+                    let n = n.as_str();
+                    Value::new_rawnum(n)
                 }
             }
             serde_json::Value::String(s) => Value::copy_str(&s),
