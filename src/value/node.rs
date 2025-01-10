@@ -1856,7 +1856,9 @@ mod test {
     use std::path::Path;
 
     use super::*;
-    use crate::{error::make_error, from_slice, from_str, pointer, util::mock::MockString};
+    use crate::{
+        error::make_error, from_slice, from_str, pointer, util::mock::MockString, Deserializer,
+    };
 
     #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
     struct ValueInStruct {
@@ -1881,10 +1883,12 @@ mod test {
 
     fn test_value(data: &str) -> Result<()> {
         let serde_value: serde_json::Result<serde_json::Value> = serde_json::from_str(data);
-        let dom: Result<Value> = from_slice(data.as_bytes());
+        let mut de = Deserializer::from_str(data).use_rawnumber();
+        let dom = de.deserialize();
+        let trailing_check = de.parser.parse_trailing();
 
         if let Ok(serde_value) = serde_value {
-            let dom = dom.unwrap();
+            let dom: Value = dom.unwrap();
             let sonic_out = crate::to_string(&dom)?;
             let serde_value2: serde_json::Value = serde_json::from_str(&sonic_out).unwrap();
 
@@ -1899,7 +1903,7 @@ mod test {
                 )))
             }
         } else {
-            if dom.is_err() {
+            if dom.is_err() || trailing_check.is_err() {
                 return Ok(());
             }
             let dom = dom.unwrap();
@@ -1913,7 +1917,8 @@ mod test {
 
     fn diff_json(data: &str) {
         let serde_value: serde_json::Value = serde_json::from_str(data).unwrap();
-        let dom: Value = from_slice(data.as_bytes()).unwrap();
+        let mut de = Deserializer::from_str(data).use_rawnumber();
+        let dom: Value = de.deserialize().unwrap();
         let sonic_out = crate::to_string(&dom).unwrap();
         let serde_value2: serde_json::Value = serde_json::from_str(&sonic_out).unwrap();
         let expect = serde_json::to_string_pretty(&serde_value).unwrap();
