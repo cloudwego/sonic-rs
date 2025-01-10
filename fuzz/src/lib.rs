@@ -355,5 +355,7 @@ mod test {
         assert!(!test_compare_value(
             br#"[[{"":4,        "":80}          ]]"#
         ));
+
+        sonic_rs_fuzz_data(br#"[45, 48, 10]"#);
     }
 }

@@ -88,7 +88,7 @@ pub(crate) fn as_str(data: &[u8]) -> &str {
 fn get_escaped_branchless_u32(prev_escaped: &mut u32, backslash: u32) -> u32 {
     const EVEN_BITS: u32 = 0x5555_5555;
     let backslash = backslash & (!*prev_escaped);
-    let follows_escape = backslash << 1 | *prev_escaped;
+    let follows_escape = (backslash << 1) | *prev_escaped;
     let odd_sequence_starts = backslash & !EVEN_BITS & !follows_escape;
     let (sequences_starting_on_even_bits, overflow) =
         odd_sequence_starts.overflowing_add(backslash);
@@ -118,7 +118,7 @@ macro_rules! check_visit {
 fn get_escaped_branchless_u64(prev_escaped: &mut u64, backslash: u64) -> u64 {
     const EVEN_BITS: u64 = 0x5555_5555_5555_5555;
     let backslash = backslash & (!*prev_escaped);
-    let follows_escape = backslash << 1 | *prev_escaped;
+    let follows_escape = (backslash << 1) | *prev_escaped;
     let odd_sequence_starts = backslash & !EVEN_BITS & !follows_escape;
     let (sequences_starting_on_even_bits, overflow) =
         odd_sequence_starts.overflowing_add(backslash);

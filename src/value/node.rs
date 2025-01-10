@@ -1807,50 +1807,6 @@ impl Serialize for Value {
     }
 }
 
-impl From<Value> for serde_json::Value {
-    #[inline]
-    fn from(val: Value) -> Self {
-        match val.as_ref2() {
-            ValueRefInner::Null => serde_json::Value::Null,
-            ValueRefInner::Bool(b) => serde_json::Value::Bool(b),
-            ValueRefInner::Number(n) => {
-                if let Some(n) = n.as_i64() {
-                    serde_json::Value::from(n)
-                } else if let Some(n) = n.as_u64() {
-                    serde_json::Value::from(n)
-                } else if let Some(n) = n.as_f64() {
-                    serde_json::Value::from(n)
-                } else {
-                    unreachable!("invalid number")
-                }
-            }
-            ValueRefInner::Str(s) => serde_json::Value::String(s.to_string()),
-            ValueRefInner::Array(a) => {
-                let mut arr = Vec::with_capacity(a.len());
-                for n in a {
-                    arr.push(serde_json::Value::from(n.clone()));
-                }
-                serde_json::Value::Array(arr)
-            }
-            ValueRefInner::EmptyArray => serde_json::Value::Array(Vec::new()),
-            ValueRefInner::EmptyObject => serde_json::Value::Object(serde_json::Map::new()),
-            ValueRefInner::Object(o) => {
-                let mut obj = serde_json::Map::with_capacity(o.len());
-                for (k, v) in o {
-                    obj.insert(k.to_string(), serde_json::Value::from(v.clone()));
-                }
-                serde_json::Value::Object(obj)
-            }
-            ValueRefInner::RawNum(raw) => {
-                serde_json::Number::from_string_unchecked(raw.to_string()).into()
-            }
-            ValueRefInner::RawStr(UnpackedRawStr { raw, str: _ }) => {
-                serde_json::Value::String(raw.to_string())
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use std::path::Path;
@@ -1883,9 +1839,7 @@ mod test {
 
     fn test_value(data: &str) -> Result<()> {
         let serde_value: serde_json::Result<serde_json::Value> = serde_json::from_str(data);
-        let mut de = Deserializer::from_str(data).use_rawnumber();
-        let dom = de.deserialize();
-        let trailing_check = de.parser.parse_trailing();
+        let dom: Result<Value> = from_slice(data.as_bytes());
 
         if let Ok(serde_value) = serde_value {
             let dom: Value = dom.unwrap();
@@ -1903,7 +1857,7 @@ mod test {
                 )))
             }
         } else {
-            if dom.is_err() || trailing_check.is_err() {
+            if dom.is_err() {
                 return Ok(());
             }
             let dom = dom.unwrap();
