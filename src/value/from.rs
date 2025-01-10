@@ -524,7 +524,8 @@ impl From<serde_json::Value> for Value {
                 } else if let Some(i) = n.as_i64() {
                     Value::new_i64(i)
                 } else if let Some(n) = n.as_f64() {
-                    Value::new_f64(n).unwrap_or(Value::new_null())
+                    Value::new_f64(n)
+                        .expect("serde_json Number's as_f64 api will not return NaN or Infinity")
                 } else {
                     let n = n.as_str();
                     Value::new_rawnum(n)
