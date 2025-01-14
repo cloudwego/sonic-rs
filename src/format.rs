@@ -172,8 +172,8 @@ pub trait Formatter {
         writer.write_all(value.as_bytes())
     }
 
-    /// Writes a string fragment that doesn't need any escaping to the
-    /// specified writer.
+    /// Writes a string as JSON string to the specified writer. Will escape the string if necessary.
+    /// If `need_quote` is `false`, the string will be written without quotes.
     #[inline]
     fn write_string_fast<W>(
         &mut self,
