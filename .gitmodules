@@ -1,0 +1,6 @@
+[submodule "benchmarks/thridparty/sonic-cpp"]
+	path = benchmarks/thridparty/sonic-cpp
+	url = https://github.com/bytedance/sonic-cpp
+[submodule "benchmarks/thridparty/simdjson"]
+	path = benchmarks/thridparty/simdjson
+	url = https://github.com/simdjson/simdjson.git

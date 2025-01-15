@@ -1,9 +1,9 @@
 #[macro_use]
 extern crate criterion;
-
 use std::{fs::File, io::Read, str::from_utf8_unchecked};
 
 use criterion::{criterion_group, BatchSize, Criterion, SamplingMode, Throughput};
+use json_benchmarks::{simdjson_cpp_binding_parse_dom, sonic_cpp_binding_parse_dom};
 
 include!("./common.rs");
 
@@ -132,6 +132,22 @@ macro_rules! bench_file {
                     )
                 },
             );
+
+            group.bench_with_input("simdjson_binding_dom::from_slice", &vec, |b, data| {
+                b.iter_batched(
+                    || data,
+                    |bytes| simdjson_cpp_binding_parse_dom(&bytes),
+                    BatchSize::SmallInput,
+                )
+            });
+
+            group.bench_with_input("soniccpp_binding_dom::from_slice", &vec, |b, data| {
+                b.iter_batched(
+                    || data,
+                    |bytes| sonic_cpp_binding_parse_dom(&bytes),
+                    BatchSize::SmallInput,
+                )
+            });
 
             // group.bench_with_input("sonic_rs::skip_one", &vec, |b, data| {
             //     b.iter_batched(
