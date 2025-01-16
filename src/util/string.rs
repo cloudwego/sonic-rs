@@ -11,9 +11,7 @@ use sonic_simd::{bits::NeonBits, u8x16};
 use sonic_simd::{BitMask, Mask, Simd};
 
 use crate::{
-    error::ErrorCode::{
-        self, ControlCharacterWhileParsingString, InvalidEscape, InvalidUnicodeCodePoint,
-    },
+    error::ErrorCode::{self, ControlCharacterWhileParsingString, InvalidUnicodeCodePoint},
     util::unicode::handle_unicode_codepoint_mut,
 };
 
@@ -122,82 +120,94 @@ pub(crate) unsafe fn parse_string_inplace(
     let mut block: StringBlock<u32>;
 
     let sdst = *src;
-    let src: &mut *const u8 = std::mem::transmute(src);
+    let mut ssrc: *const u8 = *src as *const u8;
 
     // loop for string without escaped chars
     loop {
-        block = StringBlock::new(&unsafe { load(*src) });
+        block = StringBlock::new(&unsafe { load(ssrc) });
         if block.has_quote_first() {
             let idx = block.quote_index();
-            *src = src.add(idx + 1);
-            return Ok(src.offset_from(sdst) as usize - 1);
+            ssrc = ssrc.add(idx + 1);
+            *src = ssrc as *mut u8;
+            return Ok(ssrc.offset_from(sdst) as usize - 1);
         }
         if block.has_unescaped() {
+            *src = ssrc as *mut u8;
             return Err(ControlCharacterWhileParsingString);
         }
         if block.has_backslash() {
             break;
         }
-        *src = src.add(StringBlock::LANES);
+        ssrc = ssrc.add(StringBlock::LANES);
     }
 
     let bs_dist = block.bs_index();
-    *src = src.add(bs_dist);
-    let mut dst = sdst.add((*src as usize) - sdst as usize);
+    ssrc = ssrc.add(bs_dist);
+    let mut dst = sdst.offset(ssrc.offset_from(sdst));
 
     // loop for string with escaped chars
     loop {
         'escape: loop {
-            let escaped_char: u8 = *src.add(1);
+            let escaped_char: u8 = *(ssrc.add(1));
             if escaped_char == b'u' {
-                if !handle_unicode_codepoint_mut(src, &mut dst, repr) {
+                if !handle_unicode_codepoint_mut(&mut ssrc, &mut dst, repr) {
+                    *src = ssrc as *mut u8;
                     return Err(InvalidUnicodeCodePoint);
                 }
             } else {
                 *dst = ESCAPED_TAB[escaped_char as usize];
-                if *dst == 0 {
-                    return Err(InvalidEscape);
-                }
-                *src = src.add(2);
+                ssrc = ssrc.add(2);
                 dst = dst.add(1);
             }
 
             // fast path for continuous escaped chars
-            if **src == b'\\' {
+            if *ssrc == b'\\' {
                 continue 'escape;
             }
             break 'escape;
         }
 
         'find_and_move: loop {
-            let v = unsafe { load(*src) };
+            let v = unsafe { load(ssrc) };
             let block = StringBlock::new(&v);
             if block.has_quote_first() {
-                while **src != b'"' {
-                    *dst = **src;
-                    dst = dst.add(1);
-                    *src = src.add(1);
+                'copy_remain: loop {
+                    for _ in 0..8 {
+                        if *ssrc == b'"' {
+                            break 'copy_remain;
+                        } else {
+                            *dst = *ssrc;
+                            dst = dst.add(1);
+                            ssrc = ssrc.add(1);
+                        }
+                    }
                 }
-                *src = src.add(1); // skip ending quote
+                ssrc = ssrc.add(1); // skip ending quote
+                *src = ssrc as *mut u8;
                 return Ok(dst.offset_from(sdst) as usize);
             }
             if block.has_unescaped() {
+                *src = ssrc as *mut u8;
                 return Err(ControlCharacterWhileParsingString);
             }
             if !block.has_backslash() {
                 let chunk = from_raw_parts_mut(dst, StringBlock::LANES);
                 v.write_to_slice_unaligned_unchecked(chunk);
-                *src = src.add(StringBlock::LANES);
+                ssrc = ssrc.add(StringBlock::LANES);
                 dst = dst.add(StringBlock::LANES);
                 continue 'find_and_move;
             }
-            // TODO: loop unrooling here
-            while **src != b'\\' {
-                *dst = **src;
-                dst = dst.add(1);
-                *src = src.add(1);
+            loop {
+                for _ in 0..8 {
+                    if *ssrc != b'\\' {
+                        *dst = *ssrc;
+                        dst = dst.add(1);
+                        ssrc = ssrc.add(1);
+                    } else {
+                        break 'find_and_move;
+                    }
+                }
             }
-            break 'find_and_move;
         }
     } // slow loop for escaped chars
 }
