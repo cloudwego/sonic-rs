@@ -185,6 +185,7 @@ pub(crate) unsafe fn codepoint_to_utf8(cp: u32, c: *mut u8) -> usize {
     }
 }
 
+#[inline(never)]
 pub unsafe fn handle_unicode_codepoint_mut(
     src_ptr: &mut *const u8,
     dst_ptr: &mut *mut u8,

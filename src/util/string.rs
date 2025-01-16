@@ -11,7 +11,7 @@ use sonic_simd::{bits::NeonBits, u8x16};
 use sonic_simd::{BitMask, Mask, Simd};
 
 use crate::{
-    error::ErrorCode::{self, ControlCharacterWhileParsingString, InvalidUnicodeCodePoint},
+    error::ErrorCode::{self, InvalidUnicodeCodePoint},
     util::unicode::handle_unicode_codepoint_mut,
 };
 
@@ -111,58 +111,68 @@ pub(crate) unsafe fn load<V: Simd>(ptr: *const u8) -> V {
 /// TODO: fix me, there are repeat codes!!!
 #[inline(always)]
 pub(crate) unsafe fn parse_string_inplace(
-    src: &mut *mut u8,
+    src: *mut u8,
     repr: bool,
-) -> std::result::Result<usize, ErrorCode> {
+) -> (usize, std::result::Result<usize, ErrorCode>) {
     #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
     let mut block: StringBlock<NeonBits>;
     #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
     let mut block: StringBlock<u32>;
 
-    let sdst = *src;
-    let mut ssrc: *const u8 = *src as *const u8;
+    let sdst = src;
+    let mut ssrc: *const u8 = src as *const u8;
 
     // loop for string without escaped chars
     loop {
         block = StringBlock::new(&unsafe { load(ssrc) });
         if block.has_quote_first() {
             let idx = block.quote_index();
-            ssrc = ssrc.add(idx + 1);
-            *src = ssrc as *mut u8;
-            return Ok(ssrc.offset_from(sdst) as usize - 1);
+            ssrc = ((ssrc as usize) + (idx + 1)) as *const u8;
+            let advanced = (ssrc as usize) - (sdst as usize);
+            return (advanced, Ok(advanced - 1));
         }
-        if block.has_unescaped() {
-            *src = ssrc as *mut u8;
-            return Err(ControlCharacterWhileParsingString);
-        }
+        // if block.has_unescaped() {
+        //     let advanced = (ssrc as usize) - (sdst as usize);
+        //     return (advanced, Err(ControlCharacterWhileParsingString));
+        // }
         if block.has_backslash() {
             break;
         }
-        ssrc = ssrc.add(StringBlock::LANES);
+        ssrc = ((ssrc as usize) + StringBlock::LANES) as *const u8;
     }
 
     let bs_dist = block.bs_index();
-    ssrc = ssrc.add(bs_dist);
-    let mut dst = sdst.offset(ssrc.offset_from(sdst));
+    ssrc = ((ssrc as usize) + bs_dist) as *const u8;
+    let mut dst = ((sdst as usize) + ((ssrc as usize) - (sdst as usize))) as *mut u8;
 
     // loop for string with escaped chars
     loop {
         'escape: loop {
             let escaped_char: u8 = *(ssrc.add(1));
-            if escaped_char == b'u' {
-                if !handle_unicode_codepoint_mut(&mut ssrc, &mut dst, repr) {
-                    *src = ssrc as *mut u8;
-                    return Err(InvalidUnicodeCodePoint);
-                }
-            } else {
+            if escaped_char != b'u' {
                 *dst = ESCAPED_TAB[escaped_char as usize];
-                ssrc = ssrc.add(2);
-                dst = dst.add(1);
+                ssrc = ((ssrc as usize) + 2) as *const u8;
+                dst = ((dst as usize) + 1) as *mut u8;
+            } else if !handle_unicode_codepoint_mut(&mut ssrc, &mut dst, repr) {
+                let advanced = ssrc.offset_from(sdst) as usize;
+                return (advanced, Err(InvalidUnicodeCodePoint));
             }
 
             // fast path for continuous escaped chars
             if *ssrc == b'\\' {
-                continue 'escape;
+                let escaped_char: u8 = *(ssrc.add(1));
+                if escaped_char != b'u' {
+                    *dst = ESCAPED_TAB[escaped_char as usize];
+                    ssrc = ((ssrc as usize) + 2) as *const u8;
+                    dst = ((dst as usize) + 1) as *mut u8;
+                } else if !handle_unicode_codepoint_mut(&mut ssrc, &mut dst, repr) {
+                    let advanced = (ssrc as usize) - (sdst as usize);
+                    return (advanced, Err(InvalidUnicodeCodePoint));
+                }
+
+                if *ssrc == b'\\' {
+                    continue 'escape;
+                }
             }
             break 'escape;
         }
@@ -177,32 +187,46 @@ pub(crate) unsafe fn parse_string_inplace(
                             break 'copy_remain;
                         } else {
                             *dst = *ssrc;
-                            dst = dst.add(1);
-                            ssrc = ssrc.add(1);
+                            ssrc = ((ssrc as usize) + 1) as *const u8;
+                            dst = ((dst as usize) + 1) as *mut u8;
                         }
                     }
                 }
                 ssrc = ssrc.add(1); // skip ending quote
-                *src = ssrc as *mut u8;
-                return Ok(dst.offset_from(sdst) as usize);
+                let advanced = ssrc.offset_from(sdst) as usize;
+                return (advanced, Ok(dst.offset_from(sdst) as usize));
             }
-            if block.has_unescaped() {
-                *src = ssrc as *mut u8;
-                return Err(ControlCharacterWhileParsingString);
-            }
+
+            // if block.has_unescaped() {
+            //     let advanced = ssrc.offset_from(sdst) as usize;
+            //     return (advanced, Err(ControlCharacterWhileParsingString));
+            // }
             if !block.has_backslash() {
                 let chunk = from_raw_parts_mut(dst, StringBlock::LANES);
                 v.write_to_slice_unaligned_unchecked(chunk);
-                ssrc = ssrc.add(StringBlock::LANES);
-                dst = dst.add(StringBlock::LANES);
+                ssrc = ((ssrc as usize) + StringBlock::LANES) as *const u8;
+                dst = ((dst as usize) + StringBlock::LANES) as *mut u8;
                 continue 'find_and_move;
             }
+
+            if block.bs_bits & ((1 << 16) - 1) == 0 {
+                std::ptr::copy(ssrc as *const u8, dst as *mut u8, 16);
+                // *(dst as *mut u8) = *(ssrc as *const u64);
+                ssrc = ((ssrc as usize) + 16) as *const u8;
+                dst = ((dst as usize) + 16) as *mut u8;
+            } else if block.bs_bits & ((1 << 8) - 1) == 0 {
+                std::ptr::copy(ssrc as *const u8, dst as *mut u8, 8);
+                // *(dst as *mut u8) = *(ssrc as *const u64);
+                ssrc = ((ssrc as usize) + 8) as *const u8;
+                dst = ((dst as usize) + 8) as *mut u8;
+            }
+
             loop {
                 for _ in 0..8 {
                     if *ssrc != b'\\' {
                         *dst = *ssrc;
-                        dst = dst.add(1);
-                        ssrc = ssrc.add(1);
+                        ssrc = ((ssrc as usize) + 1) as *const u8;
+                        dst = ((dst as usize) + 1) as *mut u8;
                     } else {
                         break 'find_and_move;
                     }

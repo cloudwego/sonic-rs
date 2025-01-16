@@ -317,12 +317,12 @@ where
     fn parse_string_inplace<V: JsonVisitor<'de>>(&mut self, vis: &mut V) -> Result<()> {
         if !self.cfg.use_raw {
             unsafe {
-                let mut src = self.read.cur_ptr();
+                let src = self.read.cur_ptr();
                 let start = self.read.cur_ptr();
-                let cnt = parse_string_inplace(&mut src, self.cfg.utf8_lossy)
-                    .map_err(|e| self.error(e))?;
-                self.read.set_ptr(src);
-                let slice = from_raw_parts(start, cnt);
+                let (cnt, ret) = parse_string_inplace(src, self.cfg.utf8_lossy);
+                let len = ret.map_err(|e| self.error(e))?;
+                self.read.set_ptr(src.add(cnt));
+                let slice = from_raw_parts(start, len);
                 let s = from_utf8_unchecked(slice);
                 return check_visit!(self, vis.visit_borrowed_str(s));
             }
@@ -330,7 +330,7 @@ where
 
         unsafe {
             let start_idx = self.read.index();
-            let mut src = self.read.cur_ptr();
+            let src = self.read.cur_ptr();
             let start = self.read.cur_ptr();
             match self.skip_string_unchecked()? {
                 ParseStatus::HasEscaped => {
@@ -338,10 +338,10 @@ where
                     let raw = as_str(&self.read.as_u8_slice()[start_idx - 1..end]);
                     let alloc = vis.allocator().unwrap();
                     let raw = RawStr::new_in(alloc, raw);
-                    let cnt = parse_string_inplace(&mut src, self.cfg.utf8_lossy)
-                        .map_err(|e| self.error(e))?;
-                    self.read.set_ptr(src);
-                    let s = str_from_raw_parts(start, cnt);
+                    let (cnt, ret) = parse_string_inplace(src, self.cfg.utf8_lossy);
+                    let len = ret.map_err(|e| self.error(e))?;
+                    self.read.set_ptr(src.add(cnt));
+                    let s = str_from_raw_parts(start, len);
                     check_visit!(self, vis.visit_raw_str(s, raw))
                 }
                 ParseStatus::None => {

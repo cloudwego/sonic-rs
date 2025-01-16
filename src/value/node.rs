@@ -1538,7 +1538,7 @@ impl<'a> DocumentVisitor<'a> {
 
     // the array and object's logic is same.
     fn visit_container_end(&mut self, kind: u64, len: usize) -> bool {
-        let index = self.index() as usize;
+        let index = self.index();
         let vis = self;
         let parent = vis.parent;
         let old = unsafe { vis.parent().data.parent };
