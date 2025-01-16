@@ -77,29 +77,29 @@ macro_rules! bench_file {
             let mut group = c.benchmark_group(stringify!($name));
             group.sampling_mode(SamplingMode::Flat);
 
-            group.bench_with_input("sonic_rs_dom::from_slice", &vec, |b, data| {
-                b.iter_batched(
-                    || data,
-                    |bytes| sonic_rs_from_slice(&bytes, SONIC_DEFAULT_CFG),
-                    BatchSize::SmallInput,
-                )
-            });
+            // group.bench_with_input("sonic_rs_dom::from_slice", &vec, |b, data| {
+            //     b.iter_batched(
+            //         || data,
+            //         |bytes| sonic_rs_from_slice(&bytes, SONIC_DEFAULT_CFG),
+            //         BatchSize::SmallInput,
+            //     )
+            // });
 
-            group.bench_with_input("sonic_rs_dom::from_slice_use_raw", &vec, |b, data| {
-                b.iter_batched(
-                    || data,
-                    |bytes| sonic_rs_from_slice(&bytes, SONIC_USE_RAW_CFG),
-                    BatchSize::SmallInput,
-                )
-            });
+            // group.bench_with_input("sonic_rs_dom::from_slice_use_raw", &vec, |b, data| {
+            //     b.iter_batched(
+            //         || data,
+            //         |bytes| sonic_rs_from_slice(&bytes, SONIC_USE_RAW_CFG),
+            //         BatchSize::SmallInput,
+            //     )
+            // });
 
-            group.bench_with_input("sonic_rs_dom::from_slice_use_rawnum", &vec, |b, data| {
-                b.iter_batched(
-                    || data,
-                    |bytes| sonic_rs_from_slice(&bytes, SONIC_USE_RAWNUM_CFG),
-                    BatchSize::SmallInput,
-                )
-            });
+            // group.bench_with_input("sonic_rs_dom::from_slice_use_rawnum", &vec, |b, data| {
+            //     b.iter_batched(
+            //         || data,
+            //         |bytes| sonic_rs_from_slice(&bytes, SONIC_USE_RAWNUM_CFG),
+            //         BatchSize::SmallInput,
+            //     )
+            // });
 
             group.bench_with_input("sonic_rs_dom::from_slice_unchecked", &vec, |b, data| {
                 b.iter_batched(
@@ -109,29 +109,29 @@ macro_rules! bench_file {
                 )
             });
 
-            group.bench_with_input(
-                "sonic_rs_to_serde_json_value::from_slice_unchecked",
-                &vec,
-                |b, data| {
-                    b.iter_batched(
-                        || data,
-                        |bytes| sonic_rs_to_serdejson_value(&bytes),
-                        BatchSize::SmallInput,
-                    )
-                },
-            );
+            // group.bench_with_input(
+            //     "sonic_rs_to_serde_json_value::from_slice_unchecked",
+            //     &vec,
+            //     |b, data| {
+            //         b.iter_batched(
+            //             || data,
+            //             |bytes| sonic_rs_to_serdejson_value(&bytes),
+            //             BatchSize::SmallInput,
+            //         )
+            //     },
+            // );
 
-            group.bench_with_input(
-                "sonic_rs_to_simd_json_value::from_slice_unchecked",
-                &vec,
-                |b, data| {
-                    b.iter_batched(
-                        || data,
-                        |bytes| sonic_rs_to_simdjson_value(&bytes),
-                        BatchSize::SmallInput,
-                    )
-                },
-            );
+            // group.bench_with_input(
+            //     "sonic_rs_to_simd_json_value::from_slice_unchecked",
+            //     &vec,
+            //     |b, data| {
+            //         b.iter_batched(
+            //             || data,
+            //             |bytes| sonic_rs_to_simdjson_value(&bytes),
+            //             BatchSize::SmallInput,
+            //         )
+            //     },
+            // );
 
             group.bench_with_input("simdjson_binding_dom::from_slice", &vec, |b, data| {
                 b.iter_batched(
@@ -165,37 +165,37 @@ macro_rules! bench_file {
             //     )
             // });
 
-            group.bench_with_input("serde_json::from_slice", &vec, |b, data| {
-                b.iter_batched(
-                    || data,
-                    |bytes| serde_from_slice(&bytes),
-                    BatchSize::SmallInput,
-                )
-            });
+            // group.bench_with_input("serde_json::from_slice", &vec, |b, data| {
+            //     b.iter_batched(
+            //         || data,
+            //         |bytes| serde_from_slice(&bytes),
+            //         BatchSize::SmallInput,
+            //     )
+            // });
 
-            group.bench_with_input("serde_json::from_str", &vec, |b, data| {
-                b.iter_batched(
-                    || data,
-                    |bytes| serde_from_str(&bytes),
-                    BatchSize::SmallInput,
-                )
-            });
+            // group.bench_with_input("serde_json::from_str", &vec, |b, data| {
+            //     b.iter_batched(
+            //         || data,
+            //         |bytes| serde_from_str(&bytes),
+            //         BatchSize::SmallInput,
+            //     )
+            // });
 
-            group.bench_with_input("simd_json::slice_to_owned_value", &vec, |b, data| {
-                b.iter_batched(
-                    || data.clone(),
-                    |mut bytes| simdjson_to_owned_value(&mut bytes),
-                    BatchSize::SmallInput,
-                )
-            });
+            // group.bench_with_input("simd_json::slice_to_owned_value", &vec, |b, data| {
+            //     b.iter_batched(
+            //         || data.clone(),
+            //         |mut bytes| simdjson_to_owned_value(&mut bytes),
+            //         BatchSize::SmallInput,
+            //     )
+            // });
 
-            group.bench_with_input("simd_json::slice_to_borrowed_value", &vec, |b, data| {
-                b.iter_batched(
-                    || data.clone(),
-                    |mut bytes| simdjson_to_borrowed_value(&mut bytes),
-                    BatchSize::SmallInput,
-                )
-            });
+            // group.bench_with_input("simd_json::slice_to_borrowed_value", &vec, |b, data| {
+            //     b.iter_batched(
+            //         || data.clone(),
+            //         |mut bytes| simdjson_to_borrowed_value(&mut bytes),
+            //         BatchSize::SmallInput,
+            //     )
+            // });
             group.throughput(Throughput::Bytes(vec.len() as u64));
         }
     };
@@ -207,5 +207,5 @@ bench_file!(citm_catalog);
 bench_file!(twitter);
 bench_file!(github_events);
 
-criterion_group!(benches, canada, citm_catalog, twitter, github_events, book);
+criterion_group!(benches, twitter,);
 criterion_main!(benches);
