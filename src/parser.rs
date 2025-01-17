@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
     num::NonZeroU8,
     ops::Deref,
@@ -44,6 +45,15 @@ where
 {
     Borrowed(&'b T),
     Copied(&'c T),
+}
+
+impl<'b, 'c> From<Reference<'b, 'c, str>> for Cow<'b, str> {
+    fn from(value: Reference<'b, 'c, str>) -> Self {
+        match value {
+            Reference::Borrowed(b) => Cow::Borrowed(b),
+            Reference::Copied(c) => Cow::Owned(c.to_string()),
+        }
+    }
 }
 
 impl<'b, 'c, T> Deref for Reference<'b, 'c, T>
@@ -522,7 +532,7 @@ where
         strbuf: &mut Vec<u8>,
         first: &mut bool,
         check: bool,
-    ) -> Result<Option<(FastStr, &'de [u8], ParseStatus)>> {
+    ) -> Result<Option<(Cow<'de, str>, &'de [u8], ParseStatus)>> {
         if *first && self.skip_space() != Some(b'{') {
             return perr!(self, ExpectedObjectStart);
         }
@@ -538,14 +548,13 @@ where
         }
 
         let parsed = self.parse_str_impl(strbuf)?;
-        let key = FastStr::new(parsed.deref());
         self.parse_object_clo()?;
         let (raw, status) = if check {
             self.skip_one()
         } else {
             self.skip_one_unchecked()
         }?;
-        Ok(Some((key, raw, status)))
+        Ok(Some((parsed.into(), raw, status)))
     }
 
     // Not use non-recurse version here, because it maybe 5% slower than recurse version.

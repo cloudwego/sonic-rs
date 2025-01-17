@@ -13,7 +13,7 @@ fn filter_json<W: WriteExt>(json: &str, keys: HashSet<FastStr>, w: W) -> sonic_r
     let mut maper = outer.serialize_map(None)?;
     for ret in to_object_iter(json) {
         let (name, value) = ret.expect("invalid json");
-        if keys.contains(&name) {
+        if keys.contains(name.as_ref()) {
             maper.serialize_entry(&name, &value)?;
         }
     }

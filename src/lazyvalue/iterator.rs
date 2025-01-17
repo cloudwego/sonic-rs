@@ -1,4 +1,4 @@
-use faststr::FastStr;
+use std::borrow::Cow;
 
 use crate::{
     error::Result,
@@ -101,7 +101,7 @@ impl<'de> ObjectJsonIter<'de> {
         }
     }
 
-    fn next_entry_impl(&mut self) -> Option<Result<(FastStr, LazyValue<'de>)>> {
+    fn next_entry_impl(&mut self) -> Option<Result<(Cow<'de, str>, LazyValue<'de>)>> {
         if self.ending {
             return None;
         }
@@ -345,7 +345,7 @@ pub unsafe fn to_array_iter_unchecked<'de, I: JsonInput<'de>>(json: I) -> ArrayJ
 }
 
 impl<'de> Iterator for ObjectJsonIter<'de> {
-    type Item = Result<(FastStr, LazyValue<'de>)>;
+    type Item = Result<(Cow<'de, str>, LazyValue<'de>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_entry_impl()
@@ -390,7 +390,7 @@ mod test {
 
         let mut test_ok = |key: &str, val: &str, typ: JsonType| {
             let ret = iter.next().unwrap().unwrap();
-            assert_eq!(ret.0.as_str(), key);
+            assert_eq!(ret.0.as_ref(), key);
             assert_eq!(
                 ret.1.as_raw_str().as_bytes(),
                 val.as_bytes(),
@@ -400,7 +400,7 @@ mod test {
             assert_eq!(ret.1.get_type(), typ);
 
             let ret = iter_unchecked.next().unwrap().unwrap();
-            assert_eq!(ret.0.as_str(), key);
+            assert_eq!(ret.0.as_ref(), key);
             assert_eq!(
                 ret.1.as_raw_str().as_bytes(),
                 val.as_bytes(),

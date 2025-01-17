@@ -63,12 +63,12 @@ pub fn sonic_rs_fuzz_data(data: &[u8]) {
                 let owned: OwnedLazyValue = sonic_rs::from_slice(data).unwrap();
                 for ret in to_object_iter(data) {
                     let (k, lv) = ret.unwrap();
-                    let jv = jv.get(k.as_str()).unwrap();
-                    let ov = owned.get(k.as_str()).unwrap();
+                    let jv = jv.get(k.as_ref()).unwrap();
+                    let ov = owned.get(k.as_ref()).unwrap();
                     compare_owned_lazyvalue(jv, ov);
                     compare_lazyvalue(jv, &lv);
 
-                    let gv = sonic_rs::get(data, &[k.as_str()]).unwrap();
+                    let gv = sonic_rs::get(data, &[k.as_ref()]).unwrap();
                     compare_lazyvalue(jv, &gv);
                 }
                 compare_owned_lazyvalue(&jv, &owned);
@@ -77,10 +77,10 @@ pub fn sonic_rs_fuzz_data(data: &[u8]) {
                 unsafe {
                     for ret in to_object_iter_unchecked(data) {
                         let (k, lv) = ret.unwrap();
-                        let jv = jv.get(k.as_str()).unwrap();
+                        let jv = jv.get(k.as_ref()).unwrap();
                         compare_lazyvalue(jv, &lv);
 
-                        let gv = sonic_rs::get_unchecked(data, &[k.as_str()]).unwrap();
+                        let gv = sonic_rs::get_unchecked(data, &[k.as_ref()]).unwrap();
                         compare_lazyvalue(jv, &gv);
                     }
                 }
