@@ -1492,7 +1492,7 @@ impl<'a> DocumentVisitor<'a> {
 #[repr(C)]
 struct MetaNode {
     shared: *const Shared,
-    canary: usize,
+    canary: u64,
 }
 
 impl MetaNode {
@@ -1500,7 +1500,7 @@ impl MetaNode {
         let canary = b"SONICRS\0";
         MetaNode {
             shared,
-            canary: unsafe { transmute::<&[u8; 8], usize>(canary) },
+            canary: unsafe { transmute::<[u8; 8], u64>(*canary) },
         }
     }
 }
