@@ -177,10 +177,12 @@ fn bench_object_insert(c: &mut Criterion) {
         b.iter_batched(
             || (),
             |_| {
-                let mut val = sonic_rs::Object::new();
+                let mut val = sonic_rs::Object::with_capacity(100);
                 for i in 0..100 {
                     let mut obj = sonic_rs::json!({"a":{"b":{"c":{"d":{}}}}});
-                    for j in 0..100 {
+                    *obj["a"]["b"]["c"]["d"].as_object_mut().unwrap() =
+                        sonic_rs::Object::with_capacity(1000);
+                    for j in 0..1000 {
                         obj["a"]["b"]["c"]["d"]
                             .as_object_mut()
                             .unwrap()
@@ -200,7 +202,7 @@ fn bench_object_insert(c: &mut Criterion) {
                 let mut val = serde_json::Map::new();
                 for i in 0..100 {
                     let mut obj = serde_json::json!({"a":{"b":{"c":{"d":{}}}}});
-                    for j in 0..100 {
+                    for j in 0..1000 {
                         obj["a"]["b"]["c"]["d"]
                             .as_object_mut()
                             .unwrap()

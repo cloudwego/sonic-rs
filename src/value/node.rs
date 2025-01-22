@@ -10,6 +10,7 @@ use std::{
     sync::Arc,
 };
 
+use ahash::AHashMap;
 use bumpalo::Bump;
 use faststr::FastStr;
 use ref_cast::RefCast;
@@ -79,27 +80,27 @@ pub struct Value {
 //  - Owned Node : mutable
 //  - Shared Node: in SharedDom, not mutable
 //
-// | Kind        | 3 bits | 5 bits |       24 bits     |     ---->  32 bits ---->       |   32 bits   |  32 bits  |       limit          |
-// |-------------|-----------------|-------------------|--------------------------------|-------------------------|----------------------|
-// |  Null       |   0    |   0    |                                                    +                         |                      |
-// |  True       |   0    |   1    |                                                    +                         |                      |
-// |  False      |   0    |   2    |                                                    +                         |                      |
-// |  I64        |   0    |   3    |                                                    +           i64           |                      |
-// |  U64        |   0    |   4    |                                                    +           u64           |                      |
-// |  F64        |   0    |   5    |                                                    +           f64           |                      |
-// | empty arr   |   0    |   6    |                                                                              |
-// | empty obj   |   0    |   7    |                                                                              |
-// | static str  |   0    |   8    |                   |           string length        +         *const u8       | excced will fallback |
-// |  faststr    |   1    |   0    |                                                    +       Box<FastStr>      |                      |
-// |rawnum_fastst|   1    |   1    |                                                    +       Box<FastStr>      |                      |
-// |  arr_mut    |   1    |   2    |                                                    +       Arc<Vec<Node>>    |                      |
-// |  obj_mut    |   1    |   3    |                                                    +       Arc<Vec<Pair>>    |                      |
-// |  str_node   |   2    |        node idx            |           string length        +         *const u8       |    max len 2^32      |
-// | raw_num_node|   3    |        node idx            |           string length        +         *const u8       |    max len 2^32      |
-// |  arr_node   |   4    |        node idx            |           array length         +         *const Node     |    max len 2^32      |
-// |  obj_node   |   5    |        node idx            |           object length        +         *const Pair     |    max len 2^32      |
-// |str_esc_raw  |   6    |   *const RawStrHeader (in SharedDom, MUST aligned 8)        +         *const u8       |                      |
-// | root_node   |   7    |      *const ShardDom (from Arc, MUST aligned 8)             +     *const Node (head)  |                      |
+// | Kind        | 3 bits | 5 bits |       24 bits     |     ---->  32 bits ---->       |    32 bits    |    32 bits    |       limit          |
+// |-------------|-----------------|-------------------|--------------------------------|-------------------------------|----------------------|
+// |  Null       |   0    |   0    |                                                    +                               |                      |
+// |  True       |   0    |   1    |                                                    +                               |                      |
+// |  False      |   0    |   2    |                                                    +                               |                      |
+// |  I64        |   0    |   3    |                                                    +             i64               |                      |
+// |  U64        |   0    |   4    |                                                    +             u64               |                      |
+// |  F64        |   0    |   5    |                                                    +             f64               |                      |
+// | empty arr   |   0    |   6    |                                                                                    |
+// | empty obj   |   0    |   7    |                                                                                    |
+// | static str  |   0    |   8    |                   |           string length        +          *const u8            | excced will fallback |
+// |  faststr    |   1    |   0    |                                                    +         Box<FastStr>          |                      |
+// |rawnum_fastst|   1    |   1    |                                                    +         Box<FastStr>          |                      |
+// |  arr_mut    |   1    |   2    |                                                    +        Arc<Vec<Node>>         |                      |
+// |  obj_mut    |   1    |   3    |                                                    + Arc<AHashMap<FastStr, Value>> |                      |
+// |  str_node   |   2    |        node idx            |           string length        +          *const u8            |    max len 2^32      |
+// | raw_num_node|   3    |        node idx            |           string length        +          *const u8            |    max len 2^32      |
+// |  arr_node   |   4    |        node idx            |           array length         +          *const Node          |    max len 2^32      |
+// |  obj_node   |   5    |        node idx            |           object length        +          *const Pair          |    max len 2^32      |
+// |str_esc_raw  |   6    |   *const RawStrHeader (in SharedDom, MUST aligned 8)        +          *const u8            |                      |
+// | root_node   |   7    |      *const ShardDom (from Arc, MUST aligned 8)             +      *const Node (head)       |                      |
 //
 // NB: we will check the JSON length when parsing, if JSON is >= 4GB, will return a error, so we will not check the limits when parsing or using dom.
 #[allow(clippy::box_collection)]
@@ -117,7 +118,7 @@ pub(crate) union Data {
     pub(crate) root: NonNull<Value>,
 
     pub(crate) str_own: ManuallyDrop<Box<FastStr>>,
-    pub(crate) obj_own: ManuallyDrop<Arc<Vec<Pair>>>,
+    pub(crate) obj_own: ManuallyDrop<Arc<AHashMap<FastStr, Value>>>,
     pub(crate) arr_own: ManuallyDrop<Arc<Vec<Value>>>,
 
     pub(crate) parent: u64,
@@ -427,7 +428,7 @@ enum ValueDetail<'a> {
     FastStr(&'a FastStr),
     RawNumFasStr(&'a FastStr),
     Array(&'a Arc<Vec<Value>>),
-    Object(&'a Arc<Vec<Pair>>),
+    Object(&'a Arc<AHashMap<FastStr, Value>>),
     Root(NodeInDom<'a>),
     NodeInDom(NodeInDom<'a>),
     EmptyArray,
@@ -474,13 +475,21 @@ pub enum ValueRefInner<'a> {
     RawNum(&'a str),
     Array(&'a [Value]),
     Object(&'a [Pair]),
+    ObjectOwned(&'a Arc<AHashMap<FastStr, Value>>),
     EmptyArray,
     EmptyObject,
 }
 
 impl<'a> From<&'a [Pair]> for Value {
     fn from(value: &'a [Pair]) -> Self {
-        let newd = value.to_vec();
+        let mut newd = AHashMap::with_capacity(value.len());
+
+        for (k, v) in value {
+            if let Some(k) = k.as_str() {
+                newd.insert(FastStr::new(k), v.clone());
+            }
+        }
+
         Self {
             meta: Meta::new(Meta::OBJ_MUT),
             data: Data {
@@ -518,7 +527,7 @@ pub(crate) enum ValueMut<'a> {
     Str,
     RawNum,
     Array(&'a mut Vec<Value>),
-    Object(&'a mut Vec<Pair>),
+    Object(&'a mut AHashMap<FastStr, Value>),
 }
 
 impl Value {
@@ -609,7 +618,7 @@ impl Value {
             ValueDetail::FastStr(s) => ValueRefInner::Str(s.as_str()),
             ValueDetail::RawNumFasStr(s) => ValueRefInner::RawNum(s.as_str()),
             ValueDetail::Array(a) => ValueRefInner::Array(a),
-            ValueDetail::Object(o) => ValueRefInner::Object(o),
+            ValueDetail::Object(o) => ValueRefInner::ObjectOwned(o),
             ValueDetail::Root(n) | ValueDetail::NodeInDom(n) => n.get_inner(),
             ValueDetail::EmptyArray => ValueRefInner::EmptyArray,
             ValueDetail::EmptyObject => ValueRefInner::EmptyObject,
@@ -693,8 +702,8 @@ impl From<Arc<Vec<Value>>> for Value {
     }
 }
 
-impl From<Arc<Vec<Pair>>> for Value {
-    fn from(value: Arc<Vec<Pair>>) -> Self {
+impl From<Arc<AHashMap<FastStr, Value>>> for Value {
+    fn from(value: Arc<AHashMap<FastStr, Value>>) -> Self {
         Self {
             meta: Meta::new(Meta::OBJ_MUT),
             data: Data {
@@ -770,7 +779,7 @@ impl super::value_trait::JsonValueTrait for Value {
             ValueRefInner::Number(_) => JsonType::Number,
             ValueRefInner::Str(_) | ValueRefInner::RawStr(_) => JsonType::String,
             ValueRefInner::Array(_) => JsonType::Array,
-            ValueRefInner::Object(_) => JsonType::Object,
+            ValueRefInner::Object(_) | ValueRefInner::ObjectOwned(_) => JsonType::Object,
             ValueRefInner::RawNum(_) => JsonType::Number,
             ValueRefInner::EmptyArray => JsonType::Array,
             ValueRefInner::EmptyObject => JsonType::Object,
@@ -963,9 +972,9 @@ impl Value {
             ValueRefInner::Array(_) | ValueRefInner::EmptyArray => {
                 ValueRef::Array(self.as_array().unwrap())
             }
-            ValueRefInner::Object(_) | ValueRefInner::EmptyObject => {
-                ValueRef::Object(self.as_object().unwrap())
-            }
+            ValueRefInner::Object(_)
+            | ValueRefInner::EmptyObject
+            | ValueRefInner::ObjectOwned(_) => ValueRef::Object(self.as_object().unwrap()),
             ValueRefInner::RawNum(raw) => {
                 crate::from_str(raw).map_or(ValueRef::Null, ValueRef::Number)
             }
@@ -1197,7 +1206,7 @@ impl Value {
 
     #[doc(hidden)]
     pub fn new_object_with(capacity: usize) -> Self {
-        let obj_own = ManuallyDrop::new(Arc::new(Vec::with_capacity(capacity)));
+        let obj_own = ManuallyDrop::new(Arc::new(AHashMap::with_capacity(capacity)));
         Value {
             meta: Meta::new(Meta::OBJ_MUT),
             data: Data { obj_own },
@@ -1231,39 +1240,27 @@ impl Value {
 
     pub(crate) fn get_key_value(&self, key: &str) -> Option<(&str, &Self)> {
         debug_assert!(self.is_object());
-        if let ValueRefInner::Object(kv) = self.as_ref2() {
+        let ref_inner = self.as_ref2();
+        if let ValueRefInner::Object(kv) = ref_inner {
             for (k, v) in kv {
                 let k = k.as_str().expect("key is not string");
                 if k == key {
                     return Some((k, v));
                 }
             }
-        }
-        None
-    }
-
-    #[inline]
-    pub(crate) fn get_key_offset(&self, key: &str) -> Option<usize> {
-        debug_assert!(self.is_object());
-        if let ValueRefInner::Object(kv) = self.as_ref2() {
-            for (i, pair) in kv.iter().enumerate() {
-                debug_assert!(pair.0.is_str());
-                if pair.0.equal_str(key) {
-                    return Some(i);
-                }
+        } else if let ValueRefInner::ObjectOwned(kv) = ref_inner {
+            if let Some((k, v)) = kv.get_key_value(key) {
+                return Some((k.as_str(), v));
             }
         }
         None
     }
 
     #[inline]
-    pub(crate) fn get_key_mut(&mut self, key: &str) -> Option<(&mut Self, usize)> {
+    pub(crate) fn get_key_mut(&mut self, key: &str) -> Option<&mut Self> {
         if let ValueMut::Object(kv) = self.as_mut() {
-            for (i, (k, v)) in kv.iter_mut().enumerate() {
-                debug_assert!(k.is_str());
-                if k.equal_str(key) {
-                    return Some((v, i));
-                }
+            if let Some(v) = kv.get_mut(key) {
+                return Some(v);
             }
         }
         None
@@ -1313,22 +1310,11 @@ impl Value {
     }
 
     #[inline]
-    pub(crate) fn remove_pair_index(&mut self, index: usize) -> (Value, Value) {
-        debug_assert!(self.is_object());
-        match self.as_mut() {
-            ValueMut::Object(obj) => obj.remove(index),
-            _ => unreachable!("value is not object"),
-        }
-    }
-
-    #[inline]
     pub(crate) fn remove_key(&mut self, k: &str) -> Option<Value> {
         debug_assert!(self.is_object());
-        if let Some(i) = self.get_key_offset(k) {
-            let (_, val) = self.remove_pair_index(i);
-            Some(val)
-        } else {
-            None
+        match self.as_mut() {
+            ValueMut::Object(obj) => obj.remove(k),
+            _ => unreachable!("value is not object"),
         }
     }
 
@@ -1380,13 +1366,12 @@ impl Value {
 
     #[doc(hidden)]
     #[inline]
-    pub fn append_pair(&mut self, pair: Pair) -> &mut Pair {
+    pub fn insert(&mut self, key: &str, val: Value) -> &mut Value {
         debug_assert!(self.is_object());
         match self.as_mut() {
             ValueMut::Object(obj) => {
-                obj.push(pair);
-                let len = obj.len();
-                &mut obj[len - 1]
+                obj.insert(FastStr::new(key), val);
+                obj.get_mut(key).unwrap()
             }
             _ => unreachable!("value is not object"),
         }
@@ -1397,15 +1382,6 @@ impl Value {
         debug_assert!(self.is_array());
         match self.as_mut() {
             ValueMut::Array(arr) => arr.pop(),
-            _ => unreachable!("value is not object"),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn pop_pair(&mut self) -> Option<Pair> {
-        debug_assert!(self.is_object());
-        match self.as_mut() {
-            ValueMut::Object(obj) => obj.pop(),
             _ => unreachable!("value is not object"),
         }
     }
@@ -1790,6 +1766,26 @@ impl Serialize for Value {
                         } else {
                             tri!(map.serialize_key(k.as_str().unwrap()));
                         }
+                        tri!(map.serialize_value(v));
+                    }
+                    map.end()
+                }
+            }
+            ValueRefInner::ObjectOwned(o) => {
+                #[cfg(feature = "sort_keys")]
+                {
+                    let mut map = tri!(serializer.serialize_map(Some(o.len())));
+                    for (k, v) in o.iter() {
+                        tri!(map.serialize_key(k.as_str()));
+                        tri!(map.serialize_value(v));
+                    }
+                    map.end()
+                }
+                #[cfg(not(feature = "sort_keys"))]
+                {
+                    let mut map = tri!(serializer.serialize_map(Some(o.len())));
+                    for (k, v) in o.iter() {
+                        tri!(map.serialize_key(k.as_str()));
                         tri!(map.serialize_value(v));
                     }
                     map.end()

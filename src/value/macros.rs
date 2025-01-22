@@ -226,8 +226,7 @@ macro_rules! json_internal {
     // Insert the current entry followed by trailing comma.
     (@object $object:ident [$($key:tt)+] ($value:expr) , $($rest:tt)*) => {
         let key: &str = ($($key)+).as_ref();
-        let pair = ($crate::Value::copy_str(key), $value);
-        let _ = $object.append_pair(pair);
+        let _ = $object.insert(key, $value);
         json_internal!(@object $object () ($($rest)*) ($($rest)*));
     };
 
@@ -239,8 +238,7 @@ macro_rules! json_internal {
     // Insert the last entry without trailing comma.
     (@object $object:ident [$($key:tt)+] ($value:expr)) => {
         let key: &str = ($($key)+).as_ref();
-        let pair = ($crate::Value::copy_str(key), $value);
-        let _ = $object.append_pair(pair);
+        let _ = $object.insert(key, $value);
     };
 
     // Next value is `null`.

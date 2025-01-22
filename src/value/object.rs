@@ -1,6 +1,8 @@
 //! Represents a parsed JSON object.
+use core::hash;
 use std::{iter::FusedIterator, marker::PhantomData, slice};
 
+use faststr::FastStr;
 use ref_cast::RefCast;
 
 use super::{node::ValueMut, value_trait::JsonValueTrait};
@@ -175,7 +177,7 @@ impl Object {
     /// ```
     #[inline]
     pub fn get_mut<Q: AsRef<str>>(&mut self, key: &Q) -> Option<&mut Value> {
-        self.0.get_key_mut(key.as_ref()).map(|v| v.0)
+        self.0.get_key_mut(key.as_ref())
     }
 
     /// Returns the key-value pair corresponding to the supplied key.
@@ -369,7 +371,7 @@ impl Object {
     /// assert_eq!(obj.get(&"10"), None);
     /// ```
     #[inline]
-    pub fn entry<'a, Q: AsRef<str> + ?Sized>(&'a mut self, key: &Q) -> Entry<'a> {
+    pub fn entry<'a, Q: AsRef<str> + ?Sized>(&'a mut self, key: &'a Q) -> Entry<'a> {
         let (obj, dormant_obj) = DormantMutRef::new(self);
         match obj.0.get_key_mut(key.as_ref()) {
             None => {
@@ -381,9 +383,7 @@ impl Object {
                     _marker: PhantomData,
                 })
             }
-            Some((handle, offset)) => {
-                Entry::Occupied(OccupiedEntry::new(handle, offset, dormant_obj))
-            }
+            Some(handle) => Entry::Occupied(OccupiedEntry::new(handle, key.as_ref(), dormant_obj)),
         }
     }
 
@@ -408,7 +408,7 @@ impl Object {
         F: FnMut(&str, &mut Value) -> bool,
     {
         if let ValueMut::Object(s) = self.0.as_mut() {
-            s.retain_mut(|(k, v)| f(k.as_str().unwrap(), v))
+            s.retain(|k, v| f(k.as_str(), v));
         } else {
             unreachable!("should not used in array")
         }
@@ -430,26 +430,16 @@ impl Object {
     /// ```
     #[inline]
     pub fn append(&mut self, other: &mut Self) {
-        while let Some((k, v)) = other.0.pop_pair() {
-            self.0.append_pair((k, v));
+        if let ValueMut::Object(o) = self.0.as_mut() {
+            o.reserve(other.len());
+            if let ValueMut::Object(oo) = other.0.as_mut() {
+                o.extend(oo.drain().into_iter());
+            } else {
+                unreachable!("should not used in array")
+            }
+        } else {
+            unreachable!("should not used in array")
         }
-    }
-
-    /// Append the key-value pair to the object. Not check the key is exist or not.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use sonic_rs::object;
-    ///
-    /// let mut a = object! {"a": null};
-    /// a.append_pair("b", 1);
-    ///
-    /// assert_eq!(a, object! {"a": null, "b": 1});
-    /// ```
-    #[inline]
-    pub fn append_pair<K: AsRef<str>, V: Into<Value>>(&mut self, key: K, value: V) {
-        let _ = self.0.append_pair((key.as_ref().into(), value.into()));
     }
 
     /// Reserves capacity for at least additional more elements to be inserted in the given.
@@ -473,12 +463,12 @@ impl Object {
 /// A view into a single occupied location in a `Object`.
 pub struct OccupiedEntry<'a> {
     handle: &'a mut Value,
-    offset: usize,
+    key: &'a str,
     dormant_obj: DormantMutRef<'a, Object>,
     _marker: PhantomData<&'a mut Pair>,
 }
 
-impl<'a> OccupiedEntry<'a> {
+impl<'a, 'k> OccupiedEntry<'a> {
     /// Gets a reference to the value in the entry.
     ///
     /// # Examples
@@ -594,19 +584,19 @@ impl<'a> OccupiedEntry<'a> {
     #[inline]
     pub fn remove(mut self) -> Value {
         let obj = unsafe { self.dormant_obj.reborrow() };
-        let (_, val) = obj.0.remove_pair_index(self.offset);
+        let val = obj.0.remove_key(self.key).unwrap();
         val
     }
 
     #[inline]
     pub(crate) fn new(
         handle: &'a mut Value,
-        offset: usize,
+        key: &'a str,
         dormant_obj: DormantMutRef<'a, Object>,
     ) -> Self {
         Self {
             handle,
-            offset,
+            key,
             dormant_obj,
             _marker: PhantomData,
         }
@@ -644,8 +634,8 @@ impl<'a> VacantEntry<'a> {
     pub fn insert<T: Into<Value>>(self, val: T) -> &'a mut Value {
         let obj = unsafe { self.dormant_obj.awaken() };
         obj.reserve(1);
-        let pair = obj.0.append_pair((self.key, val.into()));
-        &mut pair.1
+        let val = obj.0.insert(self.key.as_str().unwrap(), val.into());
+        val
     }
 
     /// Get the key of the vacant entry.
@@ -833,9 +823,25 @@ pub struct Iter<'a>(slice::Iter<'a, (Value, Value)>);
 impl_entry_iter!((Iter<'a>): (&'a str, &'a Value));
 
 /// A mutable iterator over the entries of a `Object`.
-pub struct IterMut<'a>(slice::IterMut<'a, (Value, Value)>);
-impl_entry_iter!((IterMut<'a>): (&'a str, &'a mut Value));
+pub struct IterMut<'a>(std::collections::hash_map::IterMut<'a, FastStr, Value>);
 
+impl<'a> Iterator for IterMut<'a> {
+    type Item = (&'a str, &'a mut Value);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(k, v)| (k.as_str(), v))
+    }
+}
+
+impl<'a> ExactSizeIterator for IterMut<'a> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl<'a> FusedIterator for IterMut<'a> {}
 /// An iterator over the keys of a `Object`.
 pub struct Keys<'a>(Iter<'a>);
 
@@ -899,7 +905,6 @@ impl_value_iter!((Values<'a>): &'a Value);
 
 /// A mutable iterator over the values of a `Object`.
 pub struct ValuesMut<'a>(IterMut<'a>);
-impl_value_iter!((ValuesMut<'a>): &'a mut Value);
 
 impl<'a> IntoIterator for &'a Object {
     type Item = (&'a str, &'a Value);
@@ -911,15 +916,15 @@ impl<'a> IntoIterator for &'a Object {
     }
 }
 
-impl<'a> IntoIterator for &'a mut Object {
-    type Item = (&'a str, &'a mut Value);
-    type IntoIter = IterMut<'a>;
+// impl<'a> IntoIterator for &'a mut Object {
+//     type Item = (&'a str, &'a mut Value);
+//     type IntoIter = IterMut<'a>;
 
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter_mut()
-    }
-}
+//     #[inline]
+//     fn into_iter(self) -> Self::IntoIter {
+//         self.iter_mut()
+//     }
+// }
 
 impl<'a, Q: AsRef<str> + ?Sized> std::ops::Index<&'a Q> for Object {
     type Output = Value;
@@ -1010,7 +1015,7 @@ mod test {
             assert_eq!(obj["e"][0], i);
         }
 
-        for (i, v) in obj.iter_mut().enumerate() {
+        for (i, v) in obj.iter_mut().0.enumerate() {
             *(v.1) = Value::from(&i.to_string());
         }
 

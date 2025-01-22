@@ -66,6 +66,7 @@ where
 // Not export this because it is mainly used in `json!`.
 pub(crate) struct Serializer;
 
+use super::JsonValueTrait;
 use crate::serde::tri;
 
 impl serde::Serializer for Serializer {
@@ -223,8 +224,7 @@ impl serde::Serializer for Serializer {
         T: ?Sized + Serialize,
     {
         let mut object = Value::new_object_with(1);
-        let pair = (Value::from_static_str(variant), tri!(to_value(value)));
-        object.append_pair(pair);
+        object.insert(&variant, tri!(to_value(value)));
         Ok(object)
     }
 
@@ -271,7 +271,7 @@ impl serde::Serializer for Serializer {
         len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
         Ok(SerializeTupleVariant {
-            static_name: Value::from_static_str(variant),
+            static_name: variant,
             vec: Value::new_array_with(len),
         })
     }
@@ -305,7 +305,7 @@ impl serde::Serializer for Serializer {
         len: usize,
     ) -> Result<Self::SerializeStructVariant> {
         Ok(SerializeStructVariant {
-            static_name: Value::from_static_str(variant),
+            static_name: variant,
             object: Value::new_object_with(len),
         })
     }
@@ -326,7 +326,7 @@ pub(crate) struct SerializeVec {
 
 /// Serializing Rust tuple variant into `Value`.
 pub(crate) struct SerializeTupleVariant {
-    static_name: Value,
+    static_name: &'static str,
     vec: Value,
 }
 
@@ -347,7 +347,7 @@ enum MapInner {
 
 /// Serializing Rust struct variant into `Value`.
 pub(crate) struct SerializeStructVariant {
-    static_name: Value,
+    static_name: &'static str,
     object: Value,
 }
 
@@ -414,7 +414,7 @@ impl serde::ser::SerializeTupleVariant for SerializeTupleVariant {
 
     fn end(self) -> Result<Value> {
         let mut object = Value::new_object_with(1);
-        object.append_pair((self.static_name, self.vec));
+        object.insert(&self.static_name, self.vec);
         Ok(object)
     }
 }
@@ -446,7 +446,7 @@ impl serde::ser::SerializeMap for SerializeMap {
                 // Panic because this indicates a bug in the program rather than an
                 // expected failure.
                 let key = key.expect("serialize_value called before serialize_key");
-                object.append_pair((key, tri!(to_value(value))));
+                object.insert(key.as_str().unwrap(), tri!(to_value(value)));
                 Ok(())
             }
             MapInner::RawNumber { .. } => unreachable!(),
@@ -855,14 +855,13 @@ impl serde::ser::SerializeStructVariant for SerializeStructVariant {
     where
         T: ?Sized + Serialize,
     {
-        self.object
-            .append_pair((Value::from_static_str(key), tri!(to_value(value))));
+        self.object.insert(key, tri!(to_value(value)));
         Ok(())
     }
 
     fn end(self) -> Result<Value> {
         let mut object = Value::new_object_with(1);
-        object.append_pair((self.static_name, self.object));
+        object.insert(self.static_name, self.object);
         Ok(object)
     }
 }
