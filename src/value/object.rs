@@ -1,5 +1,4 @@
 //! Represents a parsed JSON object.
-use core::hash;
 use std::{iter::FusedIterator, marker::PhantomData, slice};
 
 use faststr::FastStr;
@@ -433,7 +432,7 @@ impl Object {
         if let ValueMut::Object(o) = self.0.as_mut() {
             o.reserve(other.len());
             if let ValueMut::Object(oo) = other.0.as_mut() {
-                o.extend(oo.drain().into_iter());
+                o.extend(oo.drain());
             } else {
                 unreachable!("should not used in array")
             }
@@ -468,7 +467,7 @@ pub struct OccupiedEntry<'a> {
     _marker: PhantomData<&'a mut Pair>,
 }
 
-impl<'a, 'k> OccupiedEntry<'a> {
+impl<'a> OccupiedEntry<'a> {
     /// Gets a reference to the value in the entry.
     ///
     /// # Examples
@@ -584,8 +583,7 @@ impl<'a, 'k> OccupiedEntry<'a> {
     #[inline]
     pub fn remove(mut self) -> Value {
         let obj = unsafe { self.dormant_obj.reborrow() };
-        let val = obj.0.remove_key(self.key).unwrap();
-        val
+        obj.0.remove_key(self.key).unwrap()
     }
 
     #[inline]
@@ -889,6 +887,7 @@ impl_value_iter!((Values<'a>): &'a Value);
 
 /// A mutable iterator over the values of a `Object`.
 pub struct ValuesMut<'a>(IterMut<'a>);
+impl_value_iter!((ValuesMut<'a>): &'a mut Value);
 
 impl<'a> IntoIterator for &'a Object {
     type Item = (&'a str, &'a Value);

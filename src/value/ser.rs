@@ -224,7 +224,7 @@ impl serde::Serializer for Serializer {
         T: ?Sized + Serialize,
     {
         let mut object = Value::new_object_with(1);
-        object.insert(&variant, tri!(to_value(value)));
+        object.insert(variant, tri!(to_value(value)));
         Ok(object)
     }
 
@@ -414,7 +414,7 @@ impl serde::ser::SerializeTupleVariant for SerializeTupleVariant {
 
     fn end(self) -> Result<Value> {
         let mut object = Value::new_object_with(1);
-        object.insert(&self.static_name, self.vec);
+        object.insert(self.static_name, self.vec);
         Ok(object)
     }
 }

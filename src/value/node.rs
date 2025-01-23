@@ -1162,14 +1162,6 @@ impl Value {
         }
     }
 
-    pub(crate) fn as_pair_slice(&self) -> Option<&[Pair]> {
-        match self.as_ref2() {
-            ValueRefInner::Object(s) => Some(s),
-            ValueRefInner::EmptyObject => Some(&[]),
-            _ => None,
-        }
-    }
-
     pub(crate) fn as_obj_len(&self) -> usize {
         match self.as_ref2() {
             ValueRefInner::Object(s) => s.len(),
@@ -1273,12 +1265,6 @@ impl Value {
             }
         }
         None
-    }
-
-    #[inline]
-    fn equal_str(&self, val: &str) -> bool {
-        debug_assert!(self.is_str());
-        self.as_str().expect("value is not string") == val
     }
 
     #[inline]
