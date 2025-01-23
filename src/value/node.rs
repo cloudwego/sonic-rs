@@ -1170,6 +1170,15 @@ impl Value {
         }
     }
 
+    pub(crate) fn as_obj_len(&self) -> usize {
+        match self.as_ref2() {
+            ValueRefInner::Object(s) => s.len(),
+            ValueRefInner::EmptyObject => 0,
+            ValueRefInner::ObjectOwned(s) => s.len(),
+            _ => unreachable!("value is not object"),
+        }
+    }
+
     #[doc(hidden)]
     #[inline]
     pub fn copy_str(val: &str) -> Self {

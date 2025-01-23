@@ -5,7 +5,10 @@ use std::{iter::FusedIterator, marker::PhantomData, slice};
 use faststr::FastStr;
 use ref_cast::RefCast;
 
-use super::{node::ValueMut, value_trait::JsonValueTrait};
+use super::{
+    node::{ValueMut, ValueRefInner},
+    value_trait::JsonValueTrait,
+};
 use crate::{serde::tri, util::reborrow::DormantMutRef, value::node::Value};
 
 /// Represents the JSON object. The inner implement is a key-value array. Its order is as same as
@@ -288,10 +291,7 @@ impl Object {
     /// Returns the number of key-value paris in the object.
     #[inline]
     pub fn len(&self) -> usize {
-        self.0
-            .as_pair_slice()
-            .expect("get len in non-object type")
-            .len()
+        self.0.as_obj_len()
     }
 
     /// Returns true if the object contains no key-value pairs.
@@ -314,12 +314,12 @@ impl Object {
     /// ```
     #[inline]
     pub fn iter(&self) -> Iter<'_> {
-        Iter(
-            self.0
-                .as_pair_slice()
-                .expect("iter() should not used in non-object")
-                .iter(),
-        )
+        Iter(match self.0.as_ref2() {
+            ValueRefInner::Object(obj) => IterInner::Slice(obj.iter()),
+            ValueRefInner::EmptyObject => IterInner::Slice([].iter()),
+            ValueRefInner::ObjectOwned(obj) => IterInner::Map(obj.iter()),
+            _ => unreachable!("should not used in non-object"),
+        })
     }
 
     /// Returns an mutable iterator over  the key-value pairs of the object.
@@ -789,38 +789,36 @@ impl<'a> Entry<'a> {
     }
 }
 
-macro_rules! impl_entry_iter {
-    (($name:ident $($generics:tt)*): $item:ty) => {
-        impl $($generics)* Iterator for $name $($generics)* {
-            type Item = $item;
+/// An iterator over the entries of a `Object`.
+enum IterInner<'a> {
+    Map(std::collections::hash_map::Iter<'a, FastStr, Value>),
+    Slice(slice::Iter<'a, (Value, Value)>),
+}
+pub struct Iter<'a>(IterInner<'a>);
 
-            #[inline]
-            fn next(&mut self) -> Option<Self::Item> {
-                self.0.next().map(|(k, v)| (k.as_str().unwrap(), v))
-            }
+impl<'a> Iterator for Iter<'a> {
+    type Item = (&'a str, &'a Value);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        match &mut self.0 {
+            IterInner::Map(iter) => iter.next().map(|(k, v)| (k.as_str(), v)),
+            IterInner::Slice(iter) => iter.next().map(|(k, v)| (k.as_str().unwrap(), v)),
         }
-
-        impl $($generics)* DoubleEndedIterator for $name $($generics)* {
-            #[inline]
-            fn next_back(&mut self) -> Option<Self::Item> {
-                self.0.next_back().map(|(k, v)| (k.as_str().unwrap(), v))
-            }
-        }
-
-        impl $($generics)* ExactSizeIterator for $name $($generics)* {
-            #[inline]
-            fn len(&self) -> usize {
-                self.0.len()
-            }
-        }
-
-        impl $($generics)* FusedIterator for $name $($generics)* {}
-    };
+    }
 }
 
-/// An iterator over the entries of a `Object`.
-pub struct Iter<'a>(slice::Iter<'a, (Value, Value)>);
-impl_entry_iter!((Iter<'a>): (&'a str, &'a Value));
+impl<'a> ExactSizeIterator for Iter<'a> {
+    #[inline]
+    fn len(&self) -> usize {
+        match &self.0 {
+            IterInner::Map(iter) => iter.len(),
+            IterInner::Slice(iter) => iter.len(),
+        }
+    }
+}
+
+impl<'a> FusedIterator for Iter<'a> {}
 
 /// A mutable iterator over the entries of a `Object`.
 pub struct IterMut<'a>(std::collections::hash_map::IterMut<'a, FastStr, Value>);
@@ -854,13 +852,6 @@ impl<'a> Iterator for Keys<'a> {
     }
 }
 
-impl<'a> DoubleEndedIterator for Keys<'a> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.0.next_back().map(|(k, _)| k)
-    }
-}
-
 impl<'a> ExactSizeIterator for Keys<'a> {
     #[inline]
     fn len(&self) -> usize {
@@ -878,13 +869,6 @@ macro_rules! impl_value_iter {
             #[inline]
             fn next(&mut self) -> Option<Self::Item> {
                 self.0.next().map(|(_, v)| v)
-            }
-        }
-
-        impl $($generics)* DoubleEndedIterator for $name $($generics)* {
-            #[inline]
-            fn next_back(&mut self) -> Option<Self::Item> {
-                self.0.next_back().map(|(_, v)| v)
             }
         }
 
@@ -916,15 +900,15 @@ impl<'a> IntoIterator for &'a Object {
     }
 }
 
-// impl<'a> IntoIterator for &'a mut Object {
-//     type Item = (&'a str, &'a mut Value);
-//     type IntoIter = IterMut<'a>;
+impl<'a> IntoIterator for &'a mut Object {
+    type Item = (&'a str, &'a mut Value);
+    type IntoIter = IterMut<'a>;
 
-//     #[inline]
-//     fn into_iter(self) -> Self::IntoIter {
-//         self.iter_mut()
-//     }
-// }
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
 
 impl<'a, Q: AsRef<str> + ?Sized> std::ops::Index<&'a Q> for Object {
     type Output = Value;
