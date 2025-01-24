@@ -101,7 +101,7 @@ pub struct Value {
 // |str_esc_raw  |   6    |   *const RawStrHeader (in SharedDom, MUST aligned 8)        +         *const u8       |                      |
 // | root_node   |   7    |      *const ShardDom (from Arc, MUST aligned 8)             +     *const Node (head)  |                      |
 //
-// NB: we will check the JSON length when parsing, if JSON is > 2GB, will return a error, so we will not check the limits when parsing or using dom.
+// NB: we will check the JSON length when parsing, if JSON is >= 4GB, will return a error, so we will not check the limits when parsing or using dom.
 #[allow(clippy::box_collection)]
 #[repr(C)]
 pub(crate) union Data {

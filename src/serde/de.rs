@@ -1327,12 +1327,12 @@ where
     R: Reader<'de>,
     T: de::Deserialize<'de>,
 {
-    // check JSON size, because the design of `sonic_rs::Value`, parsing JSON larger than 2 GB is
+    // check JSON size, because the design of `sonic_rs::Value`, parsing JSON larger than 4 GB is
     // not supported
     let len = read.as_u8_slice().len();
     if len >= (1 << 32) {
         return Err(crate::error::make_error(format!(
-            "Only support JSON less than 2 GB, the input JSON is too large here, len is {len}"
+            "Only support JSON less than 4 GB, the input JSON is too large here, len is {len}"
         )));
     }
 
