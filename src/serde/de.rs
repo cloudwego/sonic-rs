@@ -1330,7 +1330,7 @@ where
     // check JSON size, because the design of `sonic_rs::Value`, parsing JSON larger than 4 GB is
     // not supported
     let len = read.as_u8_slice().len();
-    if len >= (1 << 32) {
+    if len > u32::MAX as _ {
         return Err(crate::error::make_error(format!(
             "Only support JSON less than 4 GB, the input JSON is too large here, len is {len}"
         )));
