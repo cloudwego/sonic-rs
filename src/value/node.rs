@@ -1240,7 +1240,10 @@ impl Value {
     }
 
     #[doc(hidden)]
-    pub fn new_object_with(capacity: usize) -> Self {
+    pub fn new_object_with(
+        #[cfg(not(feature = "sort_keys"))] capacity: usize,
+        #[cfg(feature = "sort_keys")] _: usize,
+    ) -> Self {
         let obj_own = ManuallyDrop::new(Arc::new(
             #[cfg(not(feature = "sort_keys"))]
             AHashMap::with_capacity(capacity),
