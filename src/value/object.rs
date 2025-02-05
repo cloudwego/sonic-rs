@@ -1,9 +1,13 @@
 //! Represents a parsed JSON object.
 use std::{iter::FusedIterator, marker::PhantomData, slice};
 
+use faststr::FastStr;
 use ref_cast::RefCast;
 
-use super::{node::ValueMut, value_trait::JsonValueTrait};
+use super::{
+    node::{ValueMut, ValueRefInner},
+    value_trait::JsonValueTrait,
+};
 use crate::{serde::tri, util::reborrow::DormantMutRef, value::node::Value};
 
 /// Represents the JSON object. The inner implement is a key-value array. Its order is as same as
@@ -104,6 +108,7 @@ impl Object {
     /// let mut obj = object! {"a": 1, "b": true, "c": null};
     /// obj.clear();
     /// assert!(obj.is_empty());
+    /// #[cfg(not(feature = "sort_keys"))]
     /// assert!(obj.capacity() >= 3);
     /// ```
     #[inline]
@@ -175,7 +180,7 @@ impl Object {
     /// ```
     #[inline]
     pub fn get_mut<Q: AsRef<str>>(&mut self, key: &Q) -> Option<&mut Value> {
-        self.0.get_key_mut(key.as_ref()).map(|v| v.0)
+        self.0.get_key_mut(key.as_ref())
     }
 
     /// Returns the key-value pair corresponding to the supplied key.
@@ -286,10 +291,7 @@ impl Object {
     /// Returns the number of key-value paris in the object.
     #[inline]
     pub fn len(&self) -> usize {
-        self.0
-            .as_pair_slice()
-            .expect("get len in non-object type")
-            .len()
+        self.0.as_obj_len()
     }
 
     /// Returns true if the object contains no key-value pairs.
@@ -312,12 +314,12 @@ impl Object {
     /// ```
     #[inline]
     pub fn iter(&self) -> Iter<'_> {
-        Iter(
-            self.0
-                .as_pair_slice()
-                .expect("iter() should not used in non-object")
-                .iter(),
-        )
+        Iter(match self.0.as_ref2() {
+            ValueRefInner::Object(obj) => IterInner::Slice(obj.iter()),
+            ValueRefInner::EmptyObject => IterInner::Slice([].iter()),
+            ValueRefInner::ObjectOwned(obj) => IterInner::Map(obj.iter()),
+            _ => unreachable!("should not used in non-object"),
+        })
     }
 
     /// Returns an mutable iterator over  the key-value pairs of the object.
@@ -369,7 +371,7 @@ impl Object {
     /// assert_eq!(obj.get(&"10"), None);
     /// ```
     #[inline]
-    pub fn entry<'a, Q: AsRef<str> + ?Sized>(&'a mut self, key: &Q) -> Entry<'a> {
+    pub fn entry<'a, Q: AsRef<str> + ?Sized>(&'a mut self, key: &'a Q) -> Entry<'a> {
         let (obj, dormant_obj) = DormantMutRef::new(self);
         match obj.0.get_key_mut(key.as_ref()) {
             None => {
@@ -381,9 +383,7 @@ impl Object {
                     _marker: PhantomData,
                 })
             }
-            Some((handle, offset)) => {
-                Entry::Occupied(OccupiedEntry::new(handle, offset, dormant_obj))
-            }
+            Some(handle) => Entry::Occupied(OccupiedEntry::new(handle, key.as_ref(), dormant_obj)),
         }
     }
 
@@ -408,7 +408,7 @@ impl Object {
         F: FnMut(&str, &mut Value) -> bool,
     {
         if let ValueMut::Object(s) = self.0.as_mut() {
-            s.retain_mut(|(k, v)| f(k.as_str().unwrap(), v))
+            s.retain(|k, v| f(k.as_str(), v));
         } else {
             unreachable!("should not used in array")
         }
@@ -430,26 +430,24 @@ impl Object {
     /// ```
     #[inline]
     pub fn append(&mut self, other: &mut Self) {
-        while let Some((k, v)) = other.0.pop_pair() {
-            self.0.append_pair((k, v));
-        }
-    }
+        if let ValueMut::Object(o) = self.0.as_mut() {
+            #[cfg(not(feature = "sort_keys"))]
+            if let ValueMut::Object(oo) = other.0.as_mut() {
+                o.reserve(oo.len());
+                o.extend(oo.drain());
+            } else {
+                unreachable!("should not used in array")
+            }
 
-    /// Append the key-value pair to the object. Not check the key is exist or not.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use sonic_rs::object;
-    ///
-    /// let mut a = object! {"a": null};
-    /// a.append_pair("b", 1);
-    ///
-    /// assert_eq!(a, object! {"a": null, "b": 1});
-    /// ```
-    #[inline]
-    pub fn append_pair<K: AsRef<str>, V: Into<Value>>(&mut self, key: K, value: V) {
-        let _ = self.0.append_pair((key.as_ref().into(), value.into()));
+            #[cfg(feature = "sort_keys")]
+            if let ValueMut::Object(oo) = other.0.as_mut() {
+                o.append(oo);
+            } else {
+                unreachable!("should not used in array")
+            }
+        } else {
+            unreachable!("should not used in array")
+        }
     }
 
     /// Reserves capacity for at least additional more elements to be inserted in the given.
@@ -458,11 +456,17 @@ impl Object {
     /// ```
     /// use sonic_rs::object;
     /// let mut obj = object! {};
-    /// obj.reserve(1);
-    /// assert!(obj.capacity() >= 1);
+    /// #[cfg(not(feature = "sort_keys"))]
+    /// {
+    ///     obj.reserve(1);
+    ///     assert!(obj.capacity() >= 1);
+    /// }
     ///
-    /// obj.reserve(10);
-    /// assert!(obj.capacity() >= 10);
+    /// #[cfg(not(feature = "sort_keys"))]
+    /// {
+    ///     obj.reserve(10);
+    ///     assert!(obj.capacity() >= 10);
+    /// }
     /// ```
     #[inline]
     pub fn reserve(&mut self, additional: usize) {
@@ -473,7 +477,7 @@ impl Object {
 /// A view into a single occupied location in a `Object`.
 pub struct OccupiedEntry<'a> {
     handle: &'a mut Value,
-    offset: usize,
+    key: &'a str,
     dormant_obj: DormantMutRef<'a, Object>,
     _marker: PhantomData<&'a mut Pair>,
 }
@@ -594,19 +598,18 @@ impl<'a> OccupiedEntry<'a> {
     #[inline]
     pub fn remove(mut self) -> Value {
         let obj = unsafe { self.dormant_obj.reborrow() };
-        let (_, val) = obj.0.remove_pair_index(self.offset);
-        val
+        obj.0.remove_key(self.key).unwrap()
     }
 
     #[inline]
     pub(crate) fn new(
         handle: &'a mut Value,
-        offset: usize,
+        key: &'a str,
         dormant_obj: DormantMutRef<'a, Object>,
     ) -> Self {
         Self {
             handle,
-            offset,
+            key,
             dormant_obj,
             _marker: PhantomData,
         }
@@ -643,9 +646,10 @@ impl<'a> VacantEntry<'a> {
     /// ```
     pub fn insert<T: Into<Value>>(self, val: T) -> &'a mut Value {
         let obj = unsafe { self.dormant_obj.awaken() };
+        #[cfg(not(feature = "sort_keys"))]
         obj.reserve(1);
-        let pair = obj.0.append_pair((self.key, val.into()));
-        &mut pair.1
+        let val = obj.0.insert(self.key.as_str().unwrap(), val.into());
+        val
     }
 
     /// Get the key of the vacant entry.
@@ -799,43 +803,63 @@ impl<'a> Entry<'a> {
     }
 }
 
-macro_rules! impl_entry_iter {
-    (($name:ident $($generics:tt)*): $item:ty) => {
-        impl $($generics)* Iterator for $name $($generics)* {
-            type Item = $item;
+/// An iterator over the entries of a `Object`.
+enum IterInner<'a> {
+    #[cfg(not(feature = "sort_keys"))]
+    Map(std::collections::hash_map::Iter<'a, FastStr, Value>),
+    #[cfg(feature = "sort_keys")]
+    Map(std::collections::btree_map::Iter<'a, FastStr, Value>),
+    Slice(slice::Iter<'a, (Value, Value)>),
+}
+pub struct Iter<'a>(IterInner<'a>);
 
-            #[inline]
-            fn next(&mut self) -> Option<Self::Item> {
-                self.0.next().map(|(k, v)| (k.as_str().unwrap(), v))
-            }
+impl<'a> Iterator for Iter<'a> {
+    type Item = (&'a str, &'a Value);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        match &mut self.0 {
+            IterInner::Map(iter) => iter.next().map(|(k, v)| (k.as_str(), v)),
+            IterInner::Slice(iter) => iter.next().map(|(k, v)| (k.as_str().unwrap(), v)),
         }
-
-        impl $($generics)* DoubleEndedIterator for $name $($generics)* {
-            #[inline]
-            fn next_back(&mut self) -> Option<Self::Item> {
-                self.0.next_back().map(|(k, v)| (k.as_str().unwrap(), v))
-            }
-        }
-
-        impl $($generics)* ExactSizeIterator for $name $($generics)* {
-            #[inline]
-            fn len(&self) -> usize {
-                self.0.len()
-            }
-        }
-
-        impl $($generics)* FusedIterator for $name $($generics)* {}
-    };
+    }
 }
 
-/// An iterator over the entries of a `Object`.
-pub struct Iter<'a>(slice::Iter<'a, (Value, Value)>);
-impl_entry_iter!((Iter<'a>): (&'a str, &'a Value));
+impl<'a> ExactSizeIterator for Iter<'a> {
+    #[inline]
+    fn len(&self) -> usize {
+        match &self.0 {
+            IterInner::Map(iter) => iter.len(),
+            IterInner::Slice(iter) => iter.len(),
+        }
+    }
+}
+
+impl<'a> FusedIterator for Iter<'a> {}
 
 /// A mutable iterator over the entries of a `Object`.
-pub struct IterMut<'a>(slice::IterMut<'a, (Value, Value)>);
-impl_entry_iter!((IterMut<'a>): (&'a str, &'a mut Value));
+pub struct IterMut<'a>(
+    #[cfg(not(feature = "sort_keys"))] std::collections::hash_map::IterMut<'a, FastStr, Value>,
+    #[cfg(feature = "sort_keys")] std::collections::btree_map::IterMut<'a, FastStr, Value>,
+);
 
+impl<'a> Iterator for IterMut<'a> {
+    type Item = (&'a str, &'a mut Value);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|(k, v)| (k.as_str(), v))
+    }
+}
+
+impl<'a> ExactSizeIterator for IterMut<'a> {
+    #[inline]
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl<'a> FusedIterator for IterMut<'a> {}
 /// An iterator over the keys of a `Object`.
 pub struct Keys<'a>(Iter<'a>);
 
@@ -845,13 +869,6 @@ impl<'a> Iterator for Keys<'a> {
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next().map(|(k, _)| k)
-    }
-}
-
-impl<'a> DoubleEndedIterator for Keys<'a> {
-    #[inline]
-    fn next_back(&mut self) -> Option<Self::Item> {
-        self.0.next_back().map(|(k, _)| k)
     }
 }
 
@@ -872,13 +889,6 @@ macro_rules! impl_value_iter {
             #[inline]
             fn next(&mut self) -> Option<Self::Item> {
                 self.0.next().map(|(_, v)| v)
-            }
-        }
-
-        impl $($generics)* DoubleEndedIterator for $name $($generics)* {
-            #[inline]
-            fn next_back(&mut self) -> Option<Self::Item> {
-                self.0.next_back().map(|(_, v)| v)
             }
         }
 
@@ -1010,7 +1020,7 @@ mod test {
             assert_eq!(obj["e"][0], i);
         }
 
-        for (i, v) in obj.iter_mut().enumerate() {
+        for (i, v) in obj.iter_mut().0.enumerate() {
             *(v.1) = Value::from(&i.to_string());
         }
 

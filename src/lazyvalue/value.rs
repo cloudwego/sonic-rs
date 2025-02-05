@@ -272,19 +272,11 @@ impl<'a> JsonValueTrait for LazyValue<'a> {
     }
 
     fn as_number(&self) -> Option<Number> {
-        if let Ok(num) = from_str(self.as_raw_str()) {
-            Some(num)
-        } else {
-            None
-        }
+        from_str(self.as_raw_str()).ok()
     }
 
     fn as_raw_number(&self) -> Option<RawNumber> {
-        if let Ok(num) = from_str(self.as_raw_str()) {
-            Some(num)
-        } else {
-            None
-        }
+        from_str(self.as_raw_str()).ok()
     }
 
     fn as_str(&self) -> Option<&str> {

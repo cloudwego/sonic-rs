@@ -24,9 +24,9 @@ impl PartialEq for Value {
             ValueRefInner::Array(_) | ValueRefInner::EmptyArray => {
                 other.as_value_slice() == self.as_value_slice()
             }
-            ValueRefInner::Object(_) | ValueRefInner::EmptyObject => {
-                other.as_object() == self.as_object()
-            }
+            ValueRefInner::Object(_)
+            | ValueRefInner::EmptyObject
+            | ValueRefInner::ObjectOwned(_) => other.as_object() == self.as_object(),
         }
     }
 }
