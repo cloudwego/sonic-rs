@@ -7,23 +7,14 @@ env:
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
 
-jobs: 
-  test-stable:
-    name: Rust stable ubuntu-latest
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-        - uses: actions/checkout@v4
-        - uses: dtolnay/rust-toolchain@stable
-        - run: ./scripts/test.sh
-
+jobs:
   test-stable-hosted:
     strategy:
         fail-fast: false
         matrix:
             os:
-              - [self-hosted, Linux, X64]
-              - [self-hosted, Linux, ARM64]
+              - [self-hosted, Linux, amd64]
+              - [self-hosted, Linux, aarch64]
     name: Rust stable
     runs-on: ${{matrix.os}}
     timeout-minutes: 45
@@ -31,23 +22,14 @@ jobs:
         - uses: actions/checkout@v4
         - uses: dtolnay/rust-toolchain@stable
         - run: ./scripts/test.sh
-    
-  test-nightly:
-    name: Rust nightly ubuntu-latest
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-        - uses: actions/checkout@v4
-        - uses: dtolnay/rust-toolchain@nightly
-        - run: ./scripts/test.sh
 
   test-nightly-hosted:
     strategy:
       fail-fast: false
       matrix:
         os:
-          - [self-hosted, Linux, X64]
-          - [self-hosted, Linux, ARM64]
+          - [self-hosted, Linux, amd64]
+          - [self-hosted, Linux, aarch64]
     name: Rust nightly ${{matrix.os}}
     runs-on: ${{matrix.os}}
     timeout-minutes: 45
@@ -55,13 +37,13 @@ jobs:
         - uses: actions/checkout@v4
         - uses: dtolnay/rust-toolchain@nightly
         - run: ./scripts/test.sh
-        
+
   clippy_lint:
     name: Format check
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, amd64]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt, clippy
@@ -71,9 +53,9 @@ jobs:
           cargo fmt -- --check
 
   sanitize:
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, Linux, amd64]
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@nightly
       with:
         components: rustfmt, clippy
@@ -82,11 +64,11 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
     - name: Sanitize
       run: ./scripts/sanitize.sh
-        
+
   fuzz:
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, Linux, amd64]
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@nightly
       with:
         components: rustfmt, clippy
