@@ -69,7 +69,7 @@ jobs:
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
     - name: Sanitize
-      run: ./scripts/sanitize.sh
+      run: ./scripts/sanitize.sh ${{matrix.san}} ${{matrix.feature}}
 
   fuzz:
     runs-on: [self-hosted, Linux, amd64]
