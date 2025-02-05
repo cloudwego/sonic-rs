@@ -30,7 +30,7 @@ jobs:
         os:
           - [self-hosted, Linux, amd64]
           - [self-hosted, Linux, aarch64]
-    name: Rust nightly ${{matrix.os}}
+    name: Rust nightly
     runs-on: ${{matrix.os}}
     timeout-minutes: 45
     steps:
