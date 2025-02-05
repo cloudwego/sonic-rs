@@ -11,9 +11,5 @@ run_tests() {
     cargo +nightly test --doc --package sonic-rs --target x86_64-unknown-linux-gnu --features "$features" -- --show-output --test-threads=1
 }
 
-for san in address leak; do
-    for feature in "" "arbitrary_precision" "sort_keys" "use_raw" "utf8_lossy"; do
-        echo "Running tests with $san and $feature"
-        RUSTFLAGS="-Zsanitizer=${san}" RUSTDOCFLAGS="-Zsanitizer=${san}" run_tests $san $feature
-    done
-done
+echo "Running tests with $1 and $2"
+RUSTFLAGS="-Zsanitizer=$1" RUSTDOCFLAGS="-Zsanitizer=$1" run_tests $1 $2
