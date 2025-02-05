@@ -1,4 +1,6 @@
 use core::mem::size_of;
+#[cfg(feature = "sort_keys")]
+use std::collections::BTreeMap;
 use std::{
     alloc::Layout,
     fmt::{Debug, Display, Formatter},
@@ -10,6 +12,7 @@ use std::{
     sync::Arc,
 };
 
+#[cfg(not(feature = "sort_keys"))]
 use ahash::AHashMap;
 use bumpalo::Bump;
 use faststr::FastStr;
@@ -118,7 +121,10 @@ pub(crate) union Data {
     pub(crate) root: NonNull<Value>,
 
     pub(crate) str_own: ManuallyDrop<Box<FastStr>>,
+    #[cfg(not(feature = "sort_keys"))]
     pub(crate) obj_own: ManuallyDrop<Arc<AHashMap<FastStr, Value>>>,
+    #[cfg(feature="sort_keys")]
+    pub(crate) obj_own: ManuallyDrop<Arc<BTreeMap<FastStr, Value>>>,
     pub(crate) arr_own: ManuallyDrop<Arc<Vec<Value>>>,
 
     pub(crate) parent: u64,
@@ -428,7 +434,10 @@ enum ValueDetail<'a> {
     FastStr(&'a FastStr),
     RawNumFasStr(&'a FastStr),
     Array(&'a Arc<Vec<Value>>),
+    #[cfg(not(feature = "sort_keys"))]
     Object(&'a Arc<AHashMap<FastStr, Value>>),
+    #[cfg(feature = "sort_keys")]
+    Object(&'a Arc<BTreeMap<FastStr, Value>>),
     Root(NodeInDom<'a>),
     NodeInDom(NodeInDom<'a>),
     EmptyArray,
@@ -475,14 +484,20 @@ pub enum ValueRefInner<'a> {
     RawNum(&'a str),
     Array(&'a [Value]),
     Object(&'a [Pair]),
+    #[cfg(not(feature = "sort_keys"))]
     ObjectOwned(&'a Arc<AHashMap<FastStr, Value>>),
+    #[cfg(feature = "sort_keys")]
+    ObjectOwned(&'a Arc<BTreeMap<FastStr, Value>>),
     EmptyArray,
     EmptyObject,
 }
 
 impl<'a> From<&'a [Pair]> for Value {
     fn from(value: &'a [Pair]) -> Self {
+        #[cfg(not(feature = "sort_keys"))]
         let mut newd = AHashMap::with_capacity(value.len());
+        #[cfg(feature = "sort_keys")]
+        let mut newd = BTreeMap::new();
 
         for (k, v) in value {
             if let Some(k) = k.as_str() {
@@ -527,7 +542,10 @@ pub(crate) enum ValueMut<'a> {
     Str,
     RawNum,
     Array(&'a mut Vec<Value>),
+    #[cfg(not(feature = "sort_keys"))]
     Object(&'a mut AHashMap<FastStr, Value>),
+    #[cfg(feature = "sort_keys")]
+    Object(&'a mut BTreeMap<FastStr, Value>),
 }
 
 impl Value {
@@ -618,6 +636,9 @@ impl Value {
             ValueDetail::FastStr(s) => ValueRefInner::Str(s.as_str()),
             ValueDetail::RawNumFasStr(s) => ValueRefInner::RawNum(s.as_str()),
             ValueDetail::Array(a) => ValueRefInner::Array(a),
+            #[cfg(not(feature = "sort_keys"))]
+            ValueDetail::Object(o) => ValueRefInner::ObjectOwned(o),
+            #[cfg(feature = "sort_keys")]
             ValueDetail::Object(o) => ValueRefInner::ObjectOwned(o),
             ValueDetail::Root(n) | ValueDetail::NodeInDom(n) => n.get_inner(),
             ValueDetail::EmptyArray => ValueRefInner::EmptyArray,
@@ -702,8 +723,21 @@ impl From<Arc<Vec<Value>>> for Value {
     }
 }
 
+#[cfg(not(feature = "sort_keys"))]
 impl From<Arc<AHashMap<FastStr, Value>>> for Value {
     fn from(value: Arc<AHashMap<FastStr, Value>>) -> Self {
+        Self {
+            meta: Meta::new(Meta::OBJ_MUT),
+            data: Data {
+                obj_own: ManuallyDrop::new(value),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "sort_keys")]
+impl From<Arc<BTreeMap<FastStr, Value>>> for Value {
+    fn from(value: Arc<BTreeMap<FastStr, Value>>) -> Self {
         Self {
             meta: Meta::new(Meta::OBJ_MUT),
             data: Data {
@@ -1207,7 +1241,12 @@ impl Value {
 
     #[doc(hidden)]
     pub fn new_object_with(capacity: usize) -> Self {
-        let obj_own = ManuallyDrop::new(Arc::new(AHashMap::with_capacity(capacity)));
+        let obj_own = ManuallyDrop::new(Arc::new(
+            #[cfg(not(feature = "sort_keys"))]
+            AHashMap::with_capacity(capacity),
+            #[cfg(feature = "sort_keys")]
+            BTreeMap::new(),
+        ));
         Value {
             meta: Meta::new(Meta::OBJ_MUT),
             data: Data { obj_own },
@@ -1272,7 +1311,10 @@ impl Value {
         debug_assert!(self.is_object() || self.is_array());
         match self.unpack_ref() {
             ValueDetail::Array(arr) => arr.capacity(),
+            #[cfg(not(feature = "sort_keys"))]
             ValueDetail::Object(obj) => obj.capacity(),
+            #[cfg(feature = "sort_keys")]
+            ValueDetail::Object(obj) => obj.len(),
             ValueDetail::NodeInDom(indom) | ValueDetail::Root(indom) => {
                 if self.is_object() {
                     indom.unpack_pair_slice().len()
@@ -1340,7 +1382,10 @@ impl Value {
         debug_assert!(size_of::<T>() == size_of::<Value>() || size_of::<T>() == size_of::<Pair>());
         match self.as_mut() {
             ValueMut::Array(arr) => arr.reserve(additional),
+            #[cfg(not(feature = "sort_keys"))]
             ValueMut::Object(obj) => obj.reserve(additional),
+            #[cfg(feature = "sort_keys")]
+            ValueMut::Object(_) => {}
             _ => unreachable!("value is not array or object"),
         }
     }
@@ -1766,25 +1811,23 @@ impl Serialize for Value {
                     map.end()
                 }
             }
+            #[cfg(not(feature = "sort_keys"))]
             ValueRefInner::ObjectOwned(o) => {
-                #[cfg(feature = "sort_keys")]
-                {
-                    let mut map = tri!(serializer.serialize_map(Some(o.len())));
-                    for (k, v) in o.iter() {
-                        tri!(map.serialize_key(k.as_str()));
-                        tri!(map.serialize_value(v));
-                    }
-                    map.end()
+                let mut map = tri!(serializer.serialize_map(Some(o.len())));
+                for (k, v) in o.iter() {
+                    tri!(map.serialize_key(k.as_str()));
+                    tri!(map.serialize_value(v));
                 }
-                #[cfg(not(feature = "sort_keys"))]
-                {
-                    let mut map = tri!(serializer.serialize_map(Some(o.len())));
-                    for (k, v) in o.iter() {
-                        tri!(map.serialize_key(k.as_str()));
-                        tri!(map.serialize_value(v));
-                    }
-                    map.end()
+                map.end()
+            }
+            #[cfg(feature = "sort_keys")]
+            ValueRefInner::ObjectOwned(o) => {
+                let mut map = tri!(serializer.serialize_map(Some(o.len())));
+                for (k, v) in o.iter() {
+                    tri!(map.serialize_key(k.as_str()));
+                    tri!(map.serialize_value(v));
                 }
+                map.end()
             }
             ValueRefInner::RawNum(raw) => {
                 use serde::ser::SerializeStruct;
@@ -1803,7 +1846,7 @@ mod test {
     use std::path::Path;
 
     use super::*;
-    use crate::{error::make_error, from_slice, from_str, pointer, util::mock::MockString};
+    use crate::{error::make_error, from_slice, from_str, object, pointer, util::mock::MockString};
 
     #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
     struct ValueInStruct {
@@ -2194,6 +2237,30 @@ mod test {
             let value: Value = crate::from_str(case.input).unwrap();
             assert_eq!(value.to_string(), case.output);
         }
+    }
+
+    #[cfg(feature = "sort_keys")]
+    #[test]
+    fn test_sort_keys_owned() {
+        let obj = object! {
+            "b": 2,
+            "bc": object! {
+                "cb": 1,
+                "ca": "hello",
+            },
+            "a": 1,
+        };
+
+        let obj2 = object! {
+            "a": 1,
+            "b": 2,
+            "bc": object! {
+                "ca": "hello",
+                "cb": 1,
+            },
+        };
+
+        assert_eq!(obj, obj2);
     }
 
     #[cfg(feature = "use_raw")]

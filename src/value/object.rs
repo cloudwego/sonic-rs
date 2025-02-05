@@ -108,6 +108,7 @@ impl Object {
     /// let mut obj = object! {"a": 1, "b": true, "c": null};
     /// obj.clear();
     /// assert!(obj.is_empty());
+    /// #[cfg(not(feature = "sort_keys"))]
     /// assert!(obj.capacity() >= 3);
     /// ```
     #[inline]
@@ -430,9 +431,17 @@ impl Object {
     #[inline]
     pub fn append(&mut self, other: &mut Self) {
         if let ValueMut::Object(o) = self.0.as_mut() {
-            o.reserve(other.len());
+            #[cfg(not(feature = "sort_keys"))]
             if let ValueMut::Object(oo) = other.0.as_mut() {
+                o.reserve(oo.len());
                 o.extend(oo.drain());
+            } else {
+                unreachable!("should not used in array")
+            }
+
+            #[cfg(feature = "sort_keys")]
+            if let ValueMut::Object(oo) = other.0.as_mut() {
+                o.append(oo);
             } else {
                 unreachable!("should not used in array")
             }
@@ -447,11 +456,17 @@ impl Object {
     /// ```
     /// use sonic_rs::object;
     /// let mut obj = object! {};
-    /// obj.reserve(1);
-    /// assert!(obj.capacity() >= 1);
+    /// #[cfg(not(feature = "sort_keys"))]
+    /// {
+    ///     obj.reserve(1);
+    ///     assert!(obj.capacity() >= 1);
+    /// }
     ///
-    /// obj.reserve(10);
-    /// assert!(obj.capacity() >= 10);
+    /// #[cfg(not(feature = "sort_keys"))]
+    /// {
+    ///     obj.reserve(10);
+    ///     assert!(obj.capacity() >= 10);
+    /// }
     /// ```
     #[inline]
     pub fn reserve(&mut self, additional: usize) {
@@ -631,6 +646,7 @@ impl<'a> VacantEntry<'a> {
     /// ```
     pub fn insert<T: Into<Value>>(self, val: T) -> &'a mut Value {
         let obj = unsafe { self.dormant_obj.awaken() };
+        #[cfg(not(feature = "sort_keys"))]
         obj.reserve(1);
         let val = obj.0.insert(self.key.as_str().unwrap(), val.into());
         val
@@ -789,7 +805,10 @@ impl<'a> Entry<'a> {
 
 /// An iterator over the entries of a `Object`.
 enum IterInner<'a> {
+    #[cfg(not(feature = "sort_keys"))]
     Map(std::collections::hash_map::Iter<'a, FastStr, Value>),
+    #[cfg(feature = "sort_keys")]
+    Map(std::collections::btree_map::Iter<'a, FastStr, Value>),
     Slice(slice::Iter<'a, (Value, Value)>),
 }
 pub struct Iter<'a>(IterInner<'a>);
@@ -819,7 +838,10 @@ impl<'a> ExactSizeIterator for Iter<'a> {
 impl<'a> FusedIterator for Iter<'a> {}
 
 /// A mutable iterator over the entries of a `Object`.
-pub struct IterMut<'a>(std::collections::hash_map::IterMut<'a, FastStr, Value>);
+pub struct IterMut<'a>(
+    #[cfg(not(feature = "sort_keys"))] std::collections::hash_map::IterMut<'a, FastStr, Value>,
+    #[cfg(feature = "sort_keys")] std::collections::btree_map::IterMut<'a, FastStr, Value>,
+);
 
 impl<'a> Iterator for IterMut<'a> {
     type Item = (&'a str, &'a mut Value);
