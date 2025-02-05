@@ -53,6 +53,12 @@ jobs:
           cargo fmt -- --check
 
   sanitize:
+    strategy:
+      fail-fast: false
+      matrix:
+        san: [address, leak]
+        feature: ["", "arbitrary_precision", "sort_keys", "use_raw", "utf8_lossy"]
+    name: Sanitize ${{matrix.san}} feature ${{matrix.feature}}
     runs-on: [self-hosted, Linux, amd64]
     steps:
     - uses: actions/checkout@v4
