@@ -83,27 +83,27 @@ pub struct Value {
 //  - Owned Node : mutable
 //  - Shared Node: in SharedDom, not mutable
 //
-// | Kind        | 3 bits | 5 bits |       24 bits     |     ---->  32 bits ---->       |    32 bits    |    32 bits    |       limit          |
-// |-------------|-----------------|-------------------|--------------------------------|-------------------------------|----------------------|
-// |  Null       |   0    |   0    |                                                    +                               |                      |
-// |  True       |   0    |   1    |                                                    +                               |                      |
-// |  False      |   0    |   2    |                                                    +                               |                      |
-// |  I64        |   0    |   3    |                                                    +             i64               |                      |
-// |  U64        |   0    |   4    |                                                    +             u64               |                      |
-// |  F64        |   0    |   5    |                                                    +             f64               |                      |
-// | empty arr   |   0    |   6    |                                                                                    |
-// | empty obj   |   0    |   7    |                                                                                    |
-// | static str  |   0    |   8    |                   |           string length        +          *const u8            | excced will fallback |
-// |  faststr    |   1    |   0    |                                                    +         Box<FastStr>          |                      |
-// |rawnum_fastst|   1    |   1    |                                                    +         Box<FastStr>          |                      |
-// |  arr_mut    |   1    |   2    |                                                    +        Arc<Vec<Node>>         |                      |
-// |  obj_mut    |   1    |   3    |                                                    + Arc<AHashMap<FastStr, Value>> |                      |
-// |  str_node   |   2    |        node idx            |           string length        +          *const u8            |    max len 2^32      |
-// | raw_num_node|   3    |        node idx            |           string length        +          *const u8            |    max len 2^32      |
-// |  arr_node   |   4    |        node idx            |           array length         +          *const Node          |    max len 2^32      |
-// |  obj_node   |   5    |        node idx            |           object length        +          *const Pair          |    max len 2^32      |
-// |str_esc_raw  |   6    |   *const RawStrHeader (in SharedDom, MUST aligned 8)        +          *const u8            |                      |
-// | root_node   |   7    |      *const ShardDom (from Arc, MUST aligned 8)             +      *const Node (head)       |                      |
+// |  Kind        | 3 bits | 5 bits |       24 bits     |     ---->  32 bits ---->       |    32 bits    |    32 bits    |       limit          |
+// |--------------|-----------------|-------------------|--------------------------------|-------------------------------|----------------------|
+// |   Null       |   0    |   0    |                                                    +                               |                      |
+// |   True       |   0    |   1    |                                                    +                               |                      |
+// |   False      |   0    |   2    |                                                    +                               |                      |
+// |   I64        |   0    |   3    |                                                    +             i64               |                      |
+// |   U64        |   0    |   4    |                                                    +             u64               |                      |
+// |   F64        |   0    |   5    |                                                    +             f64               |                      |
+// |  empty arr   |   0    |   6    |                                                                                    |
+// |  empty obj   |   0    |   7    |                                                                                    |
+// |  static str  |   0    |   8    |                   |           string length        +          *const u8            | excced will fallback |
+// |   faststr    |   1    |   0    |                                                    +         Box<FastStr>          |                      |
+// |rawnum_faststr|   1    |   1    |                                                    +         Box<FastStr>          |                      |
+// |   arr_mut    |   1    |   2    |                                                    +        Arc<Vec<Node>>         |                      |
+// |   obj_mut    |   1    |   3    |                                                    + Arc<AHashMap<FastStr, Value>> |                      |
+// |   str_node   |   2    |        node idx            |           string length        +          *const u8            |    max len 2^32      |
+// | raw_num_node |   3    |        node idx            |           string length        +          *const u8            |    max len 2^32      |
+// |   arr_node   |   4    |        node idx            |           array length         +          *const Node          |    max len 2^32      |
+// |   obj_node   |   5    |        node idx            |           object length        +          *const Pair          |    max len 2^32      |
+// | str_esc_raw  |   6    |   *const RawStrHeader (in SharedDom, MUST aligned 8)        +          *const u8            |                      |
+// |  root_node   |   7    |      *const ShardDom (from Arc, MUST aligned 8)             +      *const Node (head)       |                      |
 //
 // NB: we will check the JSON length when parsing, if JSON is >= 4GB, will return a error, so we will not check the limits when parsing or using dom.
 #[allow(clippy::box_collection)]
