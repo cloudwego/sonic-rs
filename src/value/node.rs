@@ -1574,6 +1574,7 @@ impl<'a> DocumentVisitor<'a> {
             // record the `Shared` pointer
             let meta = &mut *(hdr as *mut MetaNode);
             meta.shared = vis.shared as *const _;
+            meta.canary = transmute::<[u8; 8], u64>(*b"SONICRS\0");
 
             // update the container header
             let idx = (parent - vis.parent) as u32;
