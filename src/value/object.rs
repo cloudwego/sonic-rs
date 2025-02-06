@@ -436,17 +436,17 @@ impl Object {
                 o.reserve(oo.len());
                 o.extend(oo.drain());
             } else {
-                unreachable!("should not used in array")
+                unreachable!("should not used in object")
             }
 
             #[cfg(feature = "sort_keys")]
             if let ValueMut::Object(oo) = other.0.as_mut() {
                 o.append(oo);
             } else {
-                unreachable!("should not used in array")
+                unreachable!("should not used in object")
             }
         } else {
-            unreachable!("should not used in array")
+            unreachable!("should not used in object")
         }
     }
 
@@ -943,7 +943,12 @@ impl<'a, Q: AsRef<str> + ?Sized> std::ops::Index<&'a Q> for Object {
 impl<'a, Q: AsRef<str> + ?Sized> std::ops::IndexMut<&'a Q> for Object {
     #[inline]
     fn index_mut(&mut self, index: &'a Q) -> &mut Self::Output {
-        self.get_mut(&index.as_ref()).unwrap()
+        if let ValueMut::Object(o) = self.0.as_mut() {
+            o.entry(FastStr::new(index.as_ref()))
+                .or_insert(Value::default())
+        } else {
+            unreachable!("should not used in object")
+        }
     }
 }
 
@@ -1004,7 +1009,7 @@ mod test {
         for i in 0..3 {
             // push static node
             let new_node = Value::new_u64(i);
-            obj.insert(&"c", new_node);
+            obj["c"] = new_node;
             assert_eq!(obj["c"], i);
 
             // push node with new allocator
