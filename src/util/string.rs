@@ -585,12 +585,12 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
                 std::ptr::copy_nonoverlapping(sptr, temp[..].as_mut_ptr(), nb);
                 load(temp[..].as_ptr())
             } else {
-                #[cfg(not(debug_assertions))]
+                #[cfg(not(any(debug_assertions, feature = "sanitize")))]
                 {
                     // disable memory sanitizer here
                     load(sptr)
                 }
-                #[cfg(debug_assertions)]
+                #[cfg(any(debug_assertions, feature = "sanitize"))]
                 {
                     std::ptr::copy_nonoverlapping(sptr, temp[..].as_mut_ptr(), nb);
                     load(temp[..].as_ptr())

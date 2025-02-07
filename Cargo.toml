@@ -65,3 +65,6 @@ use_raw = []
 
 # Allow to parse JSON with invalid UTF-8 and UTF-16 characters. Will replace them with `\uFFFD` (displayed as �).
 utf8_lossy = []
+
+# Enable sanitize, maybe cause 30% performance-loss in serialize.
+sanitize = []
