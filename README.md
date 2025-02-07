@@ -25,6 +25,8 @@ A fast Rust JSON library based on SIMD. It has some references to other open-sou
 
 3. Please add the compile options `-C target-cpu=native`
 
+4. Should enable `sanitize` feature if you are using LLVM-sanitizer in your program.
+
 ## Quick to use sonic-rs
 
 To ensure that SIMD instruction is used in sonic-rs, you need to add rustflags `-C target-cpu=native` and compile on the host machine. For example, Rust flags can be configured in Cargo [config](.cargo/config.toml).
