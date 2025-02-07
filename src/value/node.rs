@@ -519,7 +519,6 @@ impl Drop for Value {
         if self.meta.get_kind() == Meta::STAIC_NODE || self.meta.in_shared() {
             return;
         }
-
         unsafe {
             match self.meta.get_type() {
                 Meta::FASTSTR | Meta::RAWNUM_FASTSTR => ManuallyDrop::drop(&mut self.data.str_own),
@@ -609,6 +608,7 @@ impl Value {
     }
 
     fn forward_find_shared(current: *const Value, idx: usize) -> *const Shared {
+        assert!(unsafe { (*(current.sub(idx) as *const MetaNode)).canary() });
         unsafe { (*(current.sub(idx) as *const MetaNode)).shared }
     }
 
@@ -1522,8 +1522,11 @@ impl MetaNode {
             canary: unsafe { transmute::<[u8; 8], u64>(*canary) },
         }
     }
+
+    fn canary(&self) -> bool {
+        self.canary == unsafe { std::mem::transmute::<[u8; 8], u64>(*b"SONICRS\0") }
+    }
 }
-// TODO: add assert for Value
 
 impl<'a> DocumentVisitor<'a> {
     fn visit_container_start(&mut self, kind: u64) -> bool {
@@ -1571,6 +1574,7 @@ impl<'a> DocumentVisitor<'a> {
             // record the `Shared` pointer
             let meta = &mut *(hdr as *mut MetaNode);
             meta.shared = vis.shared as *const _;
+            meta.canary = transmute::<[u8; 8], u64>(*b"SONICRS\0");
 
             // update the container header
             let idx = (parent - vis.parent) as u32;
