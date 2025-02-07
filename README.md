@@ -25,7 +25,7 @@ A fast Rust JSON library based on SIMD. It has some references to other open-sou
 
 3. Please add the compile options `-C target-cpu=native`
 
-4. Should enable `sanitize` feature if you are using LLVM-sanitizer in your program.
+4. Should enable `sanitize` feature to avoid false-positive if you are using LLVM-sanitizer in your program. Don't enable this feature in production, since it will cause 30% performance loss in serialize.
 
 ## Quick to use sonic-rs
 
