@@ -414,13 +414,13 @@ impl Array {
     /// Extracts a mutable slice of the entire array. Equivalent to &mut s[..].
     #[inline]
     pub fn as_mut_slice(&mut self) -> &mut [Value] {
-        self
+        self.deref_mut()
     }
 
     /// Extracts a slice containing the entire array. Equivalent to &s[..].
     #[inline]
     pub fn as_slice(&self) -> &[Value] {
-        self
+        self.deref()
     }
 
     /// Returns the total number of elements the array can hold without reallocating.
