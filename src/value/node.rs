@@ -67,8 +67,19 @@ use crate::{
 ///
 /// # Notes
 ///
-/// Actually the lookup in `Value` is O(n), not O(1). If you want to use `Value` as a map, recommend
-/// to use `serde_json::Value`.
+/// Not use any unsafe invalid_reference_casting for `Value`, it will cause UB.
+///
+/// ```rust,no_run
+/// use sonic_rs::{from_str, Value};
+/// let json = r#"["a", "b", "c"]"#;
+/// let root: Value = from_str(json).unwrap();
+/// let immref = &root["b"];
+///
+/// // This is dangerous, will coredump when using sanitizer
+/// #[allow(invalid_reference_casting)]
+/// let ub_cast = unsafe { &mut *(immref as *const _ as *mut Value) };
+/// let _ub = std::mem::take(ub_cast);
+/// ```
 #[repr(C)]
 pub struct Value {
     pub(crate) meta: Meta,
