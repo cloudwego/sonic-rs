@@ -10,7 +10,7 @@ license       = "Apache-2.0"
 name          = "sonic-rs"
 readme        = "README.md"
 repository    = "https://github.com/cloudwego/sonic-rs"
-version       = "0.4.0-rc4"
+version       = "0.4.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -38,17 +38,6 @@ schema       = { path = "./benchmarks/benches/schema" }
 serde_bytes  = "0.11"
 serde_derive = "1.0"
 serde_json   = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
-
-[profile.release]
-codegen-units    = 1
-debug            = true
-debug-assertions = false
-incremental      = false
-lto              = true
-opt-level        = 3
-overflow-checks  = false
-panic            = 'unwind'
-rpath            = false
 
 [features]
 default = []
