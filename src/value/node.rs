@@ -1423,10 +1423,7 @@ impl Value {
     pub fn insert(&mut self, key: &str, val: Value) -> &mut Value {
         debug_assert!(self.is_object());
         match self.as_mut() {
-            ValueMut::Object(obj) => {
-                obj.insert(FastStr::new(key), val);
-                obj.get_mut(key).unwrap()
-            }
+            ValueMut::Object(obj) => obj.entry(key).insert_entry(val).get_mut(),
             _ => unreachable!("value is not object"),
         }
     }
