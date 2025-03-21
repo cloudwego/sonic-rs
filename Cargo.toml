@@ -10,7 +10,7 @@ license       = "Apache-2.0"
 name          = "sonic-rs"
 readme        = "README.md"
 repository    = "https://github.com/cloudwego/sonic-rs"
-version       = "0.4.0"
+version       = "0.4.1"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -25,8 +25,8 @@ ref-cast     = "1.0"
 ryu          = "1.0"
 serde        = { version = "1.0", features = ["rc", "derive"] }
 simdutf8     = "0.1"
-sonic-number = { path = "./sonic-number", version = "0.1" }
-sonic-simd   = { path = "./sonic-simd", version = "0.1" }
+sonic-number = { path = "./sonic-number" }
+sonic-simd   = { path = "./sonic-simd" }
 thiserror    = "2.0"
 
 [dev-dependencies]
