@@ -21,6 +21,26 @@ jobs:
         - uses: dtolnay/rust-toolchain@stable
         - run: ./scripts/test.sh
 
+  test-stable-wasm:
+    runs-on: [self-hosted, Linux, amd64]
+    env:
+      WASMTIME_BACKTRACE_DETAILS: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - name: Install wasmtime
+        run: cargo install wasmtime-cli
+
+      - name: Run tests
+        run: |
+          cargo build --tests --target-dir target --target wasm32-wasip1
+          wasmtime run target/wasm32-wasip1/debug/deps/sonic_rs*.wasm
+
+
   test-nightly-hosted:
     strategy:
       fail-fast: false

@@ -277,6 +277,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(not(target_arch = "wasm32"))]
     fn test_struct() {
         use schema::{citm_catalog::CitmCatalog, twitter::Twitter};
         let mut vec = Vec::new();
