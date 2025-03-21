@@ -5,7 +5,7 @@ edition     = "2021"
 license     = "Apache-2.0"
 name        = "sonic-simd"
 repository  = "https://github.com/cloudwego/sonic-rs"
-version     = "0.1.0"
+version     = "0.1.1"
 
 
 [dependencies]
