@@ -1983,6 +1983,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(not(target_arch = "wasm32"))]
     fn test_node_from_files3() {
         use std::fs::DirEntry;
         let path = env!("CARGO_MANIFEST_DIR").to_string() + "/benchmarks/benches/testdata/";
