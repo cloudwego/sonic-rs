@@ -411,7 +411,7 @@ mod test {
     use crate::{Deserialize, Deserializer};
     fn test_peek() {
         let data = b"1234567890";
-        let mut reader = Read::new(data, false);
+        let reader = Read::new(data, false);
         assert_eq!(reader.peek(), Some(b'1'));
         assert_eq!(reader.peek_n(4).unwrap(), &b"1234"[..]);
     }

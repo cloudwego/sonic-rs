@@ -1,18 +1,19 @@
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fmt::Debug,
+    num::NonZeroU8,
+    ops::Deref,
+    slice::{from_raw_parts, from_raw_parts_mut},
+    str::from_utf8_unchecked,
+};
+
 use faststr::FastStr;
 use serde::de::{self, Expected, Unexpected};
 use sonic_number::{parse_number, ParserNumber};
 #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
 use sonic_simd::bits::NeonBits;
 use sonic_simd::{i8x32, m8x32, u8x32, u8x64, Mask, Simd};
-use std::fmt::Debug;
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    num::NonZeroU8,
-    ops::Deref,
-    slice::{from_raw_parts, from_raw_parts_mut},
-    str::from_utf8_unchecked,
-};
 
 use crate::{
     config::DeserializeCfg,
@@ -35,7 +36,7 @@ use crate::{
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
     value::{node::RawStr, visitor::JsonVisitor},
-    JsonValueMutTrait, JsonValueTrait, LazyValue, Number, OwnedLazyValue, RawNumber, Read,
+    JsonValueMutTrait, JsonValueTrait, LazyValue, Number, OwnedLazyValue,
 };
 
 // support borrow for owned deserizlie or skip
