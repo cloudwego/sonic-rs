@@ -1,3 +1,10 @@
+use faststr::FastStr;
+use serde::de::{self, Expected, Unexpected};
+use sonic_number::{parse_number, ParserNumber};
+#[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
+use sonic_simd::bits::NeonBits;
+use sonic_simd::{i8x32, m8x32, u8x32, u8x64, Mask, Simd};
+use std::fmt::Debug;
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -6,13 +13,6 @@ use std::{
     slice::{from_raw_parts, from_raw_parts_mut},
     str::from_utf8_unchecked,
 };
-
-use faststr::FastStr;
-use serde::de::{self, Expected, Unexpected};
-use sonic_number::{parse_number, ParserNumber};
-#[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
-use sonic_simd::bits::NeonBits;
-use sonic_simd::{i8x32, m8x32, u8x32, u8x64, Mask, Simd};
 
 use crate::{
     config::DeserializeCfg,
@@ -35,11 +35,11 @@ use crate::{
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
     value::{node::RawStr, visitor::JsonVisitor},
-    JsonValueMutTrait, JsonValueTrait, LazyValue, Number, OwnedLazyValue,
+    JsonValueMutTrait, JsonValueTrait, LazyValue, Number, OwnedLazyValue, RawNumber, Read,
 };
 
 // support borrow for owned deserizlie or skip
-pub(crate) enum Reference<'b, 'c, T>
+pub enum Reference<'b, 'c, T>
 where
     T: ?Sized + 'static,
 {
@@ -52,6 +52,15 @@ impl<'b, 'c> From<Reference<'b, 'c, str>> for Cow<'b, str> {
         match value {
             Reference::Borrowed(b) => Cow::Borrowed(b),
             Reference::Copied(c) => Cow::Owned(c.to_string()),
+        }
+    }
+}
+
+impl<'b, 'c, T: Debug + ?Sized + 'static> Debug for Reference<'b, 'c, T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Borrowed(c) => write!(f, "Borrowed({:?})", c),
+            Self::Copied(c) => write!(f, "Copied({:?})", c),
         }
     }
 }
@@ -202,8 +211,8 @@ pub(crate) struct Pair<'de> {
     pub status: ParseStatus,
 }
 
-pub(crate) struct Parser<R> {
-    pub(crate) read: R,
+pub struct Parser<R> {
+    pub read: R,
     error_index: usize,   // mark the error position
     nospace_bits: u64,    // SIMD marked nospace bitmap
     nospace_start: isize, // the start position of nospace_bits
@@ -212,7 +221,7 @@ pub(crate) struct Parser<R> {
 
 /// Records the parse status
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ParseStatus {
+pub enum ParseStatus {
     None,
     HasEscaped,
 }
@@ -240,6 +249,10 @@ where
         }
     }
 
+    pub fn offset(&self) -> usize {
+        self.read.index()
+    }
+
     pub(crate) fn with_config(mut self, cfg: DeserializeCfg) -> Self {
         self.cfg = cfg;
         self
@@ -254,7 +267,7 @@ where
 
     /// Error caused by a byte from next_char().
     #[cold]
-    pub(crate) fn error(&self, mut reason: ErrorCode) -> Error {
+    pub fn error(&self, mut reason: ErrorCode) -> Error {
         // check invalid utf8 here at first
         // FIXME: maybe has invalid utf8 when deserializing into byte, and just bytes has other
         // errors?
@@ -283,7 +296,7 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn parse_number(&mut self, first: u8) -> Result<ParserNumber> {
+    pub fn parse_number(&mut self, first: u8) -> Result<ParserNumber> {
         let reader = &mut self.read;
         let neg = first == b'-';
         let mut now = reader.index() - (!neg as usize);
@@ -300,12 +313,12 @@ where
         V: JsonVisitor<'de>,
     {
         if !self.cfg.use_raw {
-            let rs = self.parse_str_impl(strbuf)?;
+            let rs = self.parse_str(strbuf)?;
             return check_visit!(self, vis.visit_str(rs.as_ref()));
         }
 
         let start = self.read.index();
-        match self.parse_str_impl(strbuf)? {
+        match self.parse_str(strbuf)? {
             Reference::Borrowed(s) => check_visit!(self, vis.visit_str(s)),
             Reference::Copied(s) => unsafe {
                 // only record raw when has escaped chars
@@ -553,7 +566,7 @@ where
             _ => return perr!(self, ExpectedObjectCommaOrEnd),
         }
 
-        let parsed = self.parse_str_impl(strbuf)?;
+        let parsed = self.parse_str(strbuf)?;
         self.parse_object_clo()?;
         let (raw, status) = if check {
             self.skip_one()
@@ -637,7 +650,7 @@ where
 
     #[inline(always)]
     fn parse_faststr(&mut self, strbuf: &mut Vec<u8>) -> Result<FastStr> {
-        match self.parse_str_impl(strbuf)? {
+        match self.parse_str(strbuf)? {
             Reference::Borrowed(s) => {
                 return Ok(unsafe { self.read.slice_ref(s.as_bytes()).as_faststr() });
             }
@@ -652,7 +665,7 @@ where
                 let num: Number = self.parse_number(c)?.into();
                 Ok(OwnedLazyValue::from(num))
             }
-            Some(b'"') => match self.parse_str_impl(strbuf)? {
+            Some(b'"') => match self.parse_str(strbuf)? {
                 Reference::Borrowed(s) => {
                     let raw = unsafe { self.read.slice_ref(s.as_bytes()).as_faststr() };
                     Ok(OwnedLazyValue::from_faststr(raw))
@@ -806,10 +819,7 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn parse_str_impl<'own>(
-        &mut self,
-        buf: &'own mut Vec<u8>,
-    ) -> Result<Reference<'de, 'own, str>> {
+    pub fn parse_str<'own>(&mut self, buf: &'own mut Vec<u8>) -> Result<Reference<'de, 'own, str>> {
         match self.parse_string_raw(buf) {
             Ok(ParsedSlice::Copied(buf)) => {
                 if self.check_invalid_utf8(self.cfg.utf8_lossy)? {
@@ -1355,7 +1365,12 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn skip_space(&mut self) -> Option<u8> {
+    pub fn eat(&mut self, del: usize) {
+        self.read.eat(del);
+    }
+
+    #[inline(always)]
+    pub fn skip_space(&mut self) -> Option<u8> {
         let reader = &mut self.read;
         // fast path 1: for nospace or single space
         // most JSON is like ` "name": "balabala" `
@@ -1415,14 +1430,14 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn skip_space_peek(&mut self) -> Option<u8> {
+    pub fn skip_space_peek(&mut self) -> Option<u8> {
         let ret = self.skip_space()?;
         self.read.backward(1);
         Some(ret)
     }
 
     #[inline(always)]
-    pub(crate) fn parse_literal(&mut self, literal: &str) -> Result<()> {
+    pub fn parse_literal(&mut self, literal: &str) -> Result<()> {
         let reader = &mut self.read;
         if let Some(chunk) = reader.next_n(literal.len()) {
             if chunk == literal.as_bytes() {
@@ -1470,7 +1485,15 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn skip_number(&mut self, mut first: u8) -> Result<()> {
+    pub fn skip_number(&mut self, first: u8) -> Result<&'de str> {
+        let start = self.read.index() - 1;
+        self.do_skip_number(first)?;
+        let end = self.read.index();
+        Ok(as_str(self.read.slice_unchecked(start, end)))
+    }
+
+    #[inline(always)]
+    pub(crate) fn do_skip_number(&mut self, mut first: u8) -> Result<()> {
         // check eof after the sign
         if first == b'-' {
             first = self.skip_single_digit()?;
@@ -1578,12 +1601,15 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn skip_one(&mut self) -> Result<(&'de [u8], ParseStatus)> {
+    pub fn skip_one(&mut self) -> Result<(&'de [u8], ParseStatus)> {
         let ch = self.skip_space();
         let start = self.read.index() - 1;
         let mut status = ParseStatus::None;
         match ch {
-            Some(c @ b'-' | c @ b'0'..=b'9') => self.skip_number(c),
+            Some(c @ b'-' | c @ b'0'..=b'9') => {
+                self.skip_number(c)?;
+                Ok(())
+            }
             Some(b'"') => {
                 status = self.skip_string()?;
                 Ok(())
@@ -1601,7 +1627,7 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn skip_one_unchecked(&mut self) -> Result<(&'de [u8], ParseStatus)> {
+    pub fn skip_one_unchecked(&mut self) -> Result<(&'de [u8], ParseStatus)> {
         let ch = self.skip_space();
         let start = self.read.index() - 1;
         let mut status = ParseStatus::None;
@@ -1925,7 +1951,7 @@ where
 
         let mut visited = 0;
         loop {
-            let key = self.parse_str_impl(strbuf)?;
+            let key = self.parse_str(strbuf)?;
             self.parse_object_clo()?;
             if let Some(val) = mkeys.get(key.deref()) {
                 self.get_many_rec(val, out, strbuf, remain, false)?;
@@ -1987,7 +2013,7 @@ where
 
         let mut visited = 0;
         loop {
-            let key = self.parse_str_impl(strbuf)?;
+            let key = self.parse_str(strbuf)?;
             self.parse_object_clo()?;
             if let Some(val) = mkeys.get(key.deref()) {
                 // parse the child point tree
@@ -2157,7 +2183,7 @@ where
     }
 
     #[cold]
-    pub(crate) fn peek_invalid_type(&mut self, peek: u8, exp: &dyn Expected) -> Error {
+    pub fn peek_invalid_type(&mut self, peek: u8, exp: &dyn Expected) -> Error {
         let err = match peek {
             b'n' => {
                 if let Err(err) = self.parse_literal("ull") {
@@ -2183,7 +2209,7 @@ where
             },
             b'"' => {
                 let mut scratch = Vec::new();
-                match self.parse_str_impl(&mut scratch) {
+                match self.parse_str(&mut scratch) {
                     Ok(s) if std::str::from_utf8(s.as_bytes()).is_ok() => {
                         de::Error::invalid_type(Unexpected::Str(&s), exp)
                     }
@@ -2260,7 +2286,7 @@ where
                     }
 
                     loop {
-                        let key = self.parse_str_impl(strbuf)?;
+                        let key = self.parse_str(strbuf)?;
                         self.parse_object_clo()?;
                         if let Some(val) = key_values.get_mut(key.deref()) {
                             self.get_by_schema_rec(val, strbuf)?;
