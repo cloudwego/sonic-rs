@@ -4,8 +4,7 @@
 pub use crate::{
     index::Index,
     input::JsonInput,
-    reader::Read,
-    reader::Reader,
+    reader::{Read, Reader},
     serde::JsonNumberTrait,
     value::{JsonContainerTrait, JsonValueMutTrait, JsonValueTrait},
     writer::WriteExt,

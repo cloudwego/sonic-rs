@@ -23,7 +23,7 @@ Please check your PR title with the below requirements:
 -->
 - [ ] This PR title match the format: \<type\>(optional scope): \<description\>
 - [ ] The description of this PR title is user-oriented and clear enough for others to understand.
-- [ ] Attach the PR updating the user documentation if the current PR requires user awareness at the usage level. [User docs repo](https://github.com/cloudwego/cloudwego.github.io)
+- [ ] Attach the PR updating the user documentation if the current PR requires user awareness at the usage level.
 
 
 #### (Optional) Translate the PR title into Chinese.
