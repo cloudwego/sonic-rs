@@ -472,7 +472,7 @@ where
         }
         tri!(self
             .formatter
-            .begin_string(&mut self.writer)
+            .end_string(&mut self.writer)
             .map_err(Error::io));
         Ok(())
     }

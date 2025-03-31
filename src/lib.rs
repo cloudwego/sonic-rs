@@ -6,13 +6,13 @@ mod config;
 pub mod error;
 mod index;
 mod input;
-mod parser;
 mod pointer;
-mod reader;
+pub mod reader;
 mod util;
 
 pub mod format;
 pub mod lazyvalue;
+pub mod parser;
 pub mod serde;
 pub mod value;
 pub mod writer;

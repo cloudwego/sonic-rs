@@ -318,11 +318,11 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         self.parser.peek_invalid_type(peek, exp)
     }
 
-    fn end_seq(&mut self) -> Result<()> {
+    pub fn end_seq(&mut self) -> Result<()> {
         self.parser.parse_array_end()
     }
 
-    fn end_map(&mut self) -> Result<()> {
+    pub fn end_map(&mut self) -> Result<()> {
         match self.parser.skip_space() {
             Some(b'}') => Ok(()),
             Some(b',') => Err(self.parser.error(ErrorCode::TrailingComma)),
@@ -436,11 +436,8 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     {
         let raw = match self.parser.skip_space_peek() {
             Some(c @ b'-' | c @ b'0'..=b'9') => {
-                let start = self.parser.read.index();
                 self.parser.read.eat(1);
-                self.parser.skip_number(c)?;
-                let end = self.parser.read.index();
-                as_str(self.parser.read.slice_unchecked(start, end))
+                self.parser.skip_number(c)?
             }
             Some(b'"') => {
                 self.parser.read.eat(1);
@@ -491,7 +488,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 visitor.visit_bool(false)
             }
             c @ b'-' | c @ b'0'..=b'9' => visit_number(&tri!(self.parser.parse_number(c)), visitor),
-            b'"' => match tri!(self.parser.parse_str_impl(&mut self.scratch)) {
+            b'"' => match tri!(self.parser.parse_str(&mut self.scratch)) {
                 Reference::Borrowed(s) => visitor.visit_borrowed_str(s),
                 Reference::Copied(s) => visitor.visit_str(s),
             },
@@ -643,7 +640,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         };
 
         let value = match peek {
-            b'"' => match tri!(self.parser.parse_str_impl(&mut self.scratch)) {
+            b'"' => match tri!(self.parser.parse_str(&mut self.scratch)) {
                 Reference::Borrowed(s) => visitor.visit_borrowed_str(s),
                 Reference::Copied(s) => visitor.visit_str(s),
             },
@@ -1220,7 +1217,7 @@ where
         V: de::Visitor<'de>,
     {
         self.de.scratch.clear();
-        match tri!(self.de.parser.parse_str_impl(&mut self.de.scratch)) {
+        match tri!(self.de.parser.parse_str(&mut self.de.scratch)) {
             Reference::Borrowed(s) => visitor.visit_borrowed_str(s),
             Reference::Copied(s) => visitor.visit_str(s),
         }

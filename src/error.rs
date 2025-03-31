@@ -199,7 +199,8 @@ struct ErrorImpl {
 }
 
 #[derive(ErrorTrait, Debug)]
-pub(crate) enum ErrorCode {
+#[non_exhaustive]
+pub enum ErrorCode {
     #[error("{0}")]
     Message(Cow<'static, str>),
 
@@ -272,7 +273,7 @@ pub(crate) enum ErrorCode {
     #[error("Get index out of the array")]
     GetIndexOutOfArray,
 
-    #[error("Unexpected visited type in JSON visitor")]
+    #[error("Unexpected visited type")]
     UnexpectedVisitType,
 
     #[error("Invalid surrogate Unicode code point")]

@@ -42,8 +42,8 @@ pub trait Reader<'de>: Sealed {
     fn remain(&self) -> usize;
     fn eat(&mut self, n: usize);
     fn backward(&mut self, n: usize);
-    fn peek_n(&mut self, n: usize) -> Option<&'de [u8]>;
-    fn peek(&mut self) -> Option<u8>;
+    fn peek_n(&self, n: usize) -> Option<&'de [u8]>;
+    fn peek(&self) -> Option<u8>;
     fn index(&self) -> usize;
     fn at(&self, index: usize) -> u8;
     fn set_index(&mut self, index: usize);
@@ -188,7 +188,7 @@ impl<'a> Reader<'a> for Read<'a> {
     }
 
     #[inline(always)]
-    fn peek_n(&mut self, n: usize) -> Option<&'a [u8]> {
+    fn peek_n(&self, n: usize) -> Option<&'a [u8]> {
         let end = self.index + n;
         (end <= self.slice().len()).then(|| {
             let ptr = self.slice()[self.index..].as_ptr();
@@ -202,7 +202,7 @@ impl<'a> Reader<'a> for Read<'a> {
     }
 
     #[inline(always)]
-    fn peek(&mut self) -> Option<u8> {
+    fn peek(&self) -> Option<u8> {
         if self.index < self.slice().len() {
             Some(self.slice()[self.index])
         } else {
@@ -321,7 +321,7 @@ impl<'a> Reader<'a> for PaddedSliceRead<'a> {
     }
 
     #[inline(always)]
-    fn peek_n(&mut self, n: usize) -> Option<&'a [u8]> {
+    fn peek_n(&self, n: usize) -> Option<&'a [u8]> {
         unsafe { Some(std::slice::from_raw_parts(self.cur.as_ptr(), n)) }
     }
 
@@ -331,7 +331,7 @@ impl<'a> Reader<'a> for PaddedSliceRead<'a> {
     }
 
     #[inline(always)]
-    fn peek(&mut self) -> Option<u8> {
+    fn peek(&self) -> Option<u8> {
         unsafe { Some(*self.cur.as_ptr()) }
     }
 
