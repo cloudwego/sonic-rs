@@ -305,7 +305,7 @@ impl Error {
     pub(crate) fn syntax(code: ErrorCode, json: &[u8], index: usize) -> Self {
         let position = Position::from_index(index, json);
         // generate descript about 16 characters
-        let mut start = if index < 8 { 0 } else { index - 8 };
+        let mut start = index.saturating_sub(8);
         let mut end = if index + 8 > json.len() {
             json.len()
         } else {
