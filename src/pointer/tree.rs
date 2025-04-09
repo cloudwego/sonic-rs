@@ -23,15 +23,26 @@ use crate::index::Index;
 /// let mut tree = PointerTree::new();
 ///
 /// tree.add_path(&["u"]);
+/// tree.add_path(&["unknown_key"]);
 /// tree.add_path(&pointer!["a", "b", "c", 1]);
 ///
 /// let nodes = unsafe { sonic_rs::get_many_unchecked(json, &tree) };
 ///
-/// // the node order is as the order of `add_path`
-/// for val in nodes.unwrap() {
-///     println!("{}", val.as_raw_str());
-///     // 123
-///     // "found"
+/// match nodes {
+///     Ok(vals) => {
+///         assert_eq!(vals[0].as_ref().unwrap().as_raw_str(), "123");
+///         assert!(vals[1].is_none());
+///         assert_eq!(vals[2].as_ref().unwrap().as_raw_str(), "\"found\"");
+///         for val in vals {
+///             match val {
+///                 Some(_) => println!("{}", val.as_ref().unwrap().as_raw_str()),
+///                 None => println!("None"),
+///             };
+///         }
+///     }
+///     Err(e) => {
+///         println!("err: {:?}", e)
+///     }
 /// }
 /// ```
 
