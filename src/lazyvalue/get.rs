@@ -185,9 +185,10 @@ where
 
 /// get_many returns multiple fields from the `PointerTree`.
 ///
-/// The result is a `Result<Vec<LazyValue>>`. The order of the `Vec` is same as the order of the
-/// tree.
+/// The result is a `Result<Vec<Option<LazyValue>>>`. The order of the `Vec` is same as the order of
+/// the tree.
 ///
+/// If a key is unknown, the value at the corresponding position in `Vec` will be None.
 /// If json is invalid, or the field not be found, it will return a err.
 ///
 /// # Safety
@@ -195,22 +196,36 @@ where
 ///
 /// # Examples
 /// ```
-/// use sonic_rs::pointer;
+/// # use sonic_rs::pointer;
+/// # use sonic_rs::PointerTree;
+///
 /// let json = r#"
-///     {"u": 123, "a": {"b" : {"c": [null, "found"]}}}"#;
+/// {"u": 123, "a": {"b" : {"c": [null, "found"]}}}"#;
+///
 /// // build a pointer tree, representing multiple json path
-/// let mut tree = sonic_rs::PointerTree::new();
+/// let mut tree = PointerTree::new();
+///
 /// tree.add_path(&["u"]);
+/// tree.add_path(&["unknown_key"]);
 /// tree.add_path(&pointer!["a", "b", "c", 1]);
-/// let nodes = unsafe { sonic_rs::get_many_unchecked(json, &tree).unwrap() };
-/// // the node order is as the order of `add_path`
-/// assert_eq!(nodes[0].as_raw_str(), "123");
-/// assert_eq!(nodes[1].as_raw_str(), "\"found\"");
+///
+/// let nodes = unsafe { sonic_rs::get_many_unchecked(json, &tree) };
+///
+/// match nodes {
+///     Ok(vals) => {
+///         assert_eq!(vals[0].as_ref().unwrap().as_raw_str(), "123");
+///         assert!(vals[1].is_none());
+///         assert_eq!(vals[2].as_ref().unwrap().as_raw_str(), "\"found\"");
+///     }
+///     Err(e) => {
+///         panic!("err: {:?}", e)
+///     }
+/// }
 /// ```
 pub unsafe fn get_many_unchecked<'de, Input>(
     json: Input,
     tree: &PointerTree,
-) -> Result<Vec<LazyValue<'de>>>
+) -> Result<Vec<Option<LazyValue<'de>>>>
 where
     Input: JsonInput<'de>,
 {
@@ -401,25 +416,41 @@ where
 
 /// get_many returns multiple fields from the [`PointerTree`].
 ///
-/// The result is a `Result<Vec<LazyValue>>`. The order of the `Vec` is same as the order of the
-/// tree.  
+/// The result is a `Result<Vec<Option<LazyValue>>>`. The order of the `Vec` is same as the order of
+/// the tree.
+///
+/// If a key is unknown, the value at the corresponding position in `Vec` will be None.  
 /// If json is invalid, or the field not be found, it will return a err.
 ///
 /// # Examples
 /// ```
-/// use sonic_rs::pointer;
+/// # use sonic_rs::pointer;
+/// # use sonic_rs::PointerTree;
+///
 /// let json = r#"
-///     {"u": 123, "a": {"b" : {"c": [null, "found"]}}}"#;
+/// {"u": 123, "a": {"b" : {"c": [null, "found"]}}}"#;
+///
 /// // build a pointer tree, representing multiple json path
-/// let mut tree = sonic_rs::PointerTree::new();
+/// let mut tree = PointerTree::new();
+///
 /// tree.add_path(&["u"]);
+/// tree.add_path(&["unknown_key"]);
 /// tree.add_path(&pointer!["a", "b", "c", 1]);
-/// let nodes = sonic_rs::get_many(json, &tree).unwrap();
-/// // the node order is as the order of `add_path`
-/// assert_eq!(nodes[0].as_raw_str(), "123");
-/// assert_eq!(nodes[1].as_raw_str(), "\"found\"");
+///
+/// let nodes = unsafe { sonic_rs::get_many(json, &tree) };
+///
+/// match nodes {
+///     Ok(vals) => {
+///         assert_eq!(vals[0].as_ref().unwrap().as_raw_str(), "123");
+///         assert!(vals[1].is_none());
+///         assert_eq!(vals[2].as_ref().unwrap().as_raw_str(), "\"found\"");
+///     }
+///     Err(e) => {
+///         panic!("err: {:?}", e)
+///     }
+/// }
 /// ```
-pub fn get_many<'de, Input>(json: Input, tree: &PointerTree) -> Result<Vec<LazyValue<'de>>>
+pub fn get_many<'de, Input>(json: Input, tree: &PointerTree) -> Result<Vec<Option<LazyValue<'de>>>>
 where
     Input: JsonInput<'de>,
 {
@@ -599,7 +630,8 @@ mod test {
         tree.add_path(pointer!["a"].iter()); // 4
         tree.add_path(pointer!["b", 2].iter()); // 5
         tree.add_path(pointer![].iter()); // 6
-        assert_eq!(tree.size(), 7);
+        tree.add_path(pointer!["unknown_key"].iter()); // 7
+        assert_eq!(tree.size(), 8);
         tree
     }
 
@@ -622,18 +654,22 @@ mod test {
         test_many_ok(unsafe { get_many_unchecked(&json, &tree).unwrap() });
         test_many_ok(get_many(&json, &tree).unwrap());
 
-        fn test_many_ok(many: Vec<LazyValue<'_>>) {
-            assert_eq!(many[0].as_raw_str(), "\"hello, world!\"");
+        fn test_many_ok(many: Vec<Option<LazyValue<'_>>>) {
+            assert_eq!(many[0].as_ref().unwrap().as_raw_str(), "\"hello, world!\"");
             assert_eq!(
-                many[1].as_raw_str(),
+                many[1].as_ref().unwrap().as_raw_str(),
                 "{\n                        \"a_b_c\":\"hello, world!\"\n                    }"
             );
-            assert_eq!(many[2].as_raw_str(), "1");
-            assert_eq!(many[3].as_raw_str(), "{\n                    \"a_b\":{\n                        \"a_b_c\":\"hello, world!\"\n                    },\n                    \"a_a\": [0, 1, 2]\n                }");
-            assert_eq!(many[4].as_raw_str(), many[3].as_raw_str());
-            assert_eq!(many[5].as_raw_str(), "true");
+            assert_eq!(many[2].as_ref().unwrap().as_raw_str(), "1");
+            assert_eq!(many[3].as_ref().unwrap().as_raw_str(), "{\n                    \"a_b\":{\n                        \"a_b_c\":\"hello, world!\"\n                    },\n                    \"a_a\": [0, 1, 2]\n                }");
+            assert_eq!(
+                many[4].as_ref().unwrap().as_raw_str(),
+                many[3].as_ref().unwrap().as_raw_str()
+            );
+            assert_eq!(many[5].as_ref().unwrap().as_raw_str(), "true");
             // we have strip the leading or trailing spaces
-            assert_eq!(many[6].as_raw_str(), "{\n                \"b\": [0, 1, true],\n                \"a\": {\n                    \"a_b\":{\n                        \"a_b_c\":\"hello, world!\"\n                    },\n                    \"a_a\": [0, 1, 2]\n                }\n            }");
+            assert_eq!(many[6].as_ref().unwrap().as_raw_str(), "{\n                \"b\": [0, 1, true],\n                \"a\": {\n                    \"a_b\":{\n                        \"a_b_c\":\"hello, world!\"\n                    },\n                    \"a_a\": [0, 1, 2]\n                }\n            }");
+            assert!(many[7].is_none())
         }
     }
 }

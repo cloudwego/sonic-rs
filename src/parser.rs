@@ -1818,7 +1818,7 @@ where
     fn get_many_rec(
         &mut self,
         node: &PointerTreeNode,
-        out: &mut Vec<LazyValue<'de>>,
+        out: &mut Vec<Option<LazyValue<'de>>>,
         strbuf: &mut Vec<u8>,
         remain: &mut usize,
         is_safe: bool,
@@ -1863,7 +1863,7 @@ where
             slice = self.read.slice_unchecked(start, self.read.index());
             let lv = LazyValue::new(slice.into(), status.into());
             for p in &node.order {
-                out[*p] = lv.clone();
+                out[*p] = Some(lv.clone());
             }
             *remain -= node.order.len();
         }
@@ -1875,7 +1875,7 @@ where
         &mut self,
         mkeys: &MultiKey,
         strbuf: &mut Vec<u8>,
-        out: &mut Vec<LazyValue<'de>>,
+        out: &mut Vec<Option<LazyValue<'de>>>,
         remain: &mut usize,
     ) -> Result<()> {
         debug_assert!(strbuf.is_empty());
@@ -1893,13 +1893,11 @@ where
             Some(_) => unreachable!(),
         }
 
-        let mut visited = 0;
         loop {
             let key = self.parse_str(strbuf)?;
             self.parse_object_clo()?;
             if let Some(val) = mkeys.get(key.deref()) {
                 self.get_many_rec(val, out, strbuf, remain, false)?;
-                visited += 1;
                 if *remain == 0 {
                     break;
                 }
@@ -1923,12 +1921,7 @@ where
             }
         }
 
-        // check whether remaining unknown keys
-        if visited < mkeys.len() {
-            perr!(self, GetUnknownKeyInObject)
-        } else {
-            Ok(())
-        }
+        Ok(())
     }
 
     #[allow(clippy::mutable_key_type)]
@@ -1936,7 +1929,7 @@ where
         &mut self,
         mkeys: &MultiKey,
         strbuf: &mut Vec<u8>,
-        out: &mut Vec<LazyValue<'de>>,
+        out: &mut Vec<Option<LazyValue<'de>>>,
         remain: &mut usize,
     ) -> Result<()> {
         debug_assert!(strbuf.is_empty());
@@ -1955,14 +1948,12 @@ where
             }
         }
 
-        let mut visited = 0;
         loop {
             let key = self.parse_str(strbuf)?;
             self.parse_object_clo()?;
             if let Some(val) = mkeys.get(key.deref()) {
                 // parse the child point tree
                 self.get_many_rec(val, out, strbuf, remain, true)?;
-                visited += 1;
                 if *remain == 0 {
                     break;
                 }
@@ -1979,12 +1970,7 @@ where
             }
         }
 
-        // check whether remaining unknown keys
-        if visited < mkeys.len() {
-            perr!(self, GetUnknownKeyInObject)
-        } else {
-            Ok(())
-        }
+        Ok(())
     }
 
     #[cfg(test)]
@@ -2005,7 +1991,7 @@ where
         &mut self,
         midx: &MultiIndex,
         strbuf: &mut Vec<u8>,
-        out: &mut Vec<LazyValue<'de>>,
+        out: &mut Vec<Option<LazyValue<'de>>>,
         remain: &mut usize,
     ) -> Result<()> {
         match self.skip_space() {
@@ -2064,7 +2050,7 @@ where
         &mut self,
         midx: &MultiIndex,
         strbuf: &mut Vec<u8>,
-        out: &mut Vec<LazyValue<'de>>,
+        out: &mut Vec<Option<LazyValue<'de>>>,
         remain: &mut usize,
     ) -> Result<()> {
         match self.skip_space() {
@@ -2116,11 +2102,11 @@ where
         &mut self,
         tree: &PointerTree,
         is_safe: bool,
-    ) -> Result<Vec<LazyValue<'de>>> {
+    ) -> Result<Vec<Option<LazyValue<'de>>>> {
         let mut strbuf = Vec::with_capacity(DEFAULT_KEY_BUF_CAPACITY);
         let mut remain = tree.size();
-        let mut out: Vec<LazyValue<'de>> = Vec::with_capacity(tree.size());
-        out.resize(tree.size(), LazyValue::default());
+        let mut out: Vec<Option<LazyValue<'de>>> = Vec::with_capacity(tree.size());
+        out.resize(tree.size(), Option::default());
         let cur = &tree.root;
         self.get_many_rec(cur, &mut out, &mut strbuf, &mut remain, is_safe)?;
         Ok(out)
