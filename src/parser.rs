@@ -1366,11 +1366,6 @@ where
     }
 
     #[inline(always)]
-    pub fn eat(&mut self, del: usize) {
-        self.read.eat(del);
-    }
-
-    #[inline(always)]
     pub fn skip_space(&mut self) -> Option<u8> {
         let reader = &mut self.read;
         // fast path 1: for nospace or single space
