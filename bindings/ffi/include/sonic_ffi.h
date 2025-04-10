@@ -3,8 +3,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define SONIC_RS_DESERIALIZE_USE_RAW 1
-
 #define SONIC_RS_DESERIALIZE_USE_RAWNUMBER 2
 
 #define SONIC_RS_DESERIALIZE_UTF8_LOSSY 4

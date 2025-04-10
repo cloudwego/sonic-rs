@@ -56,7 +56,6 @@ pub fn sonic_rs_fuzz_data(data: &[u8]) {
             let sv2: Value = from_str(&sout).unwrap();
             compare_value(&jv2, &sv2);
 
-            fuzz_use_raw(data, &sv);
             fuzz_utf8_lossy(data, &sv);
 
             if jv.is_object() && eq {
@@ -176,15 +175,6 @@ fn compare_owned_lazyvalue(jv: &JValue, sv: &OwnedLazyValue) {
             assert_eq!(sv.as_str().unwrap(), s);
         }
     }
-}
-
-fn fuzz_use_raw(json: &[u8], sv: &sonic_rs::Value) {
-    let json = unsafe { std::str::from_utf8_unchecked(json) };
-    let mut de = Deserializer::from_str(json).use_raw();
-    let value: Value = Deserialize::deserialize(&mut de).unwrap();
-    let out = sonic_rs::to_string(&value).unwrap();
-    let got: Value = sonic_rs::from_str(&out).unwrap();
-    assert_eq!(&got, sv);
 }
 
 fn fuzz_utf8_lossy(json: &[u8], sv: &sonic_rs::Value) {

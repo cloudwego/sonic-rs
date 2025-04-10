@@ -82,15 +82,6 @@ macro_rules! bench_file {
                 )
             });
 
-            let value: sonic_rs::Value = do_sonic_rs_from_slice(&data, SONIC_USE_RAW_CFG).unwrap();
-            group.bench_with_input("sonic_rs::to_string_use_raw", &value, |b, data| {
-                b.iter_batched(
-                    || data,
-                    |val| sonic_rs_to_string(&val),
-                    BatchSize::SmallInput,
-                )
-            });
-
             let value: sonic_rs::Value =
                 do_sonic_rs_from_slice(&data, SONIC_USE_RAWNUM_CFG).unwrap();
             group.bench_with_input("sonic_rs::to_string_use_rawnum", &value, |b, data| {

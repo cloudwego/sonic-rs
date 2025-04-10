@@ -1,7 +1,3 @@
-use bumpalo::Bump;
-
-use super::node::RawStr;
-
 pub(crate) trait JsonVisitor<'de> {
     fn visit_dom_start(&mut self) -> bool {
         false
@@ -74,15 +70,7 @@ pub(crate) trait JsonVisitor<'de> {
         false
     }
 
-    fn visit_raw_str(&mut self, _value: &str, _raw: RawStr) -> bool {
-        false
-    }
-
     fn visit_dom_end(&mut self) -> bool {
         false
-    }
-
-    fn allocator(&mut self) -> Option<&mut Bump> {
-        None
     }
 }

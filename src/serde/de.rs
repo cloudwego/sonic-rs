@@ -60,33 +60,6 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         self
     }
 
-    /// Parse all number as `RawNumber` and record the raw text for all JSON string.
-    ///
-    /// This will make sure the the serialize of `number` or `string` will retain from the origin
-    /// JSON text.
-    ///
-    /// # Example
-    /// ```
-    /// use sonic_rs::{Deserializer, Value};
-    /// let data = [
-    ///     r#"{"a":1.2345678901234567890123}"#,
-    ///     r#"{"a":1,"b":"\\u0001"}"#,
-    ///     r#"{"a":1,"b":"💎"}"#,
-    ///     r#"{"\\u0001":1,"b":"\\u0001"}"#,
-    /// ];
-    ///
-    /// for json in data {
-    ///     let mut de = Deserializer::from_str(json).use_raw();
-    ///     let value: Value = de.deserialize().unwrap();
-    ///     let out = sonic_rs::to_string(&value).unwrap();
-    ///     assert_eq!(json, out);
-    /// }
-    /// ```
-    pub fn use_raw(mut self) -> Self {
-        self.parser.cfg.use_raw = true;
-        self
-    }
-
     /// Allow to parse JSON with invalid UTF-8 and UTF-16 characters. Will replace them with
     /// `\uFFFD` (displayed as �).
     ///
@@ -1337,11 +1310,6 @@ where
     #[cfg(feature = "arbitrary_precision")]
     {
         de = de.use_rawnumber();
-    }
-
-    #[cfg(feature = "use_raw")]
-    {
-        de = de.use_raw();
     }
 
     #[cfg(feature = "utf8_lossy")]

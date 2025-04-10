@@ -85,14 +85,6 @@ macro_rules! bench_file {
                 )
             });
 
-            group.bench_with_input("sonic_rs_dom::from_slice_use_raw", &vec, |b, data| {
-                b.iter_batched(
-                    || data,
-                    |bytes| sonic_rs_from_slice(&bytes, SONIC_USE_RAW_CFG),
-                    BatchSize::SmallInput,
-                )
-            });
-
             group.bench_with_input("sonic_rs_dom::from_slice_use_rawnum", &vec, |b, data| {
                 b.iter_batched(
                     || data,

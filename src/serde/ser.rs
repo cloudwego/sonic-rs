@@ -706,10 +706,7 @@ where
             Compound::Map { .. } => ser::SerializeMap::serialize_entry(self, key, value),
 
             Compound::RawValue { ser, .. } => {
-                if key == crate::serde::rawnumber::TOKEN
-                    || key == crate::lazyvalue::TOKEN
-                    || key == crate::value::Value::RAW_TOKEN
-                {
+                if key == crate::serde::rawnumber::TOKEN || key == crate::lazyvalue::TOKEN {
                     value.serialize(RawValueStrEmitter(ser))
                 } else {
                     Err(invalid_raw_value())
@@ -1010,11 +1007,7 @@ where
     }
 
     fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
-        if name == crate::value::Value::RAW_TOKEN {
-            Ok(Compound::RawValue { ser: self.ser })
-        } else {
-            Err(key_must_be_str_or_num(Unexpected::Other(name)))
-        }
+        Err(key_must_be_str_or_num(Unexpected::Other(name)))
     }
 
     fn serialize_struct_variant(
