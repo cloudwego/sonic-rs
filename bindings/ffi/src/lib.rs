@@ -26,7 +26,6 @@ pub struct SonicDeserializeRet {
     err: SonicCString,
 }
 
-pub const SONIC_RS_DESERIALIZE_USE_RAW: u64 = 1;
 pub const SONIC_RS_DESERIALIZE_USE_RAWNUMBER: u64 = 2;
 pub const SONIC_RS_DESERIALIZE_UTF8_LOSSY: u64 = 4;
 
@@ -44,10 +43,6 @@ pub unsafe extern "C" fn sonic_rs_deserialize_value(
 
     if cfg & SONIC_RS_DESERIALIZE_USE_RAWNUMBER != 0 {
         de = de.use_rawnumber();
-    }
-
-    if cfg & SONIC_RS_DESERIALIZE_USE_RAW != 0 {
-        de = de.use_raw();
     }
 
     if cfg & SONIC_RS_DESERIALIZE_UTF8_LOSSY != 0 {

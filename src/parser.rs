@@ -35,7 +35,7 @@ use crate::{
         string::*,
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
-    value::{node::RawStr, visitor::JsonVisitor},
+    value::visitor::JsonVisitor,
     JsonValueMutTrait, JsonValueTrait, LazyValue, Number, OwnedLazyValue,
 };
 
@@ -313,73 +313,21 @@ where
     where
         V: JsonVisitor<'de>,
     {
-        if !self.cfg.use_raw {
-            let rs = self.parse_str(strbuf)?;
-            return check_visit!(self, vis.visit_str(rs.as_ref()));
-        }
-
-        let start = self.read.index();
-        match self.parse_str(strbuf)? {
-            Reference::Borrowed(s) => check_visit!(self, vis.visit_str(s)),
-            Reference::Copied(s) => unsafe {
-                // only record raw when has escaped chars
-                let end = self.read.index();
-                let raw = as_str(&self.read.as_u8_slice()[start - 1..end]);
-                let alloc = vis.allocator().unwrap();
-                let s = &*(alloc.alloc_str(s) as *mut str);
-                let raw = RawStr::new_in(alloc, raw);
-                check_visit!(self, vis.visit_raw_str(s, raw))
-            },
-        }
-    }
-
-    fn check_string_eof_inpadding(&self) -> Result<usize> {
-        let json = self.read.as_u8_slice();
-        let cur = self.read.index();
-        if cur > json.len() {
-            perr!(self, EofWhileParsing)
-        } else {
-            Ok(cur)
-        }
+        let rs = self.parse_str(strbuf)?;
+        check_visit!(self, vis.visit_str(rs.as_ref()))
     }
 
     #[inline(always)]
     fn parse_string_inplace<V: JsonVisitor<'de>>(&mut self, vis: &mut V) -> Result<()> {
-        if !self.cfg.use_raw {
-            unsafe {
-                let mut src = self.read.cur_ptr();
-                let start = self.read.cur_ptr();
-                let cnt = parse_string_inplace(&mut src, self.cfg.utf8_lossy)
-                    .map_err(|e| self.error(e))?;
-                self.read.set_ptr(src);
-                let slice = from_raw_parts(start, cnt);
-                let s = from_utf8_unchecked(slice);
-                return check_visit!(self, vis.visit_borrowed_str(s));
-            }
-        }
-
         unsafe {
-            let start_idx = self.read.index();
             let mut src = self.read.cur_ptr();
             let start = self.read.cur_ptr();
-            match self.skip_string_unchecked()? {
-                ParseStatus::HasEscaped => {
-                    let end = self.check_string_eof_inpadding()?;
-                    let raw = as_str(&self.read.as_u8_slice()[start_idx - 1..end]);
-                    let alloc = vis.allocator().unwrap();
-                    let raw = RawStr::new_in(alloc, raw);
-                    let cnt = parse_string_inplace(&mut src, self.cfg.utf8_lossy)
-                        .map_err(|e| self.error(e))?;
-                    self.read.set_ptr(src);
-                    let s = str_from_raw_parts(start, cnt);
-                    check_visit!(self, vis.visit_raw_str(s, raw))
-                }
-                ParseStatus::None => {
-                    let end = self.check_string_eof_inpadding()?;
-                    let s = as_str(&self.read.as_u8_slice()[start_idx..end - 1]);
-                    check_visit!(self, vis.visit_borrowed_str(s))
-                }
-            }
+            let cnt =
+                parse_string_inplace(&mut src, self.cfg.utf8_lossy).map_err(|e| self.error(e))?;
+            self.read.set_ptr(src);
+            let slice = from_raw_parts(start, cnt);
+            let s = from_utf8_unchecked(slice);
+            check_visit!(self, vis.visit_borrowed_str(s))
         }
     }
 
@@ -388,7 +336,7 @@ where
     where
         V: JsonVisitor<'de>,
     {
-        if self.cfg.use_rawnumber || self.cfg.use_raw {
+        if self.cfg.use_rawnumber {
             let start = self.read.index() - 1;
             self.skip_number(first)?;
             let slice = self.read.slice_unchecked(start, self.read.index());
@@ -408,7 +356,7 @@ where
     where
         V: JsonVisitor<'de>,
     {
-        if self.cfg.use_rawnumber || self.cfg.use_raw {
+        if self.cfg.use_rawnumber {
             let start = self.read.index() - 1;
             self.skip_number(first)?;
             let slice = self.read.slice_unchecked(start, self.read.index());
