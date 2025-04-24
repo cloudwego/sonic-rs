@@ -129,6 +129,14 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
             is_ending: false,
         }
     }
+
+    /// The `Deserializer::end` method should be called after a value has been fully deserialized.
+    /// This allows the `Deserializer` to validate that the input stream is at the end or that it
+    /// only has trailing whitespace.
+    pub fn end(&mut self) -> Result<()> {
+        tri!(self.parser.parse_trailing());
+        Ok(())
+    }
 }
 
 impl<'de> Deserializer<Read<'de>> {
@@ -1366,4 +1374,32 @@ where
         return Err(Error::io(e));
     };
     from_slice(data.as_slice())
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{object, Value};
+
+    #[test]
+    fn test_value_as_deserializer() {
+        let json = r#"{"a": 1, "b": 2}"#;
+        let mut de = crate::Deserializer::new(crate::Read::from(json));
+
+        let res: Value = de.deserialize().unwrap();
+        assert_eq!(res, object! { "a": 1, "b": 2 });
+        assert_eq!(de.parser.read.index, 16);
+
+        let res = de.end();
+        assert!(res.is_ok());
+
+        let json = r#"{"a": 1, "b": 2}123"#;
+        let mut de = crate::Deserializer::new(crate::Read::from(json));
+
+        let res: Value = de.deserialize().unwrap();
+        assert_eq!(res, object! { "a": 1, "b": 2 });
+        assert_eq!(de.parser.read.index, 16);
+
+        let res = de.end();
+        assert!(res.is_err());
+    }
 }
