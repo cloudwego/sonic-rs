@@ -142,7 +142,7 @@ impl Index for usize {
         let typ = v.get_type();
         let len = v.len();
         v.as_array_mut()
-            .unwrap_or_else(|| panic!("cannot access index in non-array value type {:?}", typ))
+            .unwrap_or_else(|| panic!("cannot access index in non-array value type {typ:?}"))
             .0
             .get_index_mut(*self)
             .unwrap_or_else(|| panic!("index {} out of bounds (len: {})", *self, len))

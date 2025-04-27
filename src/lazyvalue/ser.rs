@@ -61,7 +61,7 @@ mod test {
             };
             assert_eq!(to_string(&data).unwrap(), to_string(&data2).unwrap());
             let json = json.trim();
-            let expect: String = format!("{{\"borrowed_lv\":{},\"owned_lv\":{}}}", json, json);
+            let expect: String = format!("{{\"borrowed_lv\":{json},\"owned_lv\":{json}}}");
             let serialized = to_string(&data).expect(json);
             assert_eq!(expect, serialized);
             assert_eq!(serialized, to_string(&data).unwrap());
@@ -85,7 +85,7 @@ mod test {
     fn test_raw_value_failed() {
         fn test_json_failed(json: &str) {
             let ret: Result<LazyValue<'_>> = from_str(json);
-            assert!(ret.is_err(), "invalid json is {}", json);
+            assert!(ret.is_err(), "invalid json is {json}");
         }
         test_json_failed(r#"""#);
         test_json_failed(r#""raw " value""#);

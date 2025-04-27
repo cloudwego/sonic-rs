@@ -332,7 +332,7 @@ impl Error {
             0
         };
         let mask = ".".repeat(left) + "^" + &".".repeat(right);
-        let descript = format!("\n\n\t{}\n\t{}\n", fragment, mask);
+        let descript = format!("\n\n\t{fragment}\n\t{mask}\n");
 
         Error {
             err: Box::new(ErrorImpl {
@@ -426,9 +426,9 @@ impl de::Error for Error {
     #[cold]
     fn invalid_type(unexp: de::Unexpected, exp: &dyn de::Expected) -> Self {
         if let de::Unexpected::Unit = unexp {
-            Error::custom(format_args!("invalid type: null, expected {}", exp))
+            Error::custom(format_args!("invalid type: null, expected {exp}"))
         } else {
-            Error::custom(format_args!("invalid type: {}, expected {}", unexp, exp))
+            Error::custom(format_args!("invalid type: {unexp}, expected {exp}"))
         }
     }
 }
@@ -520,73 +520,73 @@ mod test {
 
         let err = from_str::<Foo>("{ \"b\":[]}").unwrap_err();
         assert_eq!(
-            format!("{}", err),
+            format!("{err}"),
             "missing field `a` at line 1 column 8\n\n\t{ \"b\":[]}\n\t........^\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [1, 2x, 3, 4, 5]}").unwrap_err();
-        println!("{}", err);
+        println!("{err}");
         assert_eq!(
-            format!("{}", err),
+            format!("{err}"),
             "Expected this character to be either a ',' or a ']' while parsing at line 1 column \
              11\n\n\t\": [1, 2x, 3, 4,\n\t........^.......\n"
         );
 
         let err = from_str::<Foo>("{\"a\": null}").unwrap_err();
         assert_eq!(
-            format!("{}", err),
+            format!("{err}"),
             "invalid type: null, expected a sequence at line 1 column 9\n\n\t\"a\": \
              null}\n\t........^.\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [1,2,3  }").unwrap_err();
         assert_eq!(
-            format!("{}", err),
+            format!("{err}"),
             "Expected this character to be either a ',' or a ']' while parsing at line 1 column \
              14\n\n\t[1,2,3  }\n\t........^\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [\"123\"]}").unwrap_err();
         assert_eq!(
-            format!("{}", err),
+            format!("{err}"),
             "invalid type: string \"123\", expected i32 at line 1 column 11\n\n\t\": \
              [\"123\"]}\n\t........^..\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [").unwrap_err();
         assert_eq!(
-            format!("{}", err),
+            format!("{err}"),
             "EOF while parsing at line 1 column 6\n\n\t{\"a\": [\n\t......^\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [000]}").unwrap_err();
         assert_eq!(
-            format!("{}", err),
+            format!("{err}"),
             "Expected this character to be either a ',' or a ']' while parsing at line 1 column \
              8\n\n\t{\"a\": [000]}\n\t........^...\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [-]}").unwrap_err();
         assert_eq!(
-            format!("{}", err),
+            format!("{err}"),
             "Invalid number at line 1 column 7\n\n\t{\"a\": [-]}\n\t.......^..\n"
         );
 
         let err = from_str::<Foo>("{\"a\": [-1.23e]}").unwrap_err();
         assert_eq!(
-            format!("{}", err),
+            format!("{err}"),
             "Invalid number at line 1 column 12\n\n\t: [-1.23e]}\n\t........^..\n"
         );
 
         let err = from_str::<Foo>("{\"c\": \"哈哈哈哈哈哈}").unwrap_err();
         assert_eq!(
-            format!("{}", err),
+            format!("{err}"),
             "EOF while parsing at line 1 column 25\n\n\t哈哈哈}\n\t.........^\n"
         );
 
         let err = from_slice::<Foo>(b"{\"b\":\"\x80\"}").unwrap_err();
         assert_eq!(
-            format!("{}", err),
+            format!("{err}"),
             "Invalid UTF-8 characters in json at line 1 column 6\n\n\t{\"b\":\"�\"}\n\t......^..\n"
         );
     }
@@ -595,7 +595,7 @@ mod test {
     fn test_other_errors() {
         let err = crate::Value::try_from(f64::NAN).unwrap_err();
         assert_eq!(
-            format!("{}", err),
+            format!("{err}"),
             "NaN or Infinity is not a valid JSON value"
         );
     }

@@ -911,7 +911,7 @@ mod test {
         map.insert(User::default(), 123);
 
         let got = to_value(&map);
-        println!("{:?}", got);
+        println!("{got:?}");
         assert!(got.is_err());
     }
 

@@ -152,6 +152,6 @@ mod test {
         tree.add_path(pointer!["b", 2].iter());
         tree.add_path(pointer![].iter());
         assert_eq!(tree.size(), 7);
-        println!("tree is {:#?}", tree);
+        println!("tree is {tree:#?}");
     }
 }

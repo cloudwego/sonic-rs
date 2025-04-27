@@ -26,7 +26,7 @@ fn main() {
             }
         }
         Err(e) => {
-            println!("err: {:?}", e)
+            println!("err: {e:?}")
         }
     }
 }
