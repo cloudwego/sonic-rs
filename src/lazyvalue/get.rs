@@ -569,7 +569,7 @@ mod test {
     fn test_get_from_json_failed() {
         fn test_get_failed(json: &[u8], path: &JsonPointer) {
             let out = get_from_slice(json, path);
-            assert!(out.is_err(), "json is {:?}", json);
+            assert!(out.is_err(), "json is {json:?}");
 
             // test for SIMD codes
             let json = unsafe { from_utf8_unchecked(json) }.to_string() + &" ".repeat(1000);

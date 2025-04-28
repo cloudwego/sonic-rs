@@ -226,7 +226,7 @@ mod test {
         let expect = serde_json::to_string(&data).expect("Failed to serialize the data");
         let got = to_string(&data).expect("Failed to serialize the data");
         assert_eq!(expect, got);
-        println!("serialized json is {}", got);
+        println!("serialized json is {got}");
 
         let got = r#"{"ignored":0,"#.to_string() + &got[1..];
         let expect_value: TestData =
@@ -319,7 +319,7 @@ mod test {
         let expect = r#"{"num":1.23,"raw_num":1.23e123}"#;
         let got = to_string(&data).expect("Failed to serialize the data");
         assert_eq!(expect, got);
-        println!("serialized json is {}", got);
+        println!("serialized json is {got}");
 
         let got_value: TestJsonNumber = from_str(expect).expect("Failed to deserialize the data");
         assert_eq!(data, got_value);
@@ -329,7 +329,7 @@ mod test {
     fn test_json_number_invalid() {
         fn test_json_failed(json: &str) {
             let ret: Result<RawNumber> = from_str(json);
-            assert!(ret.is_err(), "invalid json is {}", json);
+            assert!(ret.is_err(), "invalid json is {json}");
         }
         test_json_failed(r#"0."#);
         test_json_failed(r#"-"#);
@@ -516,12 +516,12 @@ mod test {
         assert!(!error, "Encoded error");
 
         let obj: &[u8] = from_slice(encoded.as_ref()).expect("Failed deserialize");
-        println!("Deserialized {:?}", obj);
+        println!("Deserialized {obj:?}");
 
         let sout = crate::to_string(&obj).unwrap();
         let jout = serde_json::to_string(&obj).unwrap();
         assert_eq!(jout, sout);
-        println!("json is {}", jout);
+        println!("json is {jout}");
         // this will failed
         // let jv = serde_json::from_str::<&[u8]>(&jout).unwrap();
     }
@@ -539,7 +539,7 @@ mod test {
         map.insert(User::default(), 123);
 
         let got = to_string(&map);
-        println!("{:?}", got);
+        println!("{got:?}");
         assert!(got.is_err());
     }
 
@@ -733,7 +733,7 @@ mod test {
         for d in data {
             let mut de = Deserializer::from_slice(d);
             let err: crate::Error = de.deserialize::<String>().expect_err("should error");
-            eprintln!("{}", err);
+            eprintln!("{err}");
             assert!(err.is_syntax());
         }
     }

@@ -31,7 +31,7 @@ impl From<u8> for JsonType {
             3 => JsonType::String,
             4 => JsonType::Object,
             5 => JsonType::Array,
-            _ => panic!("Invalid JsonType value from u8 {}", value),
+            _ => panic!("Invalid JsonType value from u8 {value}"),
         }
     }
 }

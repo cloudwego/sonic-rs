@@ -182,7 +182,7 @@ impl Display for Number {
 
 impl Debug for Number {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        write!(formatter, "Number({})", self)
+        write!(formatter, "Number({self})")
     }
 }
 

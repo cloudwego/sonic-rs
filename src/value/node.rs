@@ -1131,7 +1131,7 @@ impl Value {
     }
 
     pub(crate) fn get_index(&self, index: usize) -> Option<&Self> {
-        debug_assert!(self.is_array(), "{:?}", self);
+        debug_assert!(self.is_array(), "{self:?}");
         if let ValueRefInner::Array(s) = self.as_ref2() {
             if index < s.len() {
                 return Some(&s[index]);
@@ -1386,12 +1386,12 @@ impl MetaNode {
         let canary = b"SONICRS\0";
         MetaNode {
             shared,
-            canary: unsafe { transmute::<[u8; 8], u64>(*canary) },
+            canary: u64::from_ne_bytes(*canary),
         }
     }
 
     fn canary(&self) -> bool {
-        self.canary == unsafe { std::mem::transmute::<[u8; 8], u64>(*b"SONICRS\0") }
+        self.canary == u64::from_ne_bytes(*b"SONICRS\0")
     }
 }
 
@@ -1441,7 +1441,7 @@ impl<'a> DocumentVisitor<'a> {
             // record the `Shared` pointer
             let meta = &mut *(hdr as *mut MetaNode);
             meta.shared = vis.shared as *const _;
-            meta.canary = transmute::<[u8; 8], u64>(*b"SONICRS\0");
+            meta.canary = u64::from_ne_bytes(*b"SONICRS\0");
 
             // update the container header
             let idx = (parent - vis.parent) as u32;
@@ -1688,8 +1688,7 @@ mod test {
             if valin2.val != val {
                 diff_json(data);
                 return Err(make_error(format!(
-                    "invalid result when test parse valid json to ValueInStruct {}",
-                    data
+                    "invalid result when test parse valid json to ValueInStruct {data}"
                 )));
             }
         }
@@ -1710,10 +1709,7 @@ mod test {
                 Ok(())
             } else {
                 diff_json(data);
-                Err(make_error(format!(
-                    "invalid result for valid json {}",
-                    data
-                )))
+                Err(make_error(format!("invalid result for valid json {data}")))
             }
         } else {
             if dom.is_err() {
@@ -1751,7 +1747,7 @@ mod test {
 
     fn test_value_file(path: &Path) {
         let data = std::fs::read_to_string(path).unwrap();
-        assert!(test_value(&data).is_ok(), "failed json is  {:?}", path);
+        assert!(test_value(&data).is_ok(), "failed json is {path:?}");
     }
 
     #[test]
@@ -1780,7 +1776,7 @@ mod test {
                 "zip": "10001"
             }
         }"#;
-        assert!(test_value(data).is_ok(), "failed json is {}", data);
+        assert!(test_value(data).is_ok(), "failed json is {data}");
 
         // // Valid JSON data with escape characters
         // let data = r#"{
@@ -1796,7 +1792,7 @@ mod test {
     fn test_node_from_files3() {
         use std::fs::DirEntry;
         let path = env!("CARGO_MANIFEST_DIR").to_string() + "/benchmarks/benches/testdata/";
-        println!("dir is {}", path);
+        println!("dir is {path}");
 
         let mut files: Vec<DirEntry> = std::fs::read_dir(path)
             .unwrap()
@@ -1836,7 +1832,7 @@ mod test {
 
         for data in testdata {
             let ret: Result<Value> = from_slice(data.as_bytes());
-            assert!(ret.is_err(), "failed json is {}", data);
+            assert!(ret.is_err(), "failed json is {data}");
         }
     }
 

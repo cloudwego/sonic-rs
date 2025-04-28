@@ -264,7 +264,7 @@ impl Array {
     #[inline]
     pub fn swap_remove(&mut self, index: usize) -> Value {
         let len = self.len();
-        assert!(index < len, "index {} out of bounds(len: {})", index, len);
+        assert!(index < len, "index {index} out of bounds(len: {len})");
         if index != self.len() - 1 {
             unsafe {
                 let src = self.as_mut_ptr().add(index);

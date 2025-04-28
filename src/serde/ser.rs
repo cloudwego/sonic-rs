@@ -462,7 +462,7 @@ where
             error: None,
         };
 
-        match write!(adapter, "{}", value) {
+        match write!(adapter, "{value}") {
             Ok(()) => {
                 debug_assert!(adapter.error.is_none());
             }

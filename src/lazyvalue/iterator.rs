@@ -88,9 +88,11 @@ impl<'de> ObjectJsonIter<'de> {
     }
 
     pub(crate) fn new<I: JsonInput<'de>>(input: I, skip_strict: bool) -> Self {
-        let validate_utf8 = skip_strict
-            .then_some(input.need_utf8_valid())
-            .unwrap_or_default();
+        let validate_utf8 = if skip_strict {
+            input.need_utf8_valid()
+        } else {
+            Default::default()
+        };
 
         Self {
             parser: Parser::new(Read::new_in(input.to_json_slice(), validate_utf8)),
@@ -147,9 +149,11 @@ impl<'de> ArrayJsonIter<'de> {
     }
 
     pub(crate) fn new<I: JsonInput<'de>>(input: I, skip_strict: bool) -> Self {
-        let validate_utf8 = skip_strict
-            .then_some(input.need_utf8_valid())
-            .unwrap_or_default();
+        let validate_utf8 = if skip_strict {
+            input.need_utf8_valid()
+        } else {
+            Default::default()
+        };
 
         Self {
             parser: Parser::new(Read::new_in(input.to_json_slice(), validate_utf8)),
@@ -394,8 +398,7 @@ mod test {
             assert_eq!(
                 ret.1.as_raw_str().as_bytes(),
                 val.as_bytes(),
-                "key is {} ",
-                key
+                "key is {key} ",
             );
             assert_eq!(ret.1.get_type(), typ);
 
@@ -404,8 +407,7 @@ mod test {
             assert_eq!(
                 ret.1.as_raw_str().as_bytes(),
                 val.as_bytes(),
-                "key is {} ",
-                key
+                "key is {key} ",
             );
             assert_eq!(ret.1.get_type(), typ);
         };
@@ -521,7 +523,7 @@ mod test {
         let json = Bytes::from(r#"[1, true, "hello", null, 5, 6]"#);
         let iter = to_array_iter(&json);
         let out: Vec<JsonType> = iter.map(|e| e.get_type()).collect();
-        println!("array elem type is {:?}", out);
+        println!("array elem type is {out:?}");
     }
 
     #[test]

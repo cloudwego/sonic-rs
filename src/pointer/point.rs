@@ -58,9 +58,9 @@ mod test {
     #[test]
     fn test_json_pointer() {
         let pointers = pointer![];
-        println!("{:?}", pointers);
+        println!("{pointers:?}");
         let mut pointers = pointer![1, 2, 3, "foo", "bar"].to_vec();
         pointers.push(123.into());
-        println!("{:?}", pointers);
+        println!("{pointers:?}");
     }
 }

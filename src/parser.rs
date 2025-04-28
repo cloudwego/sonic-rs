@@ -60,8 +60,8 @@ impl<'b, 'c> From<Reference<'b, 'c, str>> for Cow<'b, str> {
 impl<'b, 'c, T: Debug + ?Sized + 'static> Debug for Reference<'b, 'c, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Borrowed(c) => write!(f, "Borrowed({:?})", c),
-            Self::Copied(c) => write!(f, "Copied({:?})", c),
+            Self::Borrowed(c) => write!(f, "Borrowed({c:?})"),
+            Self::Copied(c) => write!(f, "Copied({c:?})"),
         }
     }
 }
