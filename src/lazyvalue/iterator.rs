@@ -541,7 +541,7 @@ mod test {
             assert_eq!(
                 item.err().unwrap().to_string(),
                 "Invalid UTF-8 characters in json at line 1 column \
-                 5\n\n\t[\"\0\0\0��\"]\n\t.....^...\n"
+                 6\n\n\t[\"\0\0\0��\"]\n\t.....^...\n"
             );
         }
 
@@ -553,7 +553,7 @@ mod test {
             assert_eq!(
                 item.err().unwrap().to_string(),
                 "Invalid UTF-8 characters in json at line 1 column \
-                 5\n\n\t{\"\0\0\0��\":\"\"}\n\t.....^......\n"
+                 6\n\n\t{\"\0\0\0��\":\"\"}\n\t.....^......\n"
             );
         }
     }

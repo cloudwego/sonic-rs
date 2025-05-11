@@ -19,12 +19,12 @@ impl Position {
     pub(crate) fn from_index(mut i: usize, data: &[u8]) -> Self {
         // i must not exceed the length of data
         i = i.min(data.len());
-        let mut position = Position { line: 1, column: 0 };
+        let mut position = Position { line: 1, column: 1 };
         for ch in &data[..i] {
             match *ch {
                 b'\n' => {
                     position.line += 1;
-                    position.column = 0;
+                    position.column = 1;
                 }
                 _ => {
                     position.column += 1;

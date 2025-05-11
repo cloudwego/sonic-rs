@@ -351,7 +351,7 @@ mod test {
         let value: crate::Result<String> = from_slice(&data);
         assert_eq!(
             value.err().unwrap().to_string(),
-            "Invalid UTF-8 characters in json at line 1 column 4\n\n\t\"\0\0\0��\"\n\t....^..\n"
+            "Invalid UTF-8 characters in json at line 1 column 5\n\n\t\"\0\0\0��\"\n\t....^..\n"
         );
 
         #[derive(Debug, Deserialize, Serialize, PartialEq)]
@@ -364,7 +364,7 @@ mod test {
         let value: crate::Result<char> = from_slice(&data);
         assert_eq!(
             value.err().unwrap().to_string(),
-            "Invalid UTF-8 characters in json at line 1 column 1\n\n\t\"�\"\n\t.^.\n"
+            "Invalid UTF-8 characters in json at line 1 column 2\n\n\t\"�\"\n\t.^.\n"
         );
     }
 
@@ -609,35 +609,35 @@ mod test {
         {   "invalid utf8 here": "invalid utf8 here",
             "bytes": [1,2,3],
             "string": "hello",
-        
+
             "true": true,
-    
+
             "1": 1,
             "123": 123,
             "-123": -123,
             "12345": 12345,
             "1": 1,
-    
+
             "1": 1,
             "123": 123,
             "123": -123,
             "12345": 12345,
             "1": 1,
-    
+
             "12345": 12345,
             "1": 1,
-    
+
             "1.23e+2": 1.23,
             "-1.23": -1.23,
-    
+
             "123": "option",
-    
+
             "wrapper": {},
-    
+
             "Zero": "enum",
-    
+
             "A": "char",
-    
+
             "ignored": "ignored"
         }
         "#
