@@ -17,7 +17,7 @@ fn main() {
         if elem.is_err() {
             assert!(elem.err().unwrap().to_string().starts_with(
                 "Expected this character to be either a ',' or a ']' while parsing at line 1 \
-                 column 16"
+                 column 17"
             ));
         }
     }
