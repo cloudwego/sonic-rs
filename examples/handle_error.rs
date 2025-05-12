@@ -12,13 +12,13 @@ fn main() {
     let err = from_str::<Foo>("{\"a\": [").unwrap_err();
     assert!(err.is_eof());
     eprintln!("{err}");
-    // EOF while parsing at line 1 column 6
+    // EOF while parsing at line 1 column 7
 
     //     {"a": [
     //     ......^
     assert_eq!(
         format!("{err}"),
-        "EOF while parsing at line 1 column 6\n\n\t{\"a\": [\n\t......^\n"
+        "EOF while parsing at line 1 column 7\n\n\t{\"a\": [\n\t......^\n"
     );
 
     // deal with unmatched type errors
@@ -26,13 +26,13 @@ fn main() {
     eprintln!("{err}");
     assert!(err.is_unmatched_type());
     // println as follows:
-    // missing field `a` at line 1 column 8
+    // missing field `a` at line 1 column 9
     //
     //     { "b":[]}
     //     ........^
     assert_eq!(
         format!("{err}"),
-        "missing field `a` at line 1 column 8\n\n\t{ \"b\":[]}\n\t........^\n"
+        "missing field `a` at line 1 column 9\n\n\t{ \"b\":[]}\n\t........^\n"
     );
 
     // deal with Syntax errors
@@ -40,12 +40,12 @@ fn main() {
     eprintln!("{err}");
     assert!(err.is_syntax());
     // println as follows:
-    // Invalid UTF-8 characters in json at line 1 column 6
+    // Invalid UTF-8 characters in json at line 1 column 7
     //
     //     {"b":"�"}
     //     ......^...
     assert_eq!(
         format!("{err}"),
-        "Invalid UTF-8 characters in json at line 1 column 6\n\n\t{\"b\":\"�\"}\n\t......^..\n"
+        "Invalid UTF-8 characters in json at line 1 column 7\n\n\t{\"b\":\"�\"}\n\t......^..\n"
     );
 }
