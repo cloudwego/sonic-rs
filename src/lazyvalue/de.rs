@@ -12,7 +12,7 @@ impl<'de: 'a, 'a> Deserialize<'de> for LazyValue<'a> {
         D: Deserializer<'de>,
     {
         struct LazyValueVisitor<'a> {
-            _marker: PhantomData<LazyValue<'a>>,
+            _marker: PhantomData<&'a ()>,
         }
 
         impl<'de: 'a, 'a> Visitor<'de> for LazyValueVisitor<'a> {
@@ -34,7 +34,7 @@ impl<'de: 'a, 'a> Deserialize<'de> for LazyValue<'a> {
             where
                 E: de::Error,
             {
-                Ok(LazyValue::new(FastStr::new(v).into(), HasEsc::None))
+                Ok(LazyValue::new(v.as_bytes().into(), HasEsc::None))
             }
         }
 
