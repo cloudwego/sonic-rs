@@ -51,7 +51,7 @@ where
 impl<'b, 'c> From<Reference<'b, 'c, str>> for Cow<'b, str> {
     fn from(value: Reference<'b, 'c, str>) -> Self {
         match value {
-            Reference::Borrowed(b) => Cow::Borrowed(b),
+            Reference::Borrowed(b) => Cow::Owned(b.to_string()),
             Reference::Copied(c) => Cow::Owned(c.to_string()),
         }
     }

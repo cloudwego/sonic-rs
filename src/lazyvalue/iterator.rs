@@ -557,4 +557,18 @@ mod test {
             );
         }
     }
+
+    #[test]
+    fn test_issue_182_uaf() {
+        let json = r#"{"key": "value"}"#;
+        let root: LazyValue = crate::from_str(json).unwrap();
+        let key = {
+            let mut iter = root.into_object_iter().unwrap();
+            let (key, _) = iter.next().unwrap().unwrap();
+            key
+        };
+
+        // the asan will report uaf here if uaf happened
+        assert_eq!(key, "key");
+    }
 }
