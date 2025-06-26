@@ -501,10 +501,6 @@ fn starts_with_digit(slice: &str) -> bool {
     }
 }
 
-pub(crate) fn invalid_utf8(json: &[u8], index: usize) -> Error {
-    Error::syntax(ErrorCode::InvalidUTF8, json, index)
-}
-
 #[cfg(test)]
 mod test {
     use crate::{from_slice, from_str, Deserialize};

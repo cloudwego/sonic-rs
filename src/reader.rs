@@ -3,11 +3,11 @@ use std::{marker::PhantomData, pin::Pin, ptr::NonNull};
 use faststr::FastStr;
 
 use crate::{
-    error::invalid_utf8,
+    error::ErrorCode,
     input::JsonSlice,
     parser::as_str,
     util::{private::Sealed, utf8::from_utf8},
-    JsonInput, Result,
+    Error, JsonInput, Result,
 };
 
 pub(crate) struct Position {
@@ -71,6 +71,10 @@ pub trait Reader<'de>: Sealed {
     fn check_invalid_utf8(&mut self);
 
     fn slice_ref(&self, subset: &'de [u8]) -> JsonSlice<'de>;
+
+    fn origin_input(&self) -> &'de [u8] {
+        self.as_u8_slice()
+    }
 }
 
 enum PinnedInput<'a> {
@@ -267,12 +271,16 @@ impl<'a> Reader<'a> for Read<'a> {
         if self.next_invalid_utf8 == usize::MAX {
             Ok(())
         } else {
-            Err(invalid_utf8(self.slice(), self.next_invalid_utf8))
+            Err(Error::syntax(
+                ErrorCode::InvalidUTF8,
+                self.origin_input(),
+                self.next_invalid_utf8,
+            ))
         }
     }
 
     fn check_invalid_utf8(&mut self) {
-        self.next_invalid_utf8 = match from_utf8(&self.slice()[self.index..]) {
+        self.next_invalid_utf8 = match from_utf8(&self.origin_input()[self.index..]) {
             Ok(_) => usize::MAX,
             Err(e) => self.index + e.offset(),
         };
@@ -287,17 +295,19 @@ pub(crate) struct PaddedSliceRead<'a> {
     base: NonNull<u8>,
     cur: NonNull<u8>,
     len: usize,
+    origin: &'a [u8],
     _life: PhantomData<&'a mut [u8]>,
 }
 
 impl<'a> PaddedSliceRead<'a> {
     const PADDING_SIZE: usize = 64;
-    pub fn new(slice: &'a mut [u8]) -> Self {
-        let base = unsafe { NonNull::new_unchecked(slice.as_mut_ptr()) };
+    pub fn new(buffer: &'a mut [u8], json: &'a [u8]) -> Self {
+        let base = unsafe { NonNull::new_unchecked(buffer.as_mut_ptr()) };
         Self {
             base,
             cur: base,
-            len: slice.len() - Self::PADDING_SIZE,
+            len: buffer.len() - Self::PADDING_SIZE,
+            origin: json,
             _life: PhantomData,
         }
     }
@@ -399,6 +409,11 @@ impl<'a> Reader<'a> for PaddedSliceRead<'a> {
     #[inline(always)]
     fn check_utf8_final(&self) -> Result<()> {
         Ok(())
+    }
+
+    #[inline(always)]
+    fn origin_input(&self) -> &'a [u8] {
+        self.origin
     }
 }
 
