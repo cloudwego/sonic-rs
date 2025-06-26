@@ -1313,7 +1313,7 @@ impl Value {
         buffer.extend_from_slice(&[0; 61]);
 
         let smut = Arc::get_mut(&mut shared).unwrap();
-        let slice = PaddedSliceRead::new(buffer.as_mut_slice());
+        let slice = PaddedSliceRead::new(buffer.as_mut_slice(), json);
         let mut parser = Parser::new(slice).with_config(cfg);
         let mut vis = DocumentVisitor::new(json.len(), smut);
         parser.parse_dom(&mut vis)?;
@@ -2067,5 +2067,17 @@ mod test {
         };
 
         assert_eq!(obj, obj2);
+    }
+
+    #[test]
+    fn test_issue_179_line_column() {
+        let json = r#"
+        {
+            "key\nwith\nnewlines": "value",
+            "another_key": [, 1, 2, 3]
+        }
+        "#;
+        let err = crate::from_str::<Value>(json).unwrap_err();
+        assert_eq!(err.line(), 4);
     }
 }

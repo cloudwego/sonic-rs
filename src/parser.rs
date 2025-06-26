@@ -18,7 +18,7 @@ use sonic_simd::{i8x32, m8x32, u8x32, u8x64, Mask, Simd};
 use crate::{
     config::DeserializeCfg,
     error::{
-        invalid_utf8, Error,
+        Error,
         ErrorCode::{self, *},
         Result,
     },
@@ -283,7 +283,7 @@ where
             reason = EofWhileParsing;
             index = len;
         }
-        Error::syntax(reason, self.read.as_u8_slice(), index)
+        Error::syntax(reason, self.read.origin_input(), index)
     }
 
     // maybe error in generated in visitor, so we need fix the position.
@@ -802,7 +802,11 @@ where
         }
 
         if !allowed {
-            Err(invalid_utf8(self.read.as_u8_slice(), invalid))
+            Err(Error::syntax(
+                ErrorCode::InvalidUTF8,
+                self.read.origin_input(),
+                invalid,
+            ))
         } else {
             // this space is allowed, should update the next invalid utf8 position
             self.read.check_invalid_utf8();
@@ -852,10 +856,10 @@ where
             Ok((((point1 - 0xd800) << 10) | low_bit).wrapping_add(0x10000))
         } else if (0xDC00..0xE000).contains(&point1) {
             if self.cfg.utf8_lossy {
-                return Ok(0xFFFD);
+                Ok(0xFFFD)
             } else {
                 // invalid surrogate
-                return perr!(self, InvalidSurrogateUnicodeCodePoint);
+                perr!(self, InvalidSurrogateUnicodeCodePoint)
             }
         } else {
             Ok(point1)
