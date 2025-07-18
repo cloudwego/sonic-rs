@@ -10,7 +10,7 @@ license       = "Apache-2.0"
 name          = "sonic-rs"
 readme        = "README.md"
 repository    = "https://github.com/cloudwego/sonic-rs"
-version       = "0.5.2"
+version       = "0.5.3"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -54,3 +54,7 @@ utf8_lossy = []
 
 # Enable sanitize, maybe cause 30% performance-loss in serialize.
 sanitize = []
+
+# Serialize floating point numbers without trailing zeros if the float can be represented as an integer without loss of precision.
+# For example, `18.0` will be serialized as `18` instead of `18.0`.
+non_trailing_zero = []
