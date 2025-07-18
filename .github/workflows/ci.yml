@@ -75,7 +75,7 @@ jobs:
       fail-fast: false
       matrix:
         san: ["address,leak"]
-        feature: ["", "arbitrary_precision", "sort_keys", "utf8_lossy"]
+        feature: ["", "arbitrary_precision", "sort_keys", "utf8_lossy", "non_trailing_zero"]
     name: Sanitize ${{matrix.san}} feature ${{matrix.feature}}
     runs-on: [self-hosted, Linux, amd64]
     steps:

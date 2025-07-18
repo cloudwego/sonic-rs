@@ -147,6 +147,11 @@ pub trait Formatter {
     where
         W: ?Sized + Write,
     {
+        #[cfg(feature = "non_trailing_zero")]
+        if value.fract() == 0.0 && value <= (i64::MAX as f32) && value >= (i64::MIN as f32) {
+            return self.write_i64(writer, value as i64);
+        }
+
         let mut buffer = ryu::Buffer::new();
         let s = buffer.format_finite(value);
         writer.write_all(s.as_bytes())
@@ -158,6 +163,11 @@ pub trait Formatter {
     where
         W: ?Sized + Write,
     {
+        #[cfg(feature = "non_trailing_zero")]
+        if value.fract() == 0.0 && value <= (i64::MAX as f64) && value >= (i64::MIN as f64) {
+            return self.write_i64(writer, value as i64);
+        }
+
         let mut buffer = ryu::Buffer::new();
         let s = buffer.format_finite(value);
         writer.write_all(s.as_bytes())

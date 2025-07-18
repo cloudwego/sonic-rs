@@ -437,77 +437,6 @@ mod test {
         test_from_slice!(Data, &br#"{"content":[1,2,3,4,5]}"#[..]);
     }
 
-    use std::{
-        fmt::{Formatter, Result as FmtResult},
-        result::Result as StdResult,
-    };
-
-    fn my_deseirlize_seq<'de, D>(deserializer: D) -> StdResult<(i64, i64), D::Error>
-    where
-        D: serde::de::Deserializer<'de>,
-    {
-        struct TupleVisitor;
-
-        impl<'de> serde::de::Visitor<'de> for TupleVisitor {
-            type Value = (i64, i64);
-
-            fn expecting(&self, formatter: &mut Formatter) -> FmtResult {
-                formatter.write_str("expect an array")
-            }
-
-            fn visit_seq<S>(self, mut seq: S) -> StdResult<Self::Value, S::Error>
-            where
-                S: serde::de::SeqAccess<'de>,
-            {
-                let x = seq
-                    .next_element::<i64>()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(0, &self))?;
-                let y = seq
-                    .next_element::<i64>()?
-                    .ok_or_else(|| serde::de::Error::invalid_length(1, &self))?;
-                Ok((x, y))
-            }
-        }
-
-        deserializer.deserialize_seq(TupleVisitor)
-    }
-
-    fn my_deseirlize_map<'de, D>(deserializer: D) -> StdResult<(String, i64), D::Error>
-    where
-        D: serde::de::Deserializer<'de>,
-    {
-        struct MapVisitor;
-
-        impl<'de> serde::de::Visitor<'de> for MapVisitor {
-            type Value = (String, i64);
-
-            fn expecting(&self, formatter: &mut Formatter) -> FmtResult {
-                formatter.write_str("expect an array")
-            }
-
-            fn visit_map<S>(self, mut map: S) -> StdResult<Self::Value, S::Error>
-            where
-                S: serde::de::MapAccess<'de>,
-            {
-                let x = map
-                    .next_key()?
-                    .ok_or_else(|| serde::de::Error::custom("miss a key"))?;
-                let y = map.next_value::<i64>()?;
-                Ok((x, y))
-            }
-        }
-
-        deserializer.deserialize_map(MapVisitor)
-    }
-
-    #[derive(serde::Deserialize, Debug, Eq, PartialEq)]
-    struct MyTuple {
-        #[serde(deserialize_with = "my_deseirlize_seq")]
-        seq: (i64, i64),
-        #[serde(deserialize_with = "my_deseirlize_map")]
-        map: (String, i64),
-    }
-
     #[test]
     fn test_serde_invalid_utf8() {
         let json = r#""王先生""#;
@@ -736,5 +665,28 @@ mod test {
             eprintln!("{err}");
             assert!(err.is_syntax());
         }
+    }
+
+    #[test]
+    fn test_serialize_float_non_trailing_zero() {
+        use serde::Serialize;
+
+        #[derive(Serialize)]
+        struct FloatTest {
+            value: f64,
+        }
+
+        let test = FloatTest { value: 18.0 };
+        let json = to_string(&test).unwrap();
+
+        #[cfg(feature = "non_trailing_zero")]
+        assert_eq!(json, r#"{"value":18}"#);
+
+        #[cfg(not(feature = "non_trailing_zero"))]
+        assert_eq!(json, r#"{"value":18.0}"#);
+
+        let test = FloatTest { value: 18.1 };
+        let json = to_string(&test).unwrap();
+        assert_eq!(json, r#"{"value":18.1}"#);
     }
 }
