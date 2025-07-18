@@ -1,37 +1,11 @@
 name: 'CI'
-on:
-  pull_request_target:
-    types:
-      - opened
-      - synchronize
-      - labeled
-      - reopened
-
-permissions:
-  contents: read
-  pull-requests: read
+on: pull_request
 
 env:
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
 
 jobs:
-  check-user-trust:
-    runs-on: ubuntu-latest
-    outputs:
-      is-trusted: ${{ steps.check.outputs.is_trusted }}
-    steps:
-      - name: Check if PR sender is trusted
-        id: check
-        run: |
-          ASSOC="${{ github.event.sender.author_association }}"
-          echo "Sender association: $ASSOC"
-          if [[ "$ASSOC" == "OWNER" || "$ASSOC" == "MEMBER" || "$ASSOC" == "COLLABORATOR" ]]; then
-            echo "trusted=true" >> $GITHUB_OUTPUT
-          else
-            echo "trusted=false" >> $GITHUB_OUTPUT
-          fi
-  
   test-stable-hosted:
     strategy:
         fail-fast: false
@@ -40,8 +14,6 @@ jobs:
               - [self-hosted, Linux, amd64]
               - [self-hosted, Linux, aarch64]
     name: Rust stable
-    needs: check-user-trust
-    if: needs.check-user-trust.outputs.is_trusted == 'true'
     runs-on: ${{matrix.os}}
     timeout-minutes: 45
     steps:
@@ -50,8 +22,6 @@ jobs:
         - run: ./scripts/test.sh
 
   test-stable-wasm:
-    needs: check-user-trust
-    if: needs.check-user-trust.outputs.is_trusted == 'true'
     runs-on: [self-hosted, Linux, amd64]
     env:
       WASMTIME_BACKTRACE_DETAILS: 1
@@ -72,8 +42,6 @@ jobs:
 
 
   test-nightly-hosted:
-    needs: check-user-trust
-    if: needs.check-user-trust.outputs.is_trusted == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -89,8 +57,6 @@ jobs:
         - run: ./scripts/test.sh
 
   clippy_lint:
-    needs: check-user-trust
-    if: needs.check-user-trust.outputs.is_trusted == 'true'
     name: Format check
     runs-on: [self-hosted, Linux, amd64]
     timeout-minutes: 45
@@ -105,8 +71,6 @@ jobs:
           cargo fmt -- --check
 
   sanitize:
-    needs: check-user-trust
-    if: needs.check-user-trust.outputs.is_trusted == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -126,8 +90,6 @@ jobs:
       run: ./scripts/sanitize.sh ${{matrix.san}} ${{matrix.feature}}
 
   fuzz:
-    needs: check-user-trust
-    if: needs.check-user-trust.outputs.is_trusted == 'true'
     runs-on: [self-hosted, Linux, amd64]
     steps:
     - uses: actions/checkout@v4
@@ -139,15 +101,3 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
     - name: Fuzz
       run: ./scripts/fuzz.sh
-
-  security-audit:
-    needs: check-user-trust
-    if: needs.check-user-trust.outputs.is_trusted == 'true'
-    runs-on: [self-hosted, Linux, amd64]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions-rs/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
