@@ -28,9 +28,13 @@ pub trait RawFloat:
     + Copy
     + Debug
 {
+    #[allow(dead_code)]
     const INFINITY: Self;
+    #[allow(dead_code)]
     const NEG_INFINITY: Self;
+    #[allow(dead_code)]
     const NAN: Self;
+    #[allow(dead_code)]
     const NEG_NAN: Self;
 
     /// The number of bits in the significand, *excluding* the hidden bit.
@@ -58,13 +62,16 @@ pub trait RawFloat:
     const MAX_EXPONENT_ROUND_TO_EVEN: i32;
 
     // Minimum exponent that for a fast path case, or `-⌊(MANTISSA_EXPLICIT_BITS+1)/log2(5)⌋`
+    #[allow(dead_code)]
     const MIN_EXPONENT_FAST_PATH: i64;
 
     // Maximum exponent that for a fast path case, or `⌊(MANTISSA_EXPLICIT_BITS+1)/log2(5)⌋`
+    #[allow(dead_code)]
     const MAX_EXPONENT_FAST_PATH: i64;
 
     // Maximum exponent that can be represented for a disguised-fast path case.
     // This is `MAX_EXPONENT_FAST_PATH + ⌊(MANTISSA_EXPLICIT_BITS+1)/log2(10)⌋`
+    #[allow(dead_code)]
     const MAX_EXPONENT_DISGUISED_FAST_PATH: i64;
 
     // Minimum exponent value `-(1 << (EXP_BITS - 1)) + 1`.
@@ -74,6 +81,7 @@ pub trait RawFloat:
     const INFINITE_POWER: i32;
 
     // Index (in bits) of the sign.
+    #[allow(dead_code)]
     const SIGN_INDEX: usize;
 
     // Smallest decimal exponent for a non-zero value.
@@ -83,6 +91,7 @@ pub trait RawFloat:
     const LARGEST_POWER_OF_TEN: i32;
 
     // Maximum mantissa for the fast-path (`1 << 53` for f64).
+    #[allow(dead_code)]
     const MAX_MANTISSA_FAST_PATH: u64 = 2_u64 << Self::MANTISSA_EXPLICIT_BITS;
 
     /// Convert integer into float through an as cast.
