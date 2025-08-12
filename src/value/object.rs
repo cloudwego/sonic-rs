@@ -139,7 +139,7 @@ impl Object {
     /// ```
     #[inline]
     pub fn get<Q: AsRef<str>>(&self, key: &Q) -> Option<&Value> {
-        self.0.get_key(key.as_ref())
+        self.0.get_key_optimized(key.as_ref())
     }
 
     /// Returns `true` if the map contains a value for the specified key.
