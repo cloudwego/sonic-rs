@@ -4,7 +4,7 @@ use faststr::FastStr;
 pub type JsonPointer = [PointerNode];
 
 /// Represents a node in a json pointer path.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PointerNode {
     Key(FastStr),
     Index(usize),

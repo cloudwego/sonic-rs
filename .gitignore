@@ -12,3 +12,4 @@ Cargo.lock
 *.profdata
 *.svg
 *.diff
+.DS_Store
