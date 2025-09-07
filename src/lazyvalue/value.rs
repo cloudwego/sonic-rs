@@ -2,11 +2,9 @@ use std::{
     borrow::Cow,
     fmt::{self, Debug, Display},
     hash::Hash,
+    rc::Rc,
     str::from_utf8_unchecked,
-    sync::{
-        atomic::{AtomicPtr, Ordering},
-        Arc,
-    },
+    sync::atomic::{AtomicPtr, Ordering},
 };
 
 use faststr::FastStr;
@@ -142,7 +140,7 @@ impl Inner {
 
         unsafe {
             let parsed: String = crate::from_slice_unchecked(raw).ok()?;
-            let parsed = Arc::into_raw(Arc::new(parsed)) as *mut ();
+            let parsed = Rc::into_raw(Rc::new(parsed)) as *mut ();
             match self.unescaped.compare_exchange_weak(
                 ptr,
                 parsed,
@@ -151,7 +149,7 @@ impl Inner {
             ) {
                 Ok(_) => Some(&*(parsed as *const String)),
                 Err(e) => {
-                    Arc::decrement_strong_count(parsed);
+                    Rc::decrement_strong_count(parsed);
                     Some(&*(e as *const String))
                 }
             }
@@ -173,7 +171,7 @@ impl Clone for Inner {
             // possible is parsing
             let ptr = self.unescaped.load(Ordering::Acquire);
             if !ptr.is_null() {
-                unsafe { Arc::increment_strong_count(ptr as *const String) };
+                unsafe { Rc::increment_strong_count(ptr as *const String) };
             }
             ptr
         } else {
@@ -210,7 +208,7 @@ impl Drop for Inner {
 
         let ptr = self.unescaped.load(Ordering::Acquire);
         if !ptr.is_null() {
-            unsafe { Arc::decrement_strong_count(ptr as *const String) };
+            unsafe { Rc::decrement_strong_count(ptr as *const String) };
         }
     }
 }

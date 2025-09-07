@@ -6,9 +6,9 @@ use std::{
     fmt::{Debug, Display, Formatter},
     mem::{transmute, ManuallyDrop},
     ptr::NonNull,
+    rc::Rc,
     slice::from_raw_parts,
     str::from_utf8_unchecked,
-    sync::Arc,
 };
 
 #[cfg(not(feature = "sort_keys"))]
@@ -102,14 +102,14 @@ pub struct Value {
 // |  static str  |   0    |   8    |                   |           string length        +          *const u8            | excced will fallback |
 // |   faststr    |   1    |   0    |                                                    +         Box<FastStr>          |                      |
 // |rawnum_faststr|   1    |   1    |                                                    +         Box<FastStr>          |                      |
-// |   arr_mut    |   1    |   2    |                                                    +        Arc<Vec<Node>>         |                      |
-// |   obj_mut    |   1    |   3    |                                                    + Arc<AHashMap<FastStr, Value>> |                      |
+// |   arr_mut    |   1    |   2    |                                                    +         Rc<Vec<Node>>         |                      |
+// |   obj_mut    |   1    |   3    |                                                    +  Rc<AHashMap<FastStr, Value>> |                      |
 // |   str_node   |   2    |        node idx            |           string length        +          *const u8            |    max len 2^32      |
 // | raw_num_node |   3    |        node idx            |           string length        +          *const u8            |    max len 2^32      |
 // |   arr_node   |   4    |        node idx            |           array length         +          *const Node          |    max len 2^32      |
 // |   obj_node   |   5    |        node idx            |           object length        +          *const Pair          |    max len 2^32      |
 // |   _reserved  |   6    |
-// |  root_node   |   7    |      *const ShardDom (from Arc, MUST aligned 8)             +      *const Node (head)       |                      |
+// |  root_node   |   7    |       *const ShardDom (from Rc, MUST aligned 8)             +      *const Node (head)       |                      |
 //
 // NB: we will check the JSON length when parsing, if JSON is >= 4GB, will return a error, so we will not check the limits when parsing or using dom.
 #[allow(clippy::box_collection)]
@@ -128,10 +128,10 @@ pub(crate) union Data {
 
     pub(crate) str_own: ManuallyDrop<Box<FastStr>>,
     #[cfg(not(feature = "sort_keys"))]
-    pub(crate) obj_own: ManuallyDrop<Arc<AHashMap<FastStr, Value>>>,
+    pub(crate) obj_own: ManuallyDrop<Rc<AHashMap<FastStr, Value>>>,
     #[cfg(feature="sort_keys")]
-    pub(crate) obj_own: ManuallyDrop<Arc<BTreeMap<FastStr, Value>>>,
-    pub(crate) arr_own: ManuallyDrop<Arc<Vec<Value>>>,
+    pub(crate) obj_own: ManuallyDrop<Rc<BTreeMap<FastStr, Value>>>,
+    pub(crate) arr_own: ManuallyDrop<Rc<Vec<Value>>>,
 
     pub(crate) parent: u64,
 }
@@ -203,7 +203,7 @@ impl Meta {
     }
 
     fn pack_shared(ptr: *const Shared) -> Self {
-        unsafe { Arc::increment_strong_count(ptr) };
+        unsafe { Rc::increment_strong_count(ptr) };
         let addr = ptr as usize as u64;
         let val = addr | Self::ROOT_NODE;
         Self { val }
@@ -331,11 +331,11 @@ enum ValueDetail<'a> {
     StaticStr(&'static str),
     FastStr(&'a FastStr),
     RawNumFasStr(&'a FastStr),
-    Array(&'a Arc<Vec<Value>>),
+    Array(&'a Rc<Vec<Value>>),
     #[cfg(not(feature = "sort_keys"))]
-    Object(&'a Arc<AHashMap<FastStr, Value>>),
+    Object(&'a Rc<AHashMap<FastStr, Value>>),
     #[cfg(feature = "sort_keys")]
-    Object(&'a Arc<BTreeMap<FastStr, Value>>),
+    Object(&'a Rc<BTreeMap<FastStr, Value>>),
     Root(NodeInDom<'a>),
     NodeInDom(NodeInDom<'a>),
     EmptyArray,
@@ -382,9 +382,9 @@ pub enum ValueRefInner<'a> {
     Array(&'a [Value]),
     Object(&'a [Pair]),
     #[cfg(not(feature = "sort_keys"))]
-    ObjectOwned(&'a Arc<AHashMap<FastStr, Value>>),
+    ObjectOwned(&'a Rc<AHashMap<FastStr, Value>>),
     #[cfg(feature = "sort_keys")]
-    ObjectOwned(&'a Arc<BTreeMap<FastStr, Value>>),
+    ObjectOwned(&'a Rc<BTreeMap<FastStr, Value>>),
     EmptyArray,
     EmptyObject,
 }
@@ -405,7 +405,7 @@ impl<'a> From<&'a [Pair]> for Value {
         Self {
             meta: Meta::new(Meta::OBJ_MUT),
             data: Data {
-                obj_own: ManuallyDrop::new(Arc::new(newd)),
+                obj_own: ManuallyDrop::new(Rc::new(newd)),
             },
         }
     }
@@ -423,7 +423,7 @@ impl Drop for Value {
                 Meta::OBJ_MUT => ManuallyDrop::drop(&mut self.data.obj_own),
                 Meta::ROOT_NODE => {
                     let dom = self.meta.unpack_root();
-                    drop(Arc::from_raw(dom));
+                    drop(Rc::from_raw(dom));
                 }
                 _ => unreachable!("should not be dropped"),
             }
@@ -460,8 +460,8 @@ impl Value {
             Meta::F64 | Meta::I64 | Meta::U64 => ValueMut::Number,
             Meta::STATIC_STR | Meta::STR_NODE | Meta::FASTSTR => ValueMut::Str,
             Meta::RAWNUM_FASTSTR | Meta::RAWNUM_NODE => ValueMut::RawNum,
-            Meta::ARR_MUT => ValueMut::Array(unsafe { Arc::make_mut(&mut self.data.arr_own) }),
-            Meta::OBJ_MUT => ValueMut::Object(unsafe { Arc::make_mut(&mut self.data.obj_own) }),
+            Meta::ARR_MUT => ValueMut::Array(unsafe { Rc::make_mut(&mut self.data.arr_own) }),
+            Meta::OBJ_MUT => ValueMut::Object(unsafe { Rc::make_mut(&mut self.data.obj_own) }),
             Meta::ROOT_NODE | Meta::EMPTY_ARR | Meta::EMPTY_OBJ => {
                 /* convert to mutable */
                 self.to_mut();
@@ -599,8 +599,8 @@ impl Clone for Value {
     }
 }
 
-impl From<Arc<Vec<Value>>> for Value {
-    fn from(value: Arc<Vec<Value>>) -> Self {
+impl From<Rc<Vec<Value>>> for Value {
+    fn from(value: Rc<Vec<Value>>) -> Self {
         Self {
             meta: Meta::new(Meta::ARR_MUT),
             data: Data {
@@ -611,8 +611,8 @@ impl From<Arc<Vec<Value>>> for Value {
 }
 
 #[cfg(not(feature = "sort_keys"))]
-impl From<Arc<AHashMap<FastStr, Value>>> for Value {
-    fn from(value: Arc<AHashMap<FastStr, Value>>) -> Self {
+impl From<Rc<AHashMap<FastStr, Value>>> for Value {
+    fn from(value: Rc<AHashMap<FastStr, Value>>) -> Self {
         Self {
             meta: Meta::new(Meta::OBJ_MUT),
             data: Data {
@@ -623,8 +623,8 @@ impl From<Arc<AHashMap<FastStr, Value>>> for Value {
 }
 
 #[cfg(feature = "sort_keys")]
-impl From<Arc<BTreeMap<FastStr, Value>>> for Value {
-    fn from(value: Arc<BTreeMap<FastStr, Value>>) -> Self {
+impl From<Rc<BTreeMap<FastStr, Value>>> for Value {
+    fn from(value: Rc<BTreeMap<FastStr, Value>>) -> Self {
         Self {
             meta: Meta::new(Meta::OBJ_MUT),
             data: Data {
@@ -1006,7 +1006,7 @@ impl Value {
     #[doc(hidden)]
     #[inline]
     pub fn new_array_with(capacity: usize) -> Self {
-        let arr_own = ManuallyDrop::new(Arc::new(Vec::<Value>::with_capacity(capacity)));
+        let arr_own = ManuallyDrop::new(Rc::new(Vec::<Value>::with_capacity(capacity)));
         Value {
             meta: Meta::new(Meta::ARR_MUT),
             data: Data { arr_own },
@@ -1118,7 +1118,7 @@ impl Value {
         #[cfg(not(feature = "sort_keys"))] capacity: usize,
         #[cfg(feature = "sort_keys")] _: usize,
     ) -> Self {
-        let obj_own = ManuallyDrop::new(Arc::new(
+        let obj_own = ManuallyDrop::new(Rc::new(
             #[cfg(not(feature = "sort_keys"))]
             AHashMap::with_capacity(capacity),
             #[cfg(feature = "sort_keys")]
@@ -1306,13 +1306,13 @@ impl Value {
     #[inline(never)]
     pub(crate) fn parse_with_padding(&mut self, json: &[u8], cfg: DeserializeCfg) -> Result<usize> {
         // allocate the padding buffer for the input json
-        let mut shared = Arc::new(Shared::default());
+        let mut shared = Rc::new(Shared::default());
         let mut buffer = Vec::with_capacity(json.len() + Self::PADDING_SIZE);
         buffer.extend_from_slice(json);
         buffer.extend_from_slice(&b"x\"x"[..]);
         buffer.extend_from_slice(&[0; 61]);
 
-        let smut = Arc::get_mut(&mut shared).unwrap();
+        let smut = Rc::get_mut(&mut shared).unwrap();
         let slice = PaddedSliceRead::new(buffer.as_mut_slice(), json);
         let mut parser = Parser::new(slice).with_config(cfg);
         let mut vis = DocumentVisitor::new(json.len(), smut);

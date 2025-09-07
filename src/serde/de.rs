@@ -1,7 +1,7 @@
 //! Deserialize JSON data to a Rust data structure.
 
 // The code is cloned from [serde_json](https://github.com/serde-rs/json) and modified necessary parts.
-use std::{marker::PhantomData, mem::ManuallyDrop, ptr::slice_from_raw_parts, sync::Arc};
+use std::{marker::PhantomData, mem::ManuallyDrop, ptr::slice_from_raw_parts, rc::Rc};
 
 use serde::{
     de::{self, Expected, Unexpected},
@@ -29,7 +29,7 @@ pub struct Deserializer<R> {
     pub(crate) parser: Parser<R>,
     scratch: Vec<u8>,
     remaining_depth: u8,
-    shared: Option<Arc<Shared>>, // the shared allocator for `Value`
+    shared: Option<Rc<Shared>>, // the shared allocator for `Value`
 }
 
 // some functions only used for struct visitors.
@@ -389,10 +389,10 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         } else {
             let shared = unsafe {
                 if self.shared.is_none() {
-                    self.shared = Some(Arc::new(Shared::default()));
+                    self.shared = Some(Rc::new(Shared::default()));
                 }
                 let shared = self.shared.as_mut().unwrap();
-                &mut *(Arc::as_ptr(shared) as *mut _)
+                &mut *(Rc::as_ptr(shared) as *mut _)
             };
             // deserialize some json parts into `Value`, not use padding buffer, avoid the memory
             // copy
