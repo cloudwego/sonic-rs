@@ -354,11 +354,6 @@ mod test {
             "Invalid UTF-8 characters in json at line 1 column 5\n\n\t\"\0\0\0��\"\n\t....^..\n"
         );
 
-        #[derive(Debug, Deserialize, Serialize, PartialEq)]
-        struct TestStruct {
-            char_: char,
-        }
-
         // char's deserialize will iterator on the `str`
         let data = [34, 255, 34];
         let value: crate::Result<char> = from_slice(&data);
