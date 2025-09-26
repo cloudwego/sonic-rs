@@ -62,5 +62,9 @@ name    = "get_from"
 harness = false
 name    = "value_operator"
 
+[[bench]]
+harness = false
+name    = "object_get_optimization"
+
 [features]
 default = []
