@@ -154,9 +154,7 @@ impl serde::Serializer for Serializer {
         if value.is_finite() {
             Ok(unsafe { Value::new_f64_unchecked(value as f64) })
         } else {
-            Err(key_must_be_str_or_num(Unexpected::Other(
-                "NaN or Infinite f32",
-            )))
+            Ok(Value::new_null())
         }
     }
 
@@ -165,9 +163,7 @@ impl serde::Serializer for Serializer {
         if value.is_finite() {
             Ok(unsafe { Value::new_f64_unchecked(value) })
         } else {
-            Err(key_must_be_str_or_num(Unexpected::Other(
-                "NaN or Infinite f64",
-            )))
+            Ok(Value::new_null())
         }
     }
 
@@ -946,5 +942,13 @@ mod test {
         value["arr"][2] = to_value(&args).unwrap_or_default();
 
         assert_eq!(value["arr"][2]["app_name"].as_str(), Some("test"));
+    }
+
+    #[test]
+    fn test_inf_or_nan_to_value() {
+        assert_eq!(to_value(&f64::INFINITY).unwrap(), Value::new_null());
+        assert_eq!(to_value(&f64::NAN).unwrap(), Value::new_null());
+        assert_eq!(to_value(&f32::INFINITY).unwrap(), Value::new_null());
+        assert_eq!(to_value(&f32::NAN).unwrap(), Value::new_null());
     }
 }

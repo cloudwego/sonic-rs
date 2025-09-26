@@ -26,8 +26,8 @@ fn main() {
     let iter = unsafe { to_object_iter_unchecked(&json) };
     for ret in iter {
         // deal with errors
-        if ret.is_err() {
-            println!("{}", ret.unwrap_err());
+        if let Err(e) = ret {
+            println!("{}", e);
             return;
         }
 
