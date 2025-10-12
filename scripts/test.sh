@@ -12,6 +12,8 @@ cargo test --features utf8_lossy
 
 cargo test --features non_trailing_zero
 
+cargo test --features avx512
+
 examples=$(cargo build --example 2>&1 | grep -v ":")
 
 for example in $examples; do

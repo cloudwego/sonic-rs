@@ -31,9 +31,15 @@ cfg_if::cfg_if! {
 
 pub use self::traits::{BitMask, Mask, Simd};
 // pick v512 simd
-// TODO: support avx512?
-mod v512;
-use self::v512::*;
+cfg_if::cfg_if! {
+    if #[cfg(all(target_feature = "avx512f", feature = "avx512"))] {
+        mod avx512;
+        use self::avx512::*;
+    } else {
+        mod v512;
+        use self::v512::*;
+    }
+}
 
 pub type u8x16 = Simd128u;
 pub type u8x32 = Simd256u;

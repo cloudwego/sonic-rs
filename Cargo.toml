@@ -58,3 +58,6 @@ sanitize = []
 # Serialize floating point numbers without trailing zeros if the float can be represented as an integer without loss of precision.
 # For example, `18.0` will be serialized as `18` instead of `18.0`.
 non_trailing_zero = []
+
+# Enable avx512, requires Rust 1.89 or later, and also enable `avx512f` target feature
+avx512 = ["sonic-simd/avx512"]
