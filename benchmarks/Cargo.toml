@@ -1,5 +1,5 @@
 [package]
-edition = "2021"
+edition = "2024"
 name    = "json_benchmarks"
 version = "0.1.0"
 
@@ -23,16 +23,16 @@ jemallocator = "0.5"
 
 [dev-dependencies]
 core_affinity = "0.8"
-criterion     = { version = "0.5", features = ["html_reports"] }
+criterion     = { version = "0.7", features = ["html_reports"] }
 encoding_rs   = "0.8"
 gjson         = "0.8"
 serde         = { version = "1.0", features = ["rc", "derive"] }
 serde_derive  = "1.0"
 serde_json    = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
-simd-json     = "0.14"
+simd-json     = "0.17"
 sonic-rs      = { path = "../" }
 # This schema are used in benches and copied from https://github.com/serde-rs/json-benchmark
-bytes       = { version = "1.4", features = ["serde"] }
+bytes       = { version = "1.10", features = ["serde"] }
 chrono      = { version = "0.4", features = ["serde"] }
 paste       = "1.0"
 schema      = { path = "benches/schema" }
