@@ -1,14 +1,17 @@
 use core::mem::size_of;
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::*;
 #[cfg(feature = "sort_keys")]
 use std::collections::BTreeMap;
 use std::{
     alloc::Layout,
+    collections::HashMap,
     fmt::{Debug, Display, Formatter},
     mem::{transmute, ManuallyDrop},
     ptr::NonNull,
     slice::from_raw_parts,
     str::from_utf8_unchecked,
-    sync::Arc,
+    sync::{Arc, LazyLock, Mutex},
 };
 
 #[cfg(not(feature = "sort_keys"))]
@@ -16,6 +19,14 @@ use ahash::AHashMap;
 use faststr::FastStr;
 use ref_cast::RefCast;
 use serde::ser::{Serialize, SerializeMap, SerializeSeq};
+
+// Type aliases to reduce complexity
+type HashIndex = HashMap<String, usize>;
+type CacheEntry = (HashIndex, u32);
+type HashIndexCache = HashMap<usize, CacheEntry>;
+
+static HASH_INDEX_CACHE: LazyLock<Mutex<HashIndexCache>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 use super::{
     object::Pair,
@@ -1155,6 +1166,11 @@ impl Value {
         self.get_key_value(key).map(|(_, v)| v)
     }
 
+    #[inline]
+    pub(crate) fn get_key_optimized(&self, key: &str) -> Option<&Self> {
+        self.get_key_value_optimized(key).map(|(_, v)| v)
+    }
+
     pub(crate) fn get_key_value(&self, key: &str) -> Option<(&str, &Self)> {
         debug_assert!(self.is_object());
         let ref_inner = self.as_ref2();
@@ -1168,6 +1184,217 @@ impl Value {
         } else if let ValueRefInner::ObjectOwned(kv) = ref_inner {
             if let Some((k, v)) = kv.get_key_value(key) {
                 return Some((k.as_str(), v));
+            }
+        }
+        None
+    }
+
+    /// Optimized key-value lookup with multi-level adaptive strategies
+    pub(crate) fn get_key_value_optimized(&self, key: &str) -> Option<(&str, &Self)> {
+        debug_assert!(self.is_object());
+        let ref_inner = self.as_ref2();
+
+        if let ValueRefInner::Object(pairs) = ref_inner {
+            let len = pairs.len();
+
+            // Multi-level adaptive optimization strategy
+            match len {
+                0 => None,
+                1..=7 => {
+                    // Small objects: Optimized linear search
+                    self.linear_search_small(key, pairs)
+                }
+                8..=31 => {
+                    // Medium objects: SIMD-accelerated linear search
+                    self.simd_search_optimized(key, pairs)
+                }
+                _ => {
+                    // Large objects: Hash index + cache
+                    self.large_object_search_with_hash(key, pairs)
+                }
+            }
+        } else if let ValueRefInner::ObjectOwned(kv) = ref_inner {
+            // For owned objects, use the existing hash map lookup
+            if let Some((k, v)) = kv.get_key_value(key) {
+                return Some((k.as_str(), v));
+            }
+            None
+        } else {
+            None
+        }
+    }
+
+    /// Hash index search for large objects (> 32 keys)
+    fn large_object_search_with_hash<'a>(
+        &self,
+        key: &str,
+        pairs: &'a [(Value, Value)],
+    ) -> Option<(&'a str, &'a Self)> {
+        let pairs_ptr = pairs.as_ptr() as usize;
+
+        // Try to get or build hash index
+        if let Ok(mut cache) = HASH_INDEX_CACHE.lock() {
+            let entry = cache.entry(pairs_ptr).or_insert_with(|| {
+                // Build hash index for this object
+                let mut hash_index = HashMap::with_capacity(pairs.len());
+                for (i, (k, _)) in pairs.iter().enumerate() {
+                    if let Some(k_str) = k.as_str() {
+                        // For duplicate keys, keep the first occurrence (consistent with linear search)
+                        hash_index.entry(k_str.to_string()).or_insert(i);
+                    }
+                }
+                (hash_index, 1) // (hash_index, access_count)
+            });
+
+            // Increment access count
+            entry.1 += 1;
+
+            // Use hash index for lookup
+            if let Some(&index) = entry.0.get(key) {
+                if index < pairs.len() {
+                    if let Some(k_str) = pairs[index].0.as_str() {
+                        if k_str == key {
+                            return Some((k_str, &pairs[index].1));
+                        }
+                    }
+                }
+            }
+
+            // Clean up cache if it gets too large (simple LRU-like cleanup)
+            if cache.len() > 100 {
+                cache.retain(|_, (_, access_count)| *access_count > 1);
+                for (_, access_count) in cache.values_mut() {
+                    *access_count = (*access_count).saturating_sub(1);
+                }
+            }
+        }
+
+        // Fallback to SIMD search if hash index fails
+        self.simd_search_optimized(key, pairs)
+    }
+
+    /// Optimized linear search for small objects
+    #[inline]
+    fn linear_search_small<'a>(
+        &self,
+        key: &str,
+        pairs: &'a [(Value, Value)],
+    ) -> Option<(&'a str, &'a Self)> {
+        let key_len = key.len();
+
+        // Length pre-check optimization for small objects
+        for (k, v) in pairs {
+            if let Some(k_str) = k.as_str() {
+                // Length pre-check before string comparison
+                if k_str.len() == key_len && k_str == key {
+                    return Some((k_str, v));
+                }
+            }
+        }
+        None
+    }
+
+    /// SIMD-accelerated search for medium and large objects
+    #[inline]
+    fn simd_search_optimized<'a>(
+        &self,
+        key: &str,
+        pairs: &'a [(Value, Value)],
+    ) -> Option<(&'a str, &'a Self)> {
+        let key_bytes = key.as_bytes();
+
+        // Try SIMD optimization for longer keys
+        if key_bytes.len() >= 16 {
+            if let Some(result) = self.simd_string_compare(key, pairs) {
+                return Some(result);
+            }
+        }
+
+        // Fallback to optimized linear search
+        self.linear_search_optimized(key, pairs)
+    }
+
+    /// SIMD string comparison for keys >= 16 bytes
+    #[cfg(target_arch = "x86_64")]
+    fn simd_string_compare<'a>(
+        &self,
+        key: &str,
+        pairs: &'a [(Value, Value)],
+    ) -> Option<(&'a str, &'a Self)> {
+        if !is_x86_feature_detected!("sse2") {
+            return None;
+        }
+
+        let key_bytes = key.as_bytes();
+        let key_len = key_bytes.len();
+
+        unsafe {
+            // Load first 16 bytes of key for SIMD comparison
+            let key_vec = if key_len >= 16 {
+                _mm_loadu_si128(key_bytes.as_ptr() as *const __m128i)
+            } else {
+                // Pad with zeros for shorter keys
+                let mut padded = [0u8; 16];
+                padded[..key_len].copy_from_slice(key_bytes);
+                _mm_loadu_si128(padded.as_ptr() as *const __m128i)
+            };
+
+            for (k, v) in pairs {
+                if let Some(k_str) = k.as_str() {
+                    let k_bytes = k_str.as_bytes();
+
+                    // Quick length check
+                    if k_bytes.len() != key_len {
+                        continue;
+                    }
+
+                    if k_bytes.len() >= 16 {
+                        // SIMD comparison for first 16 bytes
+                        let k_vec = _mm_loadu_si128(k_bytes.as_ptr() as *const __m128i);
+                        let cmp = _mm_cmpeq_epi8(key_vec, k_vec);
+                        let mask = _mm_movemask_epi8(cmp);
+
+                        if mask == 0xFFFF {
+                            // First 16 bytes match, check remaining bytes
+                            if key_len <= 16 || key_bytes[16..] == k_bytes[16..] {
+                                return Some((k_str, v));
+                            }
+                        }
+                    } else if key_bytes == k_bytes {
+                        return Some((k_str, v));
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Fallback SIMD implementation for non-x86_64 architectures
+    #[cfg(not(target_arch = "x86_64"))]
+    fn simd_string_compare<'a>(
+        &self,
+        _key: &str,
+        _pairs: &'a [(Value, Value)],
+    ) -> Option<(&'a str, &'a Self)> {
+        None
+    }
+
+    /// Optimized linear search with length pre-check
+    #[inline]
+    fn linear_search_optimized<'a>(
+        &self,
+        key: &str,
+        pairs: &'a [(Value, Value)],
+    ) -> Option<(&'a str, &'a Self)> {
+        let key_len = key.len();
+
+        for (k, v) in pairs {
+            if let Some(k_str) = k.as_str() {
+                // Length pre-check before string comparison
+                if k_str.len() == key_len && k_str == key {
+                    return Some((k_str, v));
+                }
             }
         }
         None

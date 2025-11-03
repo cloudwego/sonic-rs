@@ -879,7 +879,7 @@ mod test {
 
     #[test]
     fn test_to_value() {
-        use crate::{json, to_value, Value};
+        use crate::{to_value, Value};
 
         let user = User {
             string: "hello".into(),
