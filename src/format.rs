@@ -8,7 +8,7 @@ use crate::{serde::tri, util::string::format_string, writer::WriteExt};
 
 /// This trait abstracts away serializing the JSON control characters, which allows the user to
 /// optionally pretty print the JSON output.
-pub trait Formatter {
+pub trait Formatter: Clone {
     /// Writes a `null` value to the specified writer.
     #[inline]
     fn write_null<W>(&mut self, writer: &mut W) -> io::Result<()>

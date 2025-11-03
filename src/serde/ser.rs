@@ -6,16 +6,17 @@ use core::{
     fmt::{self, Display},
     num::FpCategory,
 };
-use std::io;
+use std::{io, str};
 
 use faststr::FastStr;
 use serde::{
     de::Unexpected,
-    ser::{self, Impossible, Serialize},
+    ser::{self, Impossible, Serialize, Serializer as SerdeSerializer},
 };
 
 use super::de::tri;
 use crate::{
+    config::SerializeCfg,
     error::{Error, ErrorCode, Result},
     format::{CompactFormatter, Formatter, PrettyFormatter},
     lazyvalue::value::HasEsc,
@@ -28,6 +29,7 @@ pub struct Serializer<W, F = CompactFormatter> {
     formatter: F,
     // TODO: record has_escape to optimize lazyvalue
     // has_escape: bool,
+    cfg: SerializeCfg,
 }
 
 impl<W> Serializer<W>
@@ -61,7 +63,33 @@ where
     /// specified.
     #[inline]
     pub fn with_formatter(writer: W, formatter: F) -> Self {
-        Serializer { writer, formatter }
+        Serializer {
+            writer,
+            formatter,
+            cfg: SerializeCfg::default(),
+        }
+    }
+
+    /// Enable sorting map keys before serialization.
+    /// 
+    /// # Examples
+    /// ```
+    /// use serde::Serialize;
+    /// use sonic_rs::{Serializer, json};
+    /// let mut ser = Serializer::new(Vec::new()).sort_map_keys();
+    /// let value = json!({"b": 1, "a": 2, "c": 3});
+    /// value.serialize(&mut ser).unwrap();
+    /// assert_eq!(ser.into_inner(), br#"{"a":2,"b":1,"c":3}"#);
+    /// ```
+    #[inline]
+    pub fn sort_map_keys(mut self) -> Self {
+        self.cfg.sort_map_keys = true;
+        self
+    }
+
+    pub(crate) fn with_cfg(mut self, cfg: SerializeCfg) -> Self {
+        self.cfg = cfg;
+        self
     }
 
     /// Unwrap the `Writer` from the `Serializer`.
@@ -74,7 +102,7 @@ where
 impl<'a, W, F> ser::Serializer for &'a mut Serializer<W, F>
 where
     W: WriteExt,
-    F: Formatter,
+    F: Formatter + Clone,
 {
     type Ok = ();
     type Error = Error;
@@ -309,12 +337,12 @@ where
                 .map_err(Error::io));
             Ok(Compound::Map {
                 ser: self,
-                state: State::Empty,
+                state: MapState::Stream(State::Empty),
             })
         } else {
             Ok(Compound::Map {
                 ser: self,
-                state: State::First,
+                state: MapState::Stream(State::First),
             })
         }
     }
@@ -367,19 +395,27 @@ where
             .formatter
             .begin_object(&mut self.writer)
             .map_err(Error::io));
-        if len == Some(0) {
+        if self.cfg.sort_map_keys {
+            Ok(Compound::Map {
+                ser: self,
+                state: MapState::Sorted {
+                    entries: Vec::with_capacity(len.unwrap_or(0)),
+                    next_key: None,
+                },
+            })
+        } else if len == Some(0) {
             tri!(self
                 .formatter
                 .end_object(&mut self.writer)
                 .map_err(Error::io));
             Ok(Compound::Map {
                 ser: self,
-                state: State::Empty,
+                state: MapState::Stream(State::Empty),
             })
         } else {
             Ok(Compound::Map {
                 ser: self,
-                state: State::First,
+                state: MapState::Stream(State::First),
             })
         }
     }
@@ -492,12 +528,63 @@ pub enum State {
 pub enum Compound<'a, W: 'a, F: 'a> {
     Map {
         ser: &'a mut Serializer<W, F>,
-        state: State,
+        state: MapState,
     },
 
     RawValue {
         ser: &'a mut Serializer<W, F>,
     },
+}
+
+pub enum MapState {
+    Stream(State),
+    Sorted {
+        entries: Vec<(String, Vec<u8>)>,
+        next_key: Option<String>,
+    },
+}
+
+fn write_sorted_entries<W, F>(
+    ser: &mut Serializer<W, F>,
+    mut entries: Vec<(String, Vec<u8>)>,
+) -> Result<()>
+where
+    W: WriteExt,
+    F: Formatter,
+{
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut first = true;
+    for (key, value_buf) in entries.into_iter() {
+        tri!(ser
+            .formatter
+            .begin_object_key(&mut ser.writer, first)
+            .map_err(Error::io));
+        first = false;
+
+        tri!(SerdeSerializer::serialize_str(&mut *ser, &key));
+
+        tri!(ser
+            .formatter
+            .end_object_key(&mut ser.writer)
+            .map_err(Error::io));
+
+        tri!(ser
+            .formatter
+            .begin_object_value(&mut ser.writer)
+            .map_err(Error::io));
+        let raw = unsafe { str::from_utf8_unchecked(&value_buf) };
+        tri!(ser
+            .formatter
+            .write_raw_value(&mut ser.writer, raw)
+            .map_err(Error::io));
+        tri!(ser
+            .formatter
+            .end_object_value(&mut ser.writer)
+            .map_err(Error::io));
+    }
+
+    ser.formatter.end_object(&mut ser.writer).map_err(Error::io)
 }
 
 impl<'a, W, F> ser::SerializeSeq for Compound<'a, W, F>
@@ -514,17 +601,21 @@ where
         T: ?Sized + Serialize,
     {
         match self {
-            Compound::Map { ser, state } => {
-                tri!(ser
-                    .formatter
-                    .begin_array_value(&mut ser.writer, *state == State::First)
-                    .map_err(Error::io));
-                *state = State::Rest;
-                tri!(value.serialize(&mut **ser));
-                ser.formatter
-                    .end_array_value(&mut ser.writer)
-                    .map_err(Error::io)
-            }
+            Compound::Map { ser, state } => match state {
+                MapState::Stream(ref mut map_state) => {
+                    tri!(ser
+                        .formatter
+                        .begin_array_value(&mut ser.writer, *map_state == State::First)
+                        .map_err(Error::io));
+                    *map_state = State::Rest;
+                    tri!(value.serialize(&mut **ser));
+                    ser.formatter
+                        .end_array_value(&mut ser.writer)
+                        .map_err(Error::io)
+                }
+
+                MapState::Sorted { .. } => unreachable!(),
+            },
 
             Compound::RawValue { .. } => unreachable!(),
         }
@@ -534,8 +625,12 @@ where
     fn end(self) -> Result<()> {
         match self {
             Compound::Map { ser, state } => match state {
-                State::Empty => Ok(()),
-                _ => ser.formatter.end_array(&mut ser.writer).map_err(Error::io),
+                MapState::Stream(map_state) => match map_state {
+                    State::Empty => Ok(()),
+                    _ => ser.formatter.end_array(&mut ser.writer).map_err(Error::io),
+                },
+
+                MapState::Sorted { .. } => unreachable!(),
             },
 
             Compound::RawValue { .. } => unreachable!(),
@@ -606,17 +701,24 @@ where
     #[inline]
     fn end(self) -> Result<()> {
         match self {
-            Compound::Map { ser, state } => {
-                match state {
-                    State::Empty => {}
-                    _ => tri!(ser.formatter.end_array(&mut ser.writer).map_err(Error::io)),
+            Compound::Map { ser, state } => match state {
+                MapState::Stream(map_state) => {
+                    match map_state {
+                        State::Empty => {}
+                        _ => tri!(ser.formatter.end_array(&mut ser.writer).map_err(Error::io)),
+                    }
+                    tri!(ser
+                        .formatter
+                        .end_object_value(&mut ser.writer)
+                        .map_err(Error::io));
+                    ser.formatter.end_object(&mut ser.writer).map_err(Error::io)
                 }
-                tri!(ser
-                    .formatter
-                    .end_object_value(&mut ser.writer)
-                    .map_err(Error::io));
-                ser.formatter.end_object(&mut ser.writer).map_err(Error::io)
-            }
+
+                MapState::Sorted { entries, next_key } => {
+                    debug_assert!(next_key.is_none());
+                    write_sorted_entries(ser, entries)
+                }
+            },
 
             Compound::RawValue { .. } => unreachable!(),
         }
@@ -626,7 +728,7 @@ where
 impl<'a, W, F> ser::SerializeMap for Compound<'a, W, F>
 where
     W: WriteExt,
-    F: Formatter,
+    F: Formatter + Clone,
 {
     type Ok = ();
     type Error = Error;
@@ -637,19 +739,27 @@ where
         T: ?Sized + Serialize,
     {
         match self {
-            Compound::Map { ser, state } => {
-                tri!(ser
-                    .formatter
-                    .begin_object_key(&mut ser.writer, *state == State::First)
-                    .map_err(Error::io));
-                *state = State::Rest;
+            Compound::Map { ser, state } => match state {
+                MapState::Stream(ref mut map_state) => {
+                    tri!(ser
+                        .formatter
+                        .begin_object_key(&mut ser.writer, *map_state == State::First)
+                        .map_err(Error::io));
+                    *map_state = State::Rest;
 
-                tri!(key.serialize(MapKeySerializer { ser: *ser }));
+                    tri!(key.serialize(MapKeySerializer { ser: *ser }));
 
-                ser.formatter
-                    .end_object_key(&mut ser.writer)
-                    .map_err(Error::io)
-            }
+                    ser.formatter
+                        .end_object_key(&mut ser.writer)
+                        .map_err(Error::io)
+                }
+
+                MapState::Sorted { next_key, .. } => {
+                    let key_str = tri!(key.serialize(SortedKeySerializer));
+                    *next_key = Some(key_str);
+                    Ok(())
+                }
+            },
 
             Compound::RawValue { .. } => unreachable!(),
         }
@@ -661,16 +771,32 @@ where
         T: ?Sized + Serialize,
     {
         match self {
-            Compound::Map { ser, .. } => {
-                tri!(ser
-                    .formatter
-                    .begin_object_value(&mut ser.writer)
-                    .map_err(Error::io));
-                tri!(value.serialize(&mut **ser));
-                ser.formatter
-                    .end_object_value(&mut ser.writer)
-                    .map_err(Error::io)
-            }
+            Compound::Map { ser, state } => match state {
+                MapState::Stream(_) => {
+                    tri!(ser
+                        .formatter
+                        .begin_object_value(&mut ser.writer)
+                        .map_err(Error::io));
+                    tri!(value.serialize(&mut **ser));
+                    ser.formatter
+                        .end_object_value(&mut ser.writer)
+                        .map_err(Error::io)
+                }
+
+                MapState::Sorted { entries, next_key } => {
+                    let key = next_key
+                        .take()
+                        .expect("serialize_value called before serialize_key");
+                    let mut entry_ser = Serializer::with_formatter(
+                        Vec::with_capacity(128),
+                        ser.formatter.clone(),
+                    ).with_cfg(ser.cfg);
+                    tri!(value.serialize(&mut entry_ser));
+                    let stored = entry_ser.into_inner();
+                    entries.push((key, stored));
+                    Ok(())
+                }
+            },
 
             Compound::RawValue { .. } => unreachable!(),
         }
@@ -680,8 +806,15 @@ where
     fn end(self) -> Result<()> {
         match self {
             Compound::Map { ser, state } => match state {
-                State::Empty => Ok(()),
-                _ => ser.formatter.end_object(&mut ser.writer).map_err(Error::io),
+                MapState::Stream(map_state) => match map_state {
+                    State::Empty => Ok(()),
+                    _ => ser.formatter.end_object(&mut ser.writer).map_err(Error::io),
+                },
+
+                MapState::Sorted { entries, next_key } => {
+                    debug_assert!(next_key.is_none());
+                    write_sorted_entries(ser, entries)
+                }
             },
 
             Compound::RawValue { .. } => unreachable!(),
@@ -748,17 +881,24 @@ where
     #[inline]
     fn end(self) -> Result<()> {
         match self {
-            Compound::Map { ser, state } => {
-                match state {
-                    State::Empty => {}
-                    _ => tri!(ser.formatter.end_object(&mut ser.writer).map_err(Error::io)),
+            Compound::Map { ser, state } => match state {
+                MapState::Stream(map_state) => {
+                    match map_state {
+                        State::Empty => {}
+                        _ => tri!(ser.formatter.end_object(&mut ser.writer).map_err(Error::io)),
+                    }
+                    tri!(ser
+                        .formatter
+                        .end_object_value(&mut ser.writer)
+                        .map_err(Error::io));
+                    ser.formatter.end_object(&mut ser.writer).map_err(Error::io)
                 }
-                tri!(ser
-                    .formatter
-                    .end_object_value(&mut ser.writer)
-                    .map_err(Error::io));
-                ser.formatter.end_object(&mut ser.writer).map_err(Error::io)
-            }
+
+                MapState::Sorted { entries, next_key } => {
+                    debug_assert!(next_key.is_none());
+                    write_sorted_entries(ser, entries)
+                }
+            },
 
             Compound::RawValue { .. } => unreachable!(),
         }
@@ -767,6 +907,209 @@ where
 
 struct MapKeySerializer<'a, W: 'a, F: 'a> {
     ser: &'a mut Serializer<W, F>,
+}
+
+struct SortedKeySerializer;
+
+impl serde::Serializer for SortedKeySerializer {
+    type Ok = String;
+    type Error = Error;
+
+    type SerializeSeq = Impossible<String, Error>;
+    type SerializeTuple = Impossible<String, Error>;
+    type SerializeTupleStruct = Impossible<String, Error>;
+    type SerializeTupleVariant = Impossible<String, Error>;
+    type SerializeMap = Impossible<String, Error>;
+    type SerializeStruct = Impossible<String, Error>;
+    type SerializeStructVariant = Impossible<String, Error>;
+
+    #[inline]
+    fn serialize_bool(self, value: bool) -> Result<String> {
+        Ok(if value { "true" } else { "false" }.to_owned())
+    }
+
+    #[inline]
+    fn serialize_i8(self, value: i8) -> Result<String> {
+        self.serialize_i64(value as i64)
+    }
+
+    #[inline]
+    fn serialize_i16(self, value: i16) -> Result<String> {
+        self.serialize_i64(value as i64)
+    }
+
+    #[inline]
+    fn serialize_i32(self, value: i32) -> Result<String> {
+        self.serialize_i64(value as i64)
+    }
+
+    fn serialize_i64(self, value: i64) -> Result<String> {
+        let mut buf = itoa::Buffer::new();
+        Ok(buf.format(value).to_owned())
+    }
+
+    fn serialize_i128(self, value: i128) -> Result<String> {
+        Ok(value.to_string())
+    }
+
+    #[inline]
+    fn serialize_u8(self, value: u8) -> Result<String> {
+        self.serialize_u64(value as u64)
+    }
+
+    #[inline]
+    fn serialize_u16(self, value: u16) -> Result<String> {
+        self.serialize_u64(value as u64)
+    }
+
+    #[inline]
+    fn serialize_u32(self, value: u32) -> Result<String> {
+        self.serialize_u64(value as u64)
+    }
+
+    fn serialize_u64(self, value: u64) -> Result<String> {
+        let mut buf = itoa::Buffer::new();
+        Ok(buf.format(value).to_owned())
+    }
+
+    fn serialize_u128(self, value: u128) -> Result<String> {
+        Ok(value.to_string())
+    }
+
+    fn serialize_f32(self, value: f32) -> Result<String> {
+        if value.is_finite() {
+            let mut buf = ryu::Buffer::new();
+            Ok(buf.format_finite(value).to_owned())
+        } else {
+            Err(key_must_be_str_or_num(Unexpected::Other(
+                "NaN or Infinite f32",
+            )))
+        }
+    }
+
+    fn serialize_f64(self, value: f64) -> Result<String> {
+        if value.is_finite() {
+            let mut buf = ryu::Buffer::new();
+            Ok(buf.format_finite(value).to_owned())
+        } else {
+            Err(key_must_be_str_or_num(Unexpected::Other(
+                "NaN or Infinite f64",
+            )))
+        }
+    }
+
+    #[inline]
+    fn serialize_char(self, value: char) -> Result<String> {
+        Ok(value.to_string())
+    }
+
+    #[inline]
+    fn serialize_str(self, value: &str) -> Result<String> {
+        Ok(value.to_owned())
+    }
+
+    fn serialize_bytes(self, _value: &[u8]) -> Result<String> {
+        Err(key_must_be_str_or_num(Unexpected::Other("bytes")))
+    }
+
+    fn serialize_unit(self) -> Result<String> {
+        Err(key_must_be_str_or_num(Unexpected::Other("unit")))
+    }
+
+    fn serialize_unit_struct(self, name: &'static str) -> Result<String> {
+        Err(key_must_be_str_or_num(Unexpected::Other(name)))
+    }
+
+    fn serialize_unit_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        variant: &'static str,
+    ) -> Result<String> {
+        Ok(variant.to_owned())
+    }
+
+    fn serialize_newtype_variant<T>(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _value: &T,
+    ) -> Result<String>
+    where
+        T: ?Sized + Serialize,
+    {
+        Err(key_must_be_str_or_num(Unexpected::NewtypeVariant))
+    }
+
+    fn serialize_none(self) -> Result<String> {
+        Err(key_must_be_str_or_num(Unexpected::Other("none")))
+    }
+
+    fn serialize_some<T>(self, value: &T) -> Result<String>
+    where
+        T: ?Sized + Serialize,
+    {
+        value.serialize(self)
+    }
+
+    fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<String>
+    where
+        T: ?Sized + Serialize,
+    {
+        value.serialize(self)
+    }
+
+    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
+        Err(key_must_be_str_or_num(Unexpected::Seq))
+    }
+
+    fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
+        Err(key_must_be_str_or_num(Unexpected::Other("tuple")))
+    }
+
+    fn serialize_tuple_struct(
+        self,
+        _name: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleStruct> {
+        Err(key_must_be_str_or_num(Unexpected::Other("tuple_struct")))
+    }
+
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleVariant> {
+        Err(key_must_be_str_or_num(Unexpected::TupleVariant))
+    }
+
+    fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
+        Err(key_must_be_str_or_num(Unexpected::Map))
+    }
+
+    fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
+        Err(key_must_be_str_or_num(Unexpected::Other(name)))
+    }
+
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeStructVariant> {
+        Err(key_must_be_str_or_num(Unexpected::StructVariant))
+    }
+
+    fn collect_str<T>(self, value: &T) -> Result<String>
+    where
+        T: ?Sized + Display,
+    {
+        Ok(value.to_string())
+    }
 }
 
 // TODO: fix the error info
@@ -1243,7 +1586,7 @@ where
     W: WriteExt,
     T: ?Sized + Serialize,
 {
-    let mut ser = Serializer::pretty(writer);
+    let mut ser = Serializer::with_formatter(writer, PrettyFormatter::new());
     value.serialize(&mut ser)
 }
 
