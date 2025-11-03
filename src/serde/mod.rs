@@ -30,7 +30,7 @@ mod test {
 
     use bytes::Bytes;
     use faststr::FastStr;
-    use serde::{de::IgnoredAny, Deserialize, Serialize};
+    use serde::{de::IgnoredAny, ser::SerializeMap, Deserialize, Serialize};
 
     use super::*;
     use crate::{Result, Value};
@@ -48,6 +48,84 @@ mod test {
                 m
             }
         };
+    }
+
+    struct UnorderedMap<'a> {
+        entries: &'a [(&'a str, u8)],
+    }
+
+    impl Serialize for UnorderedMap<'_> {
+        fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            let mut map = serializer.serialize_map(Some(self.entries.len()))?;
+            for (key, value) in self.entries {
+                map.serialize_entry(key, value)?;
+            }
+            map.end()
+        }
+    }
+
+    #[test]
+    fn test_serializer_sort_map_keys_toggle() {
+        let entries = [("b", 1u8), ("a", 2u8), ("c", 3u8)];
+        let unordered = UnorderedMap { entries: &entries };
+
+        let mut ser = Serializer::new(Vec::new());
+        unordered.serialize(&mut ser).unwrap();
+        let output = String::from_utf8(ser.into_inner()).unwrap();
+        let expected_default = r#"{"b":1,"a":2,"c":3}"#;
+        assert_eq!(output, expected_default);
+
+        let mut ser = Serializer::new(Vec::new()).sort_map_keys();
+        unordered.serialize(&mut ser).unwrap();
+        let output = String::from_utf8(ser.into_inner()).unwrap();
+        assert_eq!(output, r#"{"a":2,"b":1,"c":3}"#);
+    }
+
+    #[test]
+    fn test_value_to_string_sort_behavior() {
+        let value: Value = crate::json!({"b": 1, "a": 2, "c": 3});
+
+        let json = to_string(&value).unwrap();
+        let expected_sorted = r#"{"a":2,"b":1,"c":3}"#;
+
+        if cfg!(feature = "sort_keys") {
+            assert_eq!(json, expected_sorted);
+        } else {
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, serde_json::json!({"b": 1, "a": 2, "c": 3}));
+        }
+
+        let mut ser = Serializer::new(Vec::new()).sort_map_keys();
+        value.serialize(&mut ser).unwrap();
+        let sorted_json = String::from_utf8(ser.into_inner()).unwrap();
+        assert_eq!(sorted_json, expected_sorted);
+    }
+
+    #[test]
+    fn test_value_serializer_sort_map_keys() {
+        let value: Value = crate::json!({"delta": 4, "beta": 2, "alpha": 1});
+
+        let mut ser = Serializer::new(Vec::new());
+        value.serialize(&mut ser).unwrap();
+        let default_json = String::from_utf8(ser.into_inner()).unwrap();
+
+        if cfg!(feature = "sort_keys") {
+            assert_eq!(default_json, r#"{"alpha":1,"beta":2,"delta":4}"#);
+        } else {
+            let parsed: serde_json::Value = serde_json::from_str(&default_json).unwrap();
+            assert_eq!(
+                parsed,
+                serde_json::json!({"delta": 4, "beta": 2, "alpha": 1})
+            );
+        }
+
+        let mut ser = Serializer::new(Vec::new()).sort_map_keys();
+        value.serialize(&mut ser).unwrap();
+        let sorted = String::from_utf8(ser.into_inner()).unwrap();
+        assert_eq!(sorted, r#"{"alpha":1,"beta":2,"delta":4}"#);
     }
 
     #[derive(Debug, Deserialize, Serialize, PartialEq)]

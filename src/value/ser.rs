@@ -867,7 +867,6 @@ mod test {
     use std::collections::HashMap;
 
     use serde::{Deserialize, Serialize};
-
     use crate::{to_value, Value};
 
     #[derive(Debug, serde::Serialize, Hash, Default, Eq, PartialEq)]
@@ -879,7 +878,6 @@ mod test {
 
     #[test]
     fn test_to_value() {
-        use crate::{json, to_value, Value};
 
         let user = User {
             string: "hello".into(),
