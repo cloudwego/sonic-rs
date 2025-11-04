@@ -867,6 +867,7 @@ mod test {
     use std::collections::HashMap;
 
     use serde::{Deserialize, Serialize};
+
     use crate::{to_value, Value};
 
     #[derive(Debug, serde::Serialize, Hash, Default, Eq, PartialEq)]
@@ -878,7 +879,6 @@ mod test {
 
     #[test]
     fn test_to_value() {
-
         let user = User {
             string: "hello".into(),
             number: 123,
