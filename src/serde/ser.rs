@@ -71,7 +71,7 @@ where
     }
 
     /// Enable sorting map keys before serialization.
-    /// 
+    ///
     /// # Examples
     /// ```
     /// use serde::Serialize;
@@ -787,10 +787,9 @@ where
                     let key = next_key
                         .take()
                         .expect("serialize_value called before serialize_key");
-                    let mut entry_ser = Serializer::with_formatter(
-                        Vec::with_capacity(128),
-                        ser.formatter.clone(),
-                    ).with_cfg(ser.cfg);
+                    let mut entry_ser =
+                        Serializer::with_formatter(Vec::with_capacity(128), ser.formatter.clone())
+                            .with_cfg(ser.cfg);
                     tri!(value.serialize(&mut entry_ser));
                     let stored = entry_ser.into_inner();
                     entries.push((key, stored));
