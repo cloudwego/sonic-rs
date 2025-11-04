@@ -5,7 +5,7 @@ edition     = "2021"
 license     = "Apache-2.0"
 name        = "sonic-simd"
 repository  = "https://github.com/cloudwego/sonic-rs"
-version     = "0.1.1"
+version     = "0.1.2"
 
 [features]
 avx512 = [] # enable avx512, requires Rust 1.89 or later, and also enable `avx512f` target feature
