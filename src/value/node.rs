@@ -2,7 +2,7 @@ use core::mem::size_of;
 #[cfg(feature = "sort_keys")]
 use std::collections::BTreeMap;
 use std::{
-    alloc::Layout,
+    alloc::{Allocator, Layout},
     fmt::{Debug, Display, Formatter},
     mem::{transmute, ManuallyDrop},
     ptr::NonNull,
@@ -1326,10 +1326,10 @@ impl Value {
     }
 
     #[inline(never)]
-    pub(crate) fn parse_without_padding<'de, R: Reader<'de>>(
+    pub(crate) fn parse_without_padding<'de, R: Reader<'de>, A: Allocator + Copy>(
         &mut self,
         shared: &mut Shared,
-        strbuf: &mut Vec<u8>,
+        strbuf: &mut Vec<u8, A>,
         parser: &mut Parser<R>,
     ) -> Result<()> {
         let remain_len = parser.read.remain();

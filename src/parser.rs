@@ -1,11 +1,12 @@
 use std::{
+    alloc::Allocator,
     borrow::Cow,
     collections::HashMap,
     fmt::Debug,
     num::NonZeroU8,
     ops::Deref,
     slice::{from_raw_parts, from_raw_parts_mut},
-    str::from_utf8_unchecked,
+    str::{from_utf8, from_utf8_unchecked},
 };
 
 use faststr::FastStr;
@@ -80,15 +81,15 @@ where
     }
 }
 
-pub(crate) enum ParsedSlice<'b, 'c> {
+pub(crate) enum ParsedSlice<'b, 'c, A: Allocator> {
     Borrowed {
         slice: &'b [u8],
-        buf: &'c mut Vec<u8>,
+        buf: &'c mut Vec<u8, A>,
     },
-    Copied(&'c mut Vec<u8>),
+    Copied(&'c mut Vec<u8, A>),
 }
 
-impl<'b, 'c> Deref for ParsedSlice<'b, 'c> {
+impl<'b, 'c, A: Allocator> Deref for ParsedSlice<'b, 'c, A> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -236,6 +237,31 @@ impl From<ParseStatus> for HasEsc {
     }
 }
 
+fn from_utf8_lossy<A: Allocator>(v: &[u8], alloc: A) -> Vec<u8, A> {
+    let mut iter = v.utf8_chunks();
+    let Some(chunk) = iter.next() else {
+        return Vec::new_in(alloc);
+    };
+    let first_valid = chunk.valid();
+    let mut res_vec = Vec::with_capacity_in(v.len(), alloc);
+    if chunk.invalid().is_empty() {
+        debug_assert_eq!(first_valid.len(), v.len());
+        res_vec.extend_from_slice(first_valid.as_bytes());
+        return res_vec;
+    }
+    const REPLACEMENT: &str = "\u{FFFD}";
+
+    res_vec.extend_from_slice(first_valid.as_bytes());
+    res_vec.extend_from_slice(REPLACEMENT.as_bytes());
+    for chunk in iter {
+        res_vec.extend_from_slice(chunk.valid().as_bytes());
+        if !chunk.invalid().is_empty() {
+            res_vec.extend_from_slice(REPLACEMENT.as_bytes());
+        }
+    }
+    res_vec
+}
+
 impl<'de, R> Parser<R>
 where
     R: Reader<'de>,
@@ -309,7 +335,11 @@ where
 
     // TODO: optimize me, avoid clone twice.
     #[inline(always)]
-    fn parse_string_owned<V>(&mut self, vis: &mut V, strbuf: &mut Vec<u8>) -> Result<()>
+    fn parse_string_owned<V, A: Allocator + Copy>(
+        &mut self,
+        vis: &mut V,
+        strbuf: &mut Vec<u8, A>,
+    ) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
@@ -680,7 +710,11 @@ where
     }
 
     #[inline(always)]
-    pub(crate) fn parse_dom2<V>(&mut self, vis: &mut V, strbuf: &mut Vec<u8>) -> Result<()>
+    pub(crate) fn parse_dom2<V, A: Allocator + Copy>(
+        &mut self,
+        vis: &mut V,
+        strbuf: &mut Vec<u8, A>,
+    ) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
@@ -689,10 +723,10 @@ where
         check_visit!(self, vis.visit_dom_end())
     }
 
-    pub(crate) fn parse_value2<V: JsonVisitor<'de>>(
+    pub(crate) fn parse_value2<V: JsonVisitor<'de>, A: Allocator + Copy>(
         &mut self,
         vis: &mut V,
-        strbuf: &mut Vec<u8>,
+        strbuf: &mut Vec<u8, A>,
     ) -> Result<()> {
         match self.skip_space() {
             Some(c @ b'-' | c @ b'0'..=b'9') => self.parse_number_visit(c, vis),
@@ -704,10 +738,10 @@ where
         }
     }
 
-    pub(crate) fn parse_object2<V: JsonVisitor<'de>>(
+    pub(crate) fn parse_object2<V: JsonVisitor<'de>, A: Allocator + Copy>(
         &mut self,
         vis: &mut V,
-        strbuf: &mut Vec<u8>,
+        strbuf: &mut Vec<u8, A>,
     ) -> Result<()> {
         // parsing empty object
         let mut count: usize = 0;
@@ -735,10 +769,10 @@ where
         }
     }
 
-    pub(crate) fn parse_array2<V: JsonVisitor<'de>>(
+    pub(crate) fn parse_array2<V: JsonVisitor<'de>, A: Allocator + Copy>(
         &mut self,
         visitor: &mut V,
-        strbuf: &mut Vec<u8>,
+        strbuf: &mut Vec<u8, A>,
     ) -> Result<()> {
         // parsing empty array
         check_visit!(self, visitor.visit_array_start(0))?;
@@ -768,13 +802,16 @@ where
     }
 
     #[inline(always)]
-    pub fn parse_str<'own>(&mut self, buf: &'own mut Vec<u8>) -> Result<Reference<'de, 'own, str>> {
+
+    pub fn parse_str<'own, A: Allocator + Copy>(
+        &mut self,
+        buf: &'own mut Vec<u8, A>,
+    ) -> Result<Reference<'de, 'own, str>> {
         match self.parse_string_raw(buf) {
             Ok(ParsedSlice::Copied(buf)) => {
                 if self.check_invalid_utf8(self.cfg.utf8_lossy)? {
                     // repr the invalid utf-8
-                    let repr = String::from_utf8_lossy(buf.as_ref()).into_owned();
-                    *buf = repr.into_bytes();
+                    *buf = from_utf8_lossy(buf.as_ref(), *buf.allocator());
                 }
                 let slice = unsafe { from_utf8_unchecked(buf.as_slice()) };
                 Ok(Reference::Copied(slice))
@@ -782,14 +819,14 @@ where
             Ok(ParsedSlice::Borrowed { slice, buf }) => {
                 if self.check_invalid_utf8(self.cfg.utf8_lossy)? {
                     // repr the invalid utf-8
-                    let repr = String::from_utf8_lossy(slice).into_owned();
-                    *buf = repr.into_bytes();
+                    *buf = from_utf8_lossy(slice, *buf.allocator());
                     let slice = unsafe { from_utf8_unchecked(buf) };
                     Ok(Reference::Copied(slice))
                 } else {
                     Ok(Reference::Borrowed(unsafe { from_utf8_unchecked(slice) }))
                 }
             }
+
             Err(e) => Err(e),
         }
     }
@@ -866,7 +903,10 @@ where
         }
     }
 
-    pub(crate) unsafe fn parse_escaped_char(&mut self, buf: &mut Vec<u8>) -> Result<()> {
+    pub(crate) unsafe fn parse_escaped_char<A: Allocator>(
+        &mut self,
+        buf: &mut Vec<u8, A>,
+    ) -> Result<()> {
         'escape: loop {
             match self.read.next() {
                 Some(b'u') => {
@@ -896,10 +936,10 @@ where
         Ok(())
     }
 
-    pub(crate) unsafe fn parse_string_escaped<'own>(
+    pub(crate) unsafe fn parse_string_escaped<'own, A: Allocator>(
         &mut self,
-        buf: &'own mut Vec<u8>,
-    ) -> Result<ParsedSlice<'de, 'own>> {
+        buf: &'own mut Vec<u8, A>,
+    ) -> Result<ParsedSlice<'de, 'own, A>> {
         #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
         let mut block: StringBlock<NeonBits>;
         #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
@@ -968,10 +1008,10 @@ where
 
     #[inline(always)]
     // parse_string_raw maybe borrowed, maybe copied into buf(buf will be clear at first).
-    pub(crate) fn parse_string_raw<'own>(
+    pub(crate) fn parse_string_raw<'own, A: Allocator>(
         &mut self,
-        buf: &'own mut Vec<u8>,
-    ) -> Result<ParsedSlice<'de, 'own>> {
+        buf: &'own mut Vec<u8, A>,
+    ) -> Result<ParsedSlice<'de, 'own, A>> {
         // now reader is start after `"`, so we can directly skipstring
         let start = self.read.index();
         #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
