@@ -152,7 +152,7 @@ pub trait Formatter: Clone {
             return self.write_i64(writer, value as i64);
         }
 
-        let mut buffer = ryu::Buffer::new();
+        let mut buffer = zmij::Buffer::new();
         let s = buffer.format_finite(value);
         writer.write_all(s.as_bytes())
     }
@@ -168,7 +168,7 @@ pub trait Formatter: Clone {
             return self.write_i64(writer, value as i64);
         }
 
-        let mut buffer = ryu::Buffer::new();
+        let mut buffer = zmij::Buffer::new();
         let s = buffer.format_finite(value);
         writer.write_all(s.as_bytes())
     }

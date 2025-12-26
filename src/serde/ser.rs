@@ -977,7 +977,7 @@ impl serde::Serializer for SortedKeySerializer {
 
     fn serialize_f32(self, value: f32) -> Result<String> {
         if value.is_finite() {
-            let mut buf = ryu::Buffer::new();
+            let mut buf = zmij::Buffer::new();
             Ok(buf.format_finite(value).to_owned())
         } else {
             Err(key_must_be_str_or_num(Unexpected::Other(
@@ -988,7 +988,7 @@ impl serde::Serializer for SortedKeySerializer {
 
     fn serialize_f64(self, value: f64) -> Result<String> {
         if value.is_finite() {
-            let mut buf = ryu::Buffer::new();
+            let mut buf = zmij::Buffer::new();
             Ok(buf.format_finite(value).to_owned())
         } else {
             Err(key_must_be_str_or_num(Unexpected::Other(
