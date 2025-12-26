@@ -537,7 +537,7 @@ impl serde::Serializer for MapKeySerializer {
 
     fn serialize_f32(self, value: f32) -> Result<Value> {
         if value.is_finite() {
-            self.serialize_str(ryu::Buffer::new().format_finite(value))
+            self.serialize_str(zmij::Buffer::new().format_finite(value))
         } else {
             Err(float_key_must_be_finite())
         }
@@ -545,7 +545,7 @@ impl serde::Serializer for MapKeySerializer {
 
     fn serialize_f64(self, value: f64) -> Result<Value> {
         if value.is_finite() {
-            self.serialize_str(ryu::Buffer::new().format_finite(value))
+            self.serialize_str(zmij::Buffer::new().format_finite(value))
         } else {
             Err(float_key_must_be_finite())
         }
