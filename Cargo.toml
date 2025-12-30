@@ -22,12 +22,12 @@ cfg-if       = "1.0"
 faststr      = { version = "0.2", features = ["serde"] }
 itoa         = "1.0"
 ref-cast     = "1.0"
-zmij         = "0.1"
 serde        = { version = "1.0", features = ["rc", "derive"] }
 simdutf8     = "0.1"
 sonic-number = { path = "./sonic-number", version = "0.1" }
 sonic-simd   = { path = "./sonic-simd", version = "0.1" }
 thiserror    = "2.0"
+zmij         = "1.0"
 
 [dev-dependencies]
 bytes        = { version = "1.4", features = ["serde"] }
@@ -42,7 +42,7 @@ serde_json   = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
 [features]
 default = []
 
-# Use an arbitrary precision number type representation when parsing JSON into `sonic_rs::Value`. 
+# Use an arbitrary precision number type representation when parsing JSON into `sonic_rs::Value`.
 # This allows the JSON numbers will be serialized without loss of precision.
 arbitrary_precision = []
 

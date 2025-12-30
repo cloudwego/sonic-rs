@@ -8,7 +8,8 @@ repository  = "https://github.com/cloudwego/sonic-rs"
 version     = "0.1.2"
 
 [features]
-avx512 = [] # enable avx512, requires Rust 1.89 or later, and also enable `avx512f` target feature
+# enable avx512, requires Rust 1.89 or later, and also enable `avx512f` target feature
+avx512 = []
 
 [dependencies]
 cfg-if = "1.0"
