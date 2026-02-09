@@ -157,17 +157,24 @@ impl LazyRaw {
             unreachable!("must be lazy parsed");
         };
         let parsed = Box::into_raw(Box::new(v));
-        match self
-            .parsed
-            .compare_exchange_weak(ptr, parsed, Ordering::AcqRel, Ordering::Acquire)
-        {
-            // will free by drop
-            Ok(_) => Ok(unsafe { &*parsed }),
-            Err(ptr) => {
-                // # Safety
-                // the pointer is immutable here, and we can drop it
-                drop(unsafe { Box::from_raw(parsed) });
-                Ok(unsafe { &*ptr })
+        loop {
+            match self.parsed.compare_exchange_weak(
+                ptr,
+                parsed,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                // will free by drop
+                Ok(_) => return Ok(unsafe { &*parsed }),
+                Err(ptr) => {
+                    // # Safety
+                    // the pointer is immutable here, and we can drop it
+                    if ptr.is_null() {
+                        continue;
+                    }
+                    drop(unsafe { Box::from_raw(parsed) });
+                    return Ok(unsafe { &*ptr });
+                }
             }
         }
     }

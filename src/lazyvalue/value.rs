@@ -143,16 +143,21 @@ impl Inner {
         unsafe {
             let parsed: String = crate::from_slice_unchecked(raw).ok()?;
             let parsed = Arc::into_raw(Arc::new(parsed)) as *mut ();
-            match self.unescaped.compare_exchange_weak(
-                ptr,
-                parsed,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => Some(&*(parsed as *const String)),
-                Err(e) => {
-                    Arc::decrement_strong_count(parsed);
-                    Some(&*(e as *const String))
+            loop {
+                match self.unescaped.compare_exchange_weak(
+                    ptr,
+                    parsed,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                ) {
+                    Ok(_) => return Some(&*(parsed as *const String)),
+                    Err(e) => {
+                        if e.is_null() {
+                            continue;
+                        }
+                        Arc::decrement_strong_count(parsed as *const String);
+                        return Some(&*(e as *const String));
+                    }
                 }
             }
         }
