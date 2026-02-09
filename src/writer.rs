@@ -1,8 +1,8 @@
 //! Extend trait from io::Write for JSON serializing.
 
-use std::{io, io::BufWriter as IoBufWriter, mem::MaybeUninit, slice::from_raw_parts_mut};
+use std::{io, io::BufWriter as IoBufWriter, mem::MaybeUninit};
 
-use bytes::{buf::Writer, BytesMut};
+use bytes::{buf::Writer, BufMut, BytesMut};
 
 /// The trait is a extension to [`io::Write`] with a reserved capacity.
 pub trait WriteExt: io::Write {
@@ -79,10 +79,7 @@ impl WriteExt for Vec<u8> {
     #[inline(always)]
     fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
         self.reserve(additional);
-        unsafe {
-            let ptr = self.as_mut_ptr().add(self.len()) as *mut MaybeUninit<u8>;
-            Ok(from_raw_parts_mut(ptr, additional))
-        }
+        Ok(&mut self.spare_capacity_mut()[..additional])
     }
 
     #[inline(always)]
@@ -107,10 +104,8 @@ impl WriteExt for Writer<BytesMut> {
     #[inline(always)]
     fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
         self.get_mut().reserve(additional);
-        unsafe {
-            let ptr = self.get_mut().as_mut_ptr().add(self.get_ref().len()) as *mut MaybeUninit<u8>;
-            Ok(from_raw_parts_mut(ptr, additional))
-        }
+        let ptr = unsafe { self.get_mut().chunk_mut().as_uninit_slice_mut() };
+        Ok(&mut ptr[..additional])
     }
 }
 
@@ -125,10 +120,8 @@ impl WriteExt for Writer<&mut BytesMut> {
     #[inline(always)]
     fn reserve_with(&mut self, additional: usize) -> io::Result<&mut [MaybeUninit<u8>]> {
         self.get_mut().reserve(additional);
-        unsafe {
-            let ptr = self.get_mut().as_mut_ptr().add(self.get_ref().len()) as *mut MaybeUninit<u8>;
-            Ok(from_raw_parts_mut(ptr, additional))
-        }
+        let ptr = unsafe { self.get_mut().chunk_mut().as_uninit_slice_mut() };
+        Ok(&mut ptr[..additional])
     }
 }
 

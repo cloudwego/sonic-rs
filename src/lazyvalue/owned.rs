@@ -167,11 +167,11 @@ impl LazyRaw {
                 // will free by drop
                 Ok(_) => return Ok(unsafe { &*parsed }),
                 Err(ptr) => {
-                    // # Safety
-                    // the pointer is immutable here, and we can drop it
                     if ptr.is_null() {
                         continue;
                     }
+                    // # Safety
+                    // the pointer is immutable here, and we can drop it
                     drop(unsafe { Box::from_raw(parsed) });
                     return Ok(unsafe { &*ptr });
                 }

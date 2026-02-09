@@ -625,21 +625,25 @@ mod test {
     #[test]
     fn test_quote() {
         let mut dst = [0u8; 1000];
-        let dst_ref = unsafe { std::mem::transmute::<&mut [u8], &mut [MaybeUninit<u8>]>(&mut dst) };
-        assert_eq!(format_string("", dst_ref, true), 2);
+        let fmt = |value: &str, dst: &mut [u8]| -> usize {
+            let dst_ref = unsafe { std::mem::transmute::<&mut [u8], &mut [MaybeUninit<u8>]>(dst) };
+            format_string(value, dst_ref, true)
+        };
+
+        assert_eq!(fmt("", &mut dst), 2);
         assert_eq!(dst[..2], *b"\"\"");
-        assert_eq!(format_string("\x00", dst_ref, true), 8);
+        assert_eq!(fmt("\x00", &mut dst), 8);
         assert_eq!(dst[..8], *b"\"\\u0000\"");
-        assert_eq!(format_string("test", dst_ref, true), 6);
+        assert_eq!(fmt("test", &mut dst), 6);
         assert_eq!(dst[..6], *b"\"test\"");
-        assert_eq!(format_string("test\"test", dst_ref, true), 12);
+        assert_eq!(fmt("test\"test", &mut dst), 12);
         assert_eq!(dst[..12], *b"\"test\\\"test\"");
-        assert_eq!(format_string("\\testtest\"", dst_ref, true), 14);
+        assert_eq!(fmt("\\testtest\"", &mut dst), 14);
         assert_eq!(dst[..14], *b"\"\\\\testtest\\\"\"");
 
         let long_str = "this is a long string that should be \\\"quoted and escaped multiple \
                         times to test the performance and correctness of the function.";
-        assert_eq!(format_string(long_str, dst_ref, true), 129 + 4);
+        assert_eq!(fmt(long_str, &mut dst), 129 + 4);
         assert_eq!(dst[..133], *b"\"this is a long string that should be \\\\\\\"quoted and escaped multiple times to test the performance and correctness of the function.\"");
     }
 }
