@@ -134,7 +134,7 @@ impl<'a> From<JsonSlice<'a>> for PinnedInput<'a> {
 pub struct Read<'a> {
     // pin the input JSON, because `slice` will reference it
     input: PinnedInput<'a>,
-    slice: NonNull<[u8]>,
+    // slice: NonNull<[u8]>,
     pub(crate) index: usize,
     // next invalid utf8 position, if not found, will be usize::MAX
     next_invalid_utf8: usize,
@@ -154,7 +154,7 @@ impl<'a> Read<'a> {
     pub(crate) fn new_in(input: JsonSlice<'a>, validate_utf8: bool) -> Self {
         let input: PinnedInput<'a> = input.into();
         // #safety: we pinned the input json
-        let slice = unsafe { input.as_ptr() };
+        let slice: NonNull<[u8]> = unsafe { input.as_ptr() };
 
         // validate the utf-8 at first for slice
         let next_invalid_utf8 = validate_utf8
@@ -168,7 +168,6 @@ impl<'a> Read<'a> {
 
         Self {
             input,
-            slice,
             index: 0,
             next_invalid_utf8,
         }
@@ -176,7 +175,7 @@ impl<'a> Read<'a> {
 
     #[inline(always)]
     fn slice(&self) -> &'a [u8] {
-        unsafe { self.slice.as_ref() }
+        unsafe { self.input.as_ptr().as_ref() }
     }
 }
 
