@@ -354,6 +354,7 @@ mod test {
             .unwrap();
     }
 
+    #[cfg(not(miri))]
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
     fn test_struct() {
