@@ -1673,6 +1673,8 @@ mod test {
     use std::path::Path;
 
     use super::*;
+    #[cfg(feature = "sort_keys")]
+    use crate::object;
     use crate::{error::make_error, from_slice, from_str, pointer, util::mock::MockString};
 
     #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
