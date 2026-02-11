@@ -5,3 +5,9 @@ rustflags    = ["-g", "-C", "target-cpu=native"]
 [bench]
 rustdocflags = ["-C", "target-cpu=native"]
 rustflags    = ["-g", "-C", "target-cpu=native"]
+
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]
+
+[target.wasm32-wasi]
+rustflags = ["-C", "target-feature=+simd128"]
