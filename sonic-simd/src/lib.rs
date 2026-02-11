@@ -11,8 +11,10 @@ cfg_if::cfg_if! {
     } else if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
         pub mod neon;
         use self::neon::*;
+    } else if #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))] {
+        mod wasm128;
+        use self::wasm128::*;
     } else {
-        // TODO: support wasm
         mod v128;
         use self::v128::*;
     }
