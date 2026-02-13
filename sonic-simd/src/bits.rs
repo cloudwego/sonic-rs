@@ -5,7 +5,7 @@ macro_rules! impl_bits {
     ($($ty:ty)*) => {
         $(
             impl BitMask for $ty {
-                const LEN: usize = std::mem::size_of::<$ty>() * 8;
+                const LEN: usize = core::mem::size_of::<$ty>() * 8;
 
                 #[inline]
                 fn before(&self, rhs: &Self) -> bool {

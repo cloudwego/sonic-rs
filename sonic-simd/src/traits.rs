@@ -1,4 +1,4 @@
-use std::ops::{BitAnd, BitOr, BitOrAssign};
+use core::ops::{BitAnd, BitOr, BitOrAssign};
 
 /// Portbal SIMD traits
 pub trait Simd: Sized {
