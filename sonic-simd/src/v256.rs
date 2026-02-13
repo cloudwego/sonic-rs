@@ -1,4 +1,4 @@
-use std::ops::{BitAnd, BitOr, BitOrAssign};
+use core::ops::{BitAnd, BitOr, BitOrAssign};
 
 use super::{Mask, Mask128, Simd, Simd128i, Simd128u};
 

@@ -1,4 +1,4 @@
-use std::ops::{BitAnd, BitOr, BitOrAssign};
+use core::ops::{BitAnd, BitOr, BitOrAssign};
 
 use super::{Mask, Simd};
 
@@ -17,15 +17,15 @@ impl Simd for Simd128i {
     type Mask = Mask128;
 
     unsafe fn loadu(ptr: *const u8) -> Self {
-        let v = std::slice::from_raw_parts(ptr, Self::LANES);
+        let v = core::slice::from_raw_parts(ptr, Self::LANES);
         let mut res = [0i8; 16];
-        res.copy_from_slice(std::mem::transmute::<&[u8], &[i8]>(v));
+        res.copy_from_slice(core::mem::transmute::<&[u8], &[i8]>(v));
         Self(res)
     }
 
     unsafe fn storeu(&self, ptr: *mut u8) {
-        let data = std::mem::transmute::<&[i8], &[u8]>(&self.0);
-        std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, Self::LANES);
+        let data = core::mem::transmute::<&[i8], &[u8]>(&self.0);
+        core::ptr::copy_nonoverlapping(data.as_ptr(), ptr, Self::LANES);
     }
 
     fn eq(&self, rhs: &Self) -> Self::Mask {
@@ -63,7 +63,7 @@ impl Simd for Simd128u {
     type Mask = Mask128;
 
     unsafe fn loadu(ptr: *const u8) -> Self {
-        let v = std::slice::from_raw_parts(ptr, Self::LANES);
+        let v = core::slice::from_raw_parts(ptr, Self::LANES);
         let mut res = [0u8; 16];
         res.copy_from_slice(v);
         Self(res)
@@ -71,7 +71,7 @@ impl Simd for Simd128u {
 
     unsafe fn storeu(&self, ptr: *mut u8) {
         let data = &self.0;
-        std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, Self::LANES);
+        core::ptr::copy_nonoverlapping(data.as_ptr(), ptr, Self::LANES);
     }
 
     fn eq(&self, rhs: &Self) -> Self::Mask {

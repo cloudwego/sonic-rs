@@ -1,4 +1,4 @@
-use std::arch::aarch64::*;
+use core::arch::aarch64::*;
 
 use super::{bits::NeonBits, Mask, Simd};
 
@@ -118,7 +118,7 @@ impl Mask for Mask128 {
 }
 
 // Bitwise AND for Mask128
-impl std::ops::BitAnd<Mask128> for Mask128 {
+impl core::ops::BitAnd<Mask128> for Mask128 {
     type Output = Self;
 
     #[inline(always)]
@@ -128,7 +128,7 @@ impl std::ops::BitAnd<Mask128> for Mask128 {
 }
 
 // Bitwise OR for Mask128
-impl std::ops::BitOr<Mask128> for Mask128 {
+impl core::ops::BitOr<Mask128> for Mask128 {
     type Output = Self;
 
     #[inline(always)]
@@ -138,7 +138,7 @@ impl std::ops::BitOr<Mask128> for Mask128 {
 }
 
 // Bitwise OR assignment for Mask128
-impl std::ops::BitOrAssign<Mask128> for Mask128 {
+impl core::ops::BitOrAssign<Mask128> for Mask128 {
     #[inline(always)]
     fn bitor_assign(&mut self, rhs: Mask128) {
         unsafe {
@@ -149,7 +149,7 @@ impl std::ops::BitOrAssign<Mask128> for Mask128 {
 
 #[inline(always)]
 pub unsafe fn to_bitmask64(v0: uint8x16_t, v1: uint8x16_t, v2: uint8x16_t, v3: uint8x16_t) -> u64 {
-    let bit_mask = std::mem::transmute::<[u8; 16], uint8x16_t>(BIT_MASK_TAB);
+    let bit_mask = core::mem::transmute::<[u8; 16], uint8x16_t>(BIT_MASK_TAB);
 
     let t0 = vandq_u8(v0, bit_mask);
     let t1 = vandq_u8(v1, bit_mask);
@@ -166,7 +166,7 @@ pub unsafe fn to_bitmask64(v0: uint8x16_t, v1: uint8x16_t, v2: uint8x16_t, v3: u
 
 #[inline(always)]
 pub(crate) unsafe fn to_bitmask32(v0: uint8x16_t, v1: uint8x16_t) -> u32 {
-    let bit_mask = std::mem::transmute::<[u8; 16], uint8x16_t>(BIT_MASK_TAB);
+    let bit_mask = core::mem::transmute::<[u8; 16], uint8x16_t>(BIT_MASK_TAB);
 
     let t0 = vandq_u8(v0, bit_mask);
     let t1 = vandq_u8(v1, bit_mask);

@@ -1,4 +1,4 @@
-use std::{
+use core::{
     arch::x86_64::*,
     ops::{BitAnd, BitOr, BitOrAssign},
 };

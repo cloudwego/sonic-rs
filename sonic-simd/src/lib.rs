@@ -1,4 +1,5 @@
 #![allow(non_camel_case_types)]
+#![no_std]
 
 pub mod bits;
 mod traits;
