@@ -2,7 +2,7 @@
 
 // The code is cloned from [rust-lang](https://github.com/rust-lang/rust) and modified necessary parts.
 
-use std::{
+use core::{
     fmt::{Debug, LowerExp},
     num::FpCategory,
     ops::{Add, Div, Mul, Neg},
