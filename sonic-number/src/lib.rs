@@ -1,3 +1,8 @@
+#![no_std]
+
+#[cfg(test)]
+extern crate std;
+
 mod arch;
 mod common;
 mod decimal;

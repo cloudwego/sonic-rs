@@ -1,4 +1,4 @@
-use std::arch::x86_64::*;
+use core::arch::x86_64::*;
 
 macro_rules! packadd_1 {
     ($v:ident) => {
