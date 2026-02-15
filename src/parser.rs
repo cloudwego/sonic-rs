@@ -11,8 +11,6 @@ use std::{
 use faststr::FastStr;
 use serde::de::{self, Expected, Unexpected};
 use sonic_number::{parse_float32, parse_number, ParserNumber};
-#[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
-// use sonic_simd::bits::NeonBits; // not used with unified u32 path
 use sonic_simd::{i8x32, m8x32, u8x32, u8x64, Mask, Simd};
 
 use crate::{
@@ -31,7 +29,7 @@ use crate::{
     reader::Reader,
     serde::de::invalid_type_number,
     util::{
-        arch::{get_nonspace_bits, prefix_xor},
+        arch::prefix_xor,
         string::*,
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
@@ -210,12 +208,108 @@ pub(crate) struct Pair<'de> {
 /// [`ErrorCode::RecursionLimitExceeded`] instead of overflowing the stack.
 pub(crate) const MAX_ALLOWED_DEPTH: u8 = u8::MAX;
 
-pub struct Parser<R> {
-    pub read: R,
-    error_index: usize,   // mark the error position
+/// default bitmap based space skipper
+/// will cache the bitmap
+#[cfg(not(all(target_arch = "aarch64", target_feature = "sve2")))]
+struct SpaceSkipper {
     nospace_bits: u64,    // SIMD marked nospace bitmap
     nospace_start: isize, // the start position of nospace_bits
-    remaining_depth: u8,  // shared by the serde visitors and the DOM parser
+}
+
+#[cfg(not(all(target_arch = "aarch64", target_feature = "sve2")))]
+impl SpaceSkipper {
+    pub fn new() -> Self {
+        Self {
+            nospace_bits: 0,
+            nospace_start: -128,
+        }
+    }
+
+    #[inline(always)]
+    pub fn skip_space<'de, R: Reader<'de>>(&mut self, reader: &mut R) -> Option<u8> {
+        // fast path 2: reuse the bitmap for short key or numbers
+        let nospace_offset = (reader.index() as isize) - self.nospace_start;
+        if nospace_offset < 64 {
+            let bitmap = {
+                let mask = !((1 << nospace_offset) - 1);
+                self.nospace_bits & mask
+            };
+            if bitmap != 0 {
+                let cnt = bitmap.trailing_zeros() as usize;
+                let ch = reader.at(self.nospace_start as usize + cnt);
+                reader.set_index(self.nospace_start as usize + cnt + 1);
+
+                return Some(ch);
+            } else {
+                // we can still fast skip the marked space in here.
+                reader.set_index(self.nospace_start as usize + 64);
+            }
+        }
+
+        // then we use simd to accelerate skipping space
+        while let Some(chunk) = reader.peek_n(64) {
+            let chunk = unsafe { &*(chunk.as_ptr() as *const [_; 64]) };
+            let bitmap = unsafe { crate::util::arch::get_nonspace_bits(chunk) };
+            if bitmap != 0 {
+                self.nospace_bits = bitmap;
+                self.nospace_start = reader.index() as isize;
+                let cnt = bitmap.trailing_zeros() as usize;
+                let ch = chunk[cnt];
+                reader.eat(cnt + 1);
+
+                return Some(ch);
+            }
+            reader.eat(64)
+        }
+
+        while let Some(ch) = reader.next() {
+            if !is_whitespace(ch) {
+                return Some(ch);
+            }
+        }
+        None
+    }
+}
+
+#[cfg(all(target_arch = "aarch64", target_feature = "sve2"))]
+struct SpaceSkipper;
+
+#[cfg(all(target_arch = "aarch64", target_feature = "sve2"))]
+impl SpaceSkipper {
+    pub fn new() -> Self {
+        Self
+    }
+
+    #[inline(always)]
+    pub fn skip_space<'de, R: Reader<'de>>(&mut self, reader: &mut R) -> Option<u8> {
+        // then we use simd to accelerate skipping space
+        while let Some(chunk) = reader.peek_n(16) {
+            let chunk = unsafe { &*(chunk.as_ptr() as *const [_; 16]) };
+            let cnt = unsafe { crate::util::arch::get_nonspace_index(chunk) };
+
+            if cnt < 16 {
+                let ch = chunk[cnt];
+                reader.eat(cnt + 1); // Skip spaces + return char
+                return Some(ch);
+            }
+            reader.eat(16)
+        }
+
+        while let Some(ch) = reader.next() {
+            if !is_whitespace(ch) {
+                //
+                return Some(ch);
+            }
+        }
+        None
+    }
+}
+
+pub struct Parser<R> {
+    pub read: R,
+    error_index: usize,    // mark the error position
+    skipper: SpaceSkipper, // space skipper, maybe bitmap based or sve2 based
+    remaining_depth: u8,   // shared by the serde visitors and the DOM parser
     pub(crate) cfg: DeserializeCfg,
 }
 
@@ -243,8 +337,7 @@ where
         Self {
             read,
             error_index: usize::MAX,
-            nospace_bits: 0,
-            nospace_start: -128,
+            skipper: SpaceSkipper::new(),
             remaining_depth: MAX_ALLOWED_DEPTH,
             cfg: DeserializeCfg::default(),
         }
@@ -1386,62 +1479,17 @@ where
     #[cfg_attr(debug_assertions, inline)]
     #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn skip_space(&mut self) -> Option<u8> {
-        let reader = &mut self.read;
-        // fast path 1: for nospace or single space
-        // most JSON is like ` "name": "balabala" `
-        if let Some(ch) = reader.next() {
+        if let Some(ch) = self.read.next() {
             if !is_whitespace(ch) {
                 return Some(ch);
             }
         }
-        if let Some(ch) = reader.next() {
+        if let Some(ch) = self.read.next() {
             if !is_whitespace(ch) {
                 return Some(ch);
             }
         }
-
-        // fast path 2: reuse the bitmap for short key or numbers
-        let nospace_offset = (reader.index() as isize) - self.nospace_start;
-        if nospace_offset < 64 {
-            let bitmap = {
-                let mask = !((1 << nospace_offset) - 1);
-                self.nospace_bits & mask
-            };
-            if bitmap != 0 {
-                let cnt = bitmap.trailing_zeros() as usize;
-                let ch = reader.at(self.nospace_start as usize + cnt);
-                reader.set_index(self.nospace_start as usize + cnt + 1);
-
-                return Some(ch);
-            } else {
-                // we can still fast skip the marked space in here.
-                reader.set_index(self.nospace_start as usize + 64);
-            }
-        }
-
-        // then we use simd to accelerate skipping space
-        while let Some(chunk) = reader.peek_n(64) {
-            let chunk = unsafe { &*(chunk.as_ptr() as *const [_; 64]) };
-            let bitmap = unsafe { get_nonspace_bits(chunk) };
-            if bitmap != 0 {
-                self.nospace_bits = bitmap;
-                self.nospace_start = reader.index() as isize;
-                let cnt = bitmap.trailing_zeros() as usize;
-                let ch = chunk[cnt];
-                reader.eat(cnt + 1);
-
-                return Some(ch);
-            }
-            reader.eat(64)
-        }
-
-        while let Some(ch) = reader.next() {
-            if !is_whitespace(ch) {
-                //
-                return Some(ch);
-            }
-        }
-        None
+        self.skipper.skip_space(&mut self.read)
     }
 
     #[inline(always)]

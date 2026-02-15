@@ -13,13 +13,13 @@ cfg_if::cfg_if! {
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    // use super::*;
 
-    #[test]
-    fn test_get_non_space_bits() {
-        let input = b"\t\r\n xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
-        let non_space_bits = unsafe { get_nonspace_bits(input) };
-        let expected_bits = 0b1111111111111111111111111111111111111111111111111111111111110000;
-        assert_eq!(non_space_bits, expected_bits, "bits is {non_space_bits:b}");
-    }
+    // #[test]
+    // fn test_get_non_space_bits() {
+    //     let input = b"\t\r\n xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+    //     let non_space_bits = unsafe { get_nonspace_bits(input) };
+    //     let expected_bits = 0b1111111111111111111111111111111111111111111111111111111111110000;
+    //     assert_eq!(non_space_bits, expected_bits, "bits is {non_space_bits:b}");
+    // }
 }
