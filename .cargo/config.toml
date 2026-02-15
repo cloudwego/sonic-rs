@@ -11,3 +11,8 @@ rustflags = ["-C", "target-feature=+simd128"]
 
 [target.wasm32-wasi]
 rustflags = ["-C", "target-feature=+simd128"]
+
+[target.aarch64-unknown-linux-gnu]
+runner   = "qemu-aarch64 -L /usr/aarch64-linux-gnu -cpu max,sve=on"
+rustflags = ["-C", "target-feature=+sve2"]
+linker   = "aarch64-linux-gnu-gcc"
