@@ -43,7 +43,6 @@ pub unsafe fn prefix_xor(bitmask: u64) -> u64 {
 // just for minification (or just to identify the structural characters),
 // there is a small untaken optimization opportunity here. We deliberately
 // do not pick it up.
-#[cfg(not(target_feature = "sve2"))]
 #[inline(always)]
 pub unsafe fn get_nonspace_bits(data: &[u8; 64]) -> u64 {
     use std::arch::aarch64::*;
@@ -74,40 +73,4 @@ pub unsafe fn get_nonspace_bits(data: &[u8; 64]) -> u64 {
         chunk_nonspace_bits(vld1q_u8(data.as_ptr().offset(32))),
         chunk_nonspace_bits(vld1q_u8(data.as_ptr().offset(48))),
     )
-}
-
-#[cfg(target_feature = "sve2")]
-#[inline(always)]
-pub unsafe fn get_nonspace_bits(data: &[u8; 16]) -> u64 {
-    let mut index: u64;
-    // 空白符集合: 0x09 (Tab), 0x0A (LF), 0x0D (CR), 0x20 (Space)
-    let tokens: u32 = 0x090a0d20;
-
-    core::arch::asm!(
-        "ptrue  p0.b, vl16",
-        "ld1b   {{z0.b}}, p0/z, [{ptr}]",
-        "mov    z1.s, {t:w}",           // 广播 4 个空白符到 z1
-        
-        // nmatch 寻找不属于 {09, 0a, 0d, 20} 的字符
-        // 结果存入 p1，p1 中 true 的位置表示“非空白符”
-        "nmatch p1.b, p0/z, z0.b, z1.b",
-        
-        // 定位第一个非空白符的位置
-        "brkb   p1.b, p0/z, p1.b",      // 截断，只保留第一个 true 之前的位为 true
-        "cntp   {idx}, p0, p1.b",       // 统计数量，得到第一个非空白符的 index
-
-        ptr = in(reg) data.as_ptr(),
-        t = in(reg) tokens,
-        idx = out(reg) index,
-        out("z0") _, out("z1") _,
-        out("p0") _, out("p1") _,
-    );
-
-    // 如果 index < 16，返回 1 << index，使外部 trailing_zeros() 拿到正确偏移
-    // 如果 index == 16，返回 0，触发外部 skip_space 的“全空白”跳过逻辑
-    if index < 16 {
-        1u64 << index
-    } else {
-        0
-    }
 }

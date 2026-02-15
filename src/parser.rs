@@ -30,7 +30,7 @@ use crate::{
     reader::Reader,
     serde::de::invalid_type_number,
     util::{
-        arch::{get_nonspace_bits, prefix_xor},
+        arch::prefix_xor,
         string::*,
         unicode::{codepoint_to_utf8, hex_to_u32_nocheck},
     },
@@ -252,7 +252,7 @@ impl SpaceSkipper {
         // then we use simd to accelerate skipping space
         while let Some(chunk) = reader.peek_n(64) {
             let chunk = unsafe { &*(chunk.as_ptr() as *const [_; 64]) };
-            let bitmap = unsafe { get_nonspace_bits(chunk) };
+            let bitmap = unsafe { crate::util::arch::get_nonspace_bits(chunk) };
             if bitmap != 0 {
                 self.nospace_bits = bitmap;
                 self.nospace_start = reader.index() as isize;
@@ -288,7 +288,7 @@ impl SpaceSkipper {
         // then we use simd to accelerate skipping space
         while let Some(chunk) = reader.peek_n(16) {
             let chunk = unsafe { &*(chunk.as_ptr() as *const [_; 16]) };
-            let bitmap = unsafe { get_nonspace_bits(chunk) };
+            let bitmap = unsafe { crate::util::arch::get_nonspace_bits(chunk) };
             if bitmap != 0 {
                 let cnt = bitmap.trailing_zeros() as usize;
                 let ch = chunk[cnt];
