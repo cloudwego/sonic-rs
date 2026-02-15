@@ -12,7 +12,7 @@ use faststr::FastStr;
 use serde::de::{self, Expected, Unexpected};
 use sonic_number::{parse_number, ParserNumber};
 #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
-use sonic_simd::bits::NeonBits;
+// use sonic_simd::bits::NeonBits; // not used with unified u32 path
 use sonic_simd::{i8x32, m8x32, u8x32, u8x64, Mask, Simd};
 
 use crate::{
@@ -900,36 +900,29 @@ where
         &mut self,
         buf: &'own mut Vec<u8>,
     ) -> Result<ParsedSlice<'de, 'own>> {
-        #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
-        let mut block: StringBlock<NeonBits>;
-        #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
-        let mut block: StringBlock<u32>;
-
         self.parse_escaped_char(buf)?;
 
-        while let Some(chunk) = self.read.peek_n(StringBlock::LANES) {
-            buf.reserve(StringBlock::LANES);
-            let v = unsafe { load(chunk.as_ptr()) };
-            block = StringBlock::new(&v);
-
+        while let Some(chunk) = self.read.peek_n(crate::util::string::STRING_BLOCK_LANES) {
+            buf.reserve(crate::util::string::STRING_BLOCK_LANES);
+            let v = crate::util::string::load_v(chunk.as_ptr());
+            let block = crate::util::string::build_block(&v);
+            // write the chunk to buf, we will set new_len later
+            let dst_chunk = from_raw_parts_mut(
+                buf.as_mut_ptr().add(buf.len()),
+                crate::util::string::STRING_BLOCK_LANES,
+            );
+            v.write_to_slice_unaligned_unchecked(dst_chunk);
             if block.has_unescaped() {
                 self.read.eat(block.unescaped_index());
                 return perr!(self, ControlCharacterWhileParsingString);
             }
-
-            // write the chunk to buf, we will set new_len later
-            let chunk = from_raw_parts_mut(buf.as_mut_ptr().add(buf.len()), StringBlock::LANES);
-            v.write_to_slice_unaligned_unchecked(chunk);
-
             if block.has_quote_first() {
                 let cnt = block.quote_index();
                 buf.set_len(buf.len() + cnt);
-
                 // skip the right quote
                 self.read.eat(cnt + 1);
                 return Ok(ParsedSlice::Copied(buf));
             }
-
             if block.has_backslash() {
                 // TODO: loop unrooling here
                 let cnt = block.bs_index();
@@ -938,9 +931,10 @@ where
                 buf.set_len(buf.len() + cnt);
                 self.parse_escaped_char(buf)?;
             } else {
-                buf.set_len(buf.len() + StringBlock::LANES);
-                self.read.eat(StringBlock::LANES);
+                buf.set_len(buf.len() + crate::util::string::STRING_BLOCK_LANES);
+                self.read.eat(crate::util::string::STRING_BLOCK_LANES);
             }
+            continue;
         }
 
         // scalar codes
@@ -974,27 +968,21 @@ where
     ) -> Result<ParsedSlice<'de, 'own>> {
         // now reader is start after `"`, so we can directly skipstring
         let start = self.read.index();
-        #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
-        let mut block: StringBlock<NeonBits>;
-        #[cfg(not(all(target_feature = "neon", target_arch = "aarch64")))]
-        let mut block: StringBlock<u32>;
+        // use arch-aware block builder to keep lanes consistent
 
-        while let Some(chunk) = self.read.peek_n(StringBlock::LANES) {
-            let v = unsafe { load(chunk.as_ptr()) };
-            block = StringBlock::new(&v);
-
+        while let Some(chunk) = self.read.peek_n(crate::util::string::STRING_BLOCK_LANES) {
+            let v = crate::util::string::load_v(chunk.as_ptr());
+            let block = crate::util::string::build_block(&v);
             if block.has_quote_first() {
                 let cnt = block.quote_index();
                 self.read.eat(cnt + 1);
                 let slice = self.read.slice_unchecked(start, self.read.index() - 1);
                 return Ok(ParsedSlice::Borrowed { slice, buf });
             }
-
             if block.has_unescaped() {
                 self.read.eat(block.unescaped_index());
                 return perr!(self, ControlCharacterWhileParsingString);
             }
-
             if block.has_backslash() {
                 let cnt = block.bs_index();
                 // skip the backslash
@@ -1006,8 +994,7 @@ where
 
                 return unsafe { self.parse_string_escaped(buf) };
             }
-
-            self.read.eat(StringBlock::LANES);
+            self.read.eat(crate::util::string::STRING_BLOCK_LANES);
             continue;
         }
 
