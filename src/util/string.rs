@@ -606,40 +606,41 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
 
             #[inline(always)]
             fn escaped_mask_at(ptr: *const u8) -> SveBits {
-                let (q, bs, un): (u64, u64, u64);
+                let idx: u64;
                 unsafe {
                     core::arch::asm!(
+                        // 1. Load data
                         "ptrue p0.b, vl16",
                         "ld1b {{z0.b}}, p0/z, [{ptr}]",
 
-                        // '"'
-                        "mov z1.b, #34",
-                        "match p1.b, p0/z, z0.b, z1.b",
-                        "brkb  p1.b, p0/z, p1.b",
-                        "cntp  {q_idx}, p0, p1.b",
+                        // 2. Check for " (using cmpeq)
+                        "mov z1.b, #34", 
+                        "cmpeq p1.b, p0/z, z0.b, z1.b",
 
-                        // '\\'
-                        "mov z1.b, #92",
-                        "match p1.b, p0/z, z0.b, z1.b",
-                        "brkb  p1.b, p0/z, p1.b",
-                        "cntp  {bs_idx}, p0, p1.b",
+                        // 3. Check for \ (using cmpeq)
+                        "mov z2.b, #92",
+                        "cmpeq p2.b, p0/z, z0.b, z2.b",
 
-                        // ascii control characters (<= 0x1f)
-                        "mov z1.b, #31",
-                        "cmpls p1.b, p0/z, z0.b, z1.b",
+                        // 4. Check for Control Chars <= 0x1f (using cmpls)
+                        "mov z3.b, #31",
+                        "cmpls p3.b, p0/z, z0.b, z3.b",
+
+                        // 5. Combine all results (OR)
+                        // We reuse p1 to accumulate the flags
+                        "orr p1.b, p0/z, p1.b, p2.b",
+                        "orr p1.b, p0/z, p1.b, p3.b",
+
+                        // 6. Find first set bit (Break Before)
                         "brkb  p1.b, p0/z, p1.b",
-                        "cntp  {un_idx}, p0, p1.b",
+                        "cntp  {idx}, p0, p1.b",
 
                         ptr = in(reg) ptr,
-                        q_idx = out(reg) q,
-                        bs_idx = out(reg) bs,
-                        un_idx = out(reg) un,
-                        out("z0") _, out("z1") _,
-                        out("p0") _, out("p1") _,
+                        idx = out(reg) idx,
+                        out("z0") _, out("z1") _, out("z2") _, out("z3") _,
+                        out("p0") _, out("p1") _, out("p2") _, out("p3") _,
                     );
                 }
-                let idx = core::cmp::min(q, core::cmp::min(bs, un)) as usize;
-                SveBits::new(idx)
+                SveBits::new(idx as usize)
             }
         } else if #[cfg(all(target_arch = "aarch64", target_feature = "neon"))] {
             use sonic_simd::{bits::NeonBits, u8x16};
