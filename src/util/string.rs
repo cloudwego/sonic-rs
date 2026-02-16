@@ -599,13 +599,12 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
     assert!(dst.len() >= value.len() * 6 + 32 + 3);
 
     cfg_if::cfg_if! {
-        // Prefer SVE2 when available
         if #[cfg(all(target_arch = "aarch64", target_feature = "sve2"))] {
             use sonic_simd::{bits::SveBits, u8x16};
             let mut v: u8x16;
             const LANES: usize = 16;
 
-            #[inline]
+            #[inline(always)]
             fn escaped_mask_at(ptr: *const u8) -> SveBits {
                 let (q, bs, un): (u64, u64, u64);
                 unsafe {
@@ -646,7 +645,8 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
             use sonic_simd::{bits::NeonBits, u8x16};
             let mut v: u8x16;
             const LANES: usize = 16;
-            #[inline]
+
+            #[inline(always)]
             fn escaped_mask(v: u8x16) -> NeonBits {
                 let x1f = u8x16::splat(0x1f);
                 let blash = u8x16::splat(b'\\');
@@ -658,7 +658,8 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
             use sonic_simd::u8x32;
             let mut v: u8x32;
             const LANES: usize = 32;
-            #[inline]
+
+            #[inline(always)]
             fn escaped_mask(v: u8x32) -> u32 {
                 let x1f = u8x32::splat(0x1f);
                 let blash = u8x32::splat(b'\\');
@@ -681,24 +682,11 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
             dptr = dptr.add(1);
         }
         while nb >= LANES {
-            v = load(sptr);
+            v = load_v(sptr);
             v.write_to_slice_unaligned_unchecked(std::slice::from_raw_parts_mut(dptr, LANES));
             cfg_if::cfg_if! {
                 if #[cfg(all(target_arch = "aarch64", target_feature = "sve2"))] {
                     let mask = escaped_mask_at(sptr);
-                    if mask.all_zero() {
-                        nb -= LANES;
-                        dptr = dptr.add(LANES);
-                        sptr = sptr.add(LANES);
-                    } else {
-                        let cn = mask.first_offset();
-                        nb -= cn;
-                        dptr = dptr.add(cn);
-                        sptr = sptr.add(cn);
-                        escape_unchecked(&mut sptr, &mut nb, &mut dptr);
-                    }
-                } else if #[cfg(all(target_arch = "aarch64", target_feature = "neon"))] {
-                    let mask = escaped_mask(v);
                     if mask.all_zero() {
                         nb -= LANES;
                         dptr = dptr.add(LANES);
@@ -731,16 +719,16 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
         while nb > 0 {
             v = if check_cross_page(sptr, LANES) {
                 std::ptr::copy_nonoverlapping(sptr, temp[..].as_mut_ptr(), nb);
-                load(temp[..].as_ptr())
+                load_v(temp[..].as_ptr())
             } else {
                 #[cfg(not(any(debug_assertions, feature = "sanitize")))]
                 {
-                    load(sptr)
+                    load_v(sptr)
                 }
                 #[cfg(any(debug_assertions, feature = "sanitize"))]
                 {
                     std::ptr::copy_nonoverlapping(sptr, temp[..].as_mut_ptr(), nb);
-                    load(temp[..].as_ptr())
+                    load_v(temp[..].as_ptr())
                 }
             };
             v.write_to_slice_unaligned_unchecked(std::slice::from_raw_parts_mut(dptr, LANES));
@@ -748,18 +736,6 @@ pub fn format_string(value: &str, dst: &mut [MaybeUninit<u8>], need_quote: bool)
             cfg_if::cfg_if! {
                 if #[cfg(all(target_arch = "aarch64", target_feature = "sve2"))] {
                     let mask = escaped_mask_at(sptr).clear_high_bits(LANES - nb);
-                    if mask.all_zero() {
-                        dptr = dptr.add(nb);
-                        break;
-                    } else {
-                        let cn = mask.first_offset();
-                        nb -= cn;
-                        dptr = dptr.add(cn);
-                        sptr = sptr.add(cn);
-                        escape_unchecked(&mut sptr, &mut nb, &mut dptr);
-                    }
-                } else if #[cfg(all(target_arch = "aarch64", target_feature = "neon"))] {
-                    let mask = escaped_mask(v).clear_high_bits(LANES - nb);
                     if mask.all_zero() {
                         dptr = dptr.add(nb);
                         break;
