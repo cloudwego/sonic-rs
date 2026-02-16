@@ -288,12 +288,11 @@ impl SpaceSkipper {
         // then we use simd to accelerate skipping space
         while let Some(chunk) = reader.peek_n(16) {
             let chunk = unsafe { &*(chunk.as_ptr() as *const [_; 16]) };
-            let bitmap = unsafe { crate::util::arch::get_nonspace_bits(chunk) };
-            if bitmap != 0 {
-                let cnt = bitmap.trailing_zeros() as usize;
-                let ch = chunk[cnt];
-                reader.eat(cnt + 1);
+            let cnt = unsafe { crate::util::arch::get_nonspace_index(chunk) };
 
+            if cnt < 16 {
+                let ch = chunk[cnt];
+                reader.eat(cnt + 1); // Skip spaces + return char
                 return Some(ch);
             }
             reader.eat(16)
