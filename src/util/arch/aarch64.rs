@@ -15,8 +15,6 @@
 // This file may have been modified by ByteDance authors. All ByteDance
 // Modifications are Copyright 2022 ByteDance Authors.
 
-use std::arch::aarch64::*;
-
 // Not use PMULL instructions, but it is apparently slow.
 // This is copied from simdjson.
 pub unsafe fn prefix_xor(bitmask: u64) -> u64 {
@@ -47,7 +45,8 @@ pub unsafe fn prefix_xor(bitmask: u64) -> u64 {
 // do not pick it up.
 #[inline(always)]
 pub unsafe fn get_nonspace_bits(data: &[u8; 64]) -> u64 {
-    // return super::fallback::get_nonspace_bits(data);
+    use std::arch::aarch64::*;
+
     #[inline(always)]
     unsafe fn chunk_nonspace_bits(input: uint8x16_t) -> uint8x16_t {
         const LOW_TAB: uint8x16_t =
