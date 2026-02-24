@@ -83,9 +83,8 @@ jobs:
     - uses: dtolnay/rust-toolchain@nightly
       with:
         components: rustfmt, clippy
-    - uses: actions-rs/clippy-check@v1
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
     - name: Sanitize
       run: ./scripts/sanitize.sh ${{matrix.san}} ${{matrix.feature}}
 
@@ -96,8 +95,7 @@ jobs:
     - uses: dtolnay/rust-toolchain@nightly
       with:
         components: rustfmt, clippy
-    - uses: actions-rs/clippy-check@v1
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
     - name: Fuzz
       run: ./scripts/fuzz.sh
