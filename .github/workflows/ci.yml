@@ -84,7 +84,12 @@ jobs:
       with:
         components: rustfmt, clippy
     - name: Clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
+      run: |
+        if [ -n "${{ matrix.feature }}" ]; then
+          cargo clippy --all-targets --features "${{ matrix.feature }}" -- -D warnings
+        else
+          cargo clippy --all-targets -- -D warnings
+        fi
     - name: Sanitize
       run: ./scripts/sanitize.sh ${{matrix.san}} ${{matrix.feature}}
 
@@ -95,7 +100,5 @@ jobs:
     - uses: dtolnay/rust-toolchain@nightly
       with:
         components: rustfmt, clippy
-    - name: Clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
     - name: Fuzz
       run: ./scripts/fuzz.sh

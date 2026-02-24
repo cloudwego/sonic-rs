@@ -15,6 +15,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       # Use cargo-audit 0.22+ for CVSS 4.0 support in advisory DB (avoids parse error)
       - name: Install cargo-audit
-        run: cargo install cargo-audit --version "0.22.1"
+        run: cargo install cargo-audit --version "0.22.1" --locked
       - name: Audit Rust Dependencies
         run: cargo audit
