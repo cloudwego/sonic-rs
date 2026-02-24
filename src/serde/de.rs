@@ -222,23 +222,20 @@ macro_rules! tri {
 
 pub(crate) use tri;
 
-struct DepthGuard<'a, R> {
-    de: &'a mut Deserializer<R>,
-}
-
-impl<'a, 'de, R: Reader<'de>> DepthGuard<'a, R> {
-    fn guard(de: &'a mut Deserializer<R>) -> Result<Self> {
-        de.remaining_depth -= 1;
-        if de.remaining_depth == 0 {
-            return Err(de.parser.error(RecursionLimitExceeded));
+impl<'de, R: Reader<'de>> Deserializer<R> {
+    /// Ensures recursion depth limit; calls `f` with `self` and restores depth on return.
+    #[inline]
+    fn with_depth_limit<F, T>(&mut self, f: F) -> Result<T>
+    where
+        F: FnOnce(&mut Self) -> Result<T>,
+    {
+        self.remaining_depth -= 1;
+        if self.remaining_depth == 0 {
+            return Err(self.parser.error(RecursionLimitExceeded));
         }
-        Ok(Self { de })
-    }
-}
-
-impl<'a, R> Drop for DepthGuard<'a, R> {
-    fn drop(&mut self) {
-        self.de.remaining_depth += 1;
+        let result = f(self);
+        self.remaining_depth += 1;
+        result
     }
 }
 
@@ -474,20 +471,14 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                 Reference::Copied(s) => visitor.visit_str(s),
             },
             b'[' => {
-                let ret = {
-                    let _ = DepthGuard::guard(self);
-                    visitor.visit_seq(SeqAccess::new(self))
-                };
+                let ret = self.with_depth_limit(|de| visitor.visit_seq(SeqAccess::new(de)));
                 match (ret, self.end_seq()) {
                     (Ok(ret), Ok(())) => Ok(ret),
                     (Err(err), _) | (_, Err(err)) => Err(err),
                 }
             }
             b'{' => {
-                let ret = {
-                    let _ = DepthGuard::guard(self);
-                    visitor.visit_map(MapAccess::new(self))
-                };
+                let ret = self.with_depth_limit(|de| visitor.visit_map(MapAccess::new(de)));
                 match (ret, self.end_map()) {
                     (Ok(ret), Ok(())) => Ok(ret),
                     (Err(err), _) | (_, Err(err)) => Err(err),
@@ -758,10 +749,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
 
         let value = match peek {
             b'[' => {
-                let ret = {
-                    let _ = DepthGuard::guard(self);
-                    visitor.visit_seq(SeqAccess::new(self))
-                };
+                let ret = self.with_depth_limit(|de| visitor.visit_seq(SeqAccess::new(de)));
                 match (ret, self.end_seq()) {
                     (Ok(ret), Ok(())) => Ok(ret),
                     (Err(err), _) | (_, Err(err)) => Err(err),
@@ -804,10 +792,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
 
         let value = match peek {
             b'{' => {
-                let ret = {
-                    let _ = DepthGuard::guard(self);
-                    visitor.visit_map(MapAccess::new(self))
-                };
+                let ret = self.with_depth_limit(|de| visitor.visit_map(MapAccess::new(de)));
                 match (ret, self.end_map()) {
                     (Ok(ret), Ok(())) => Ok(ret),
                     (Err(err), _) | (_, Err(err)) => Err(err),
@@ -836,20 +821,14 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
 
         let value = match peek {
             b'[' => {
-                let ret = {
-                    let _ = DepthGuard::guard(self);
-                    visitor.visit_seq(SeqAccess::new(self))
-                };
+                let ret = self.with_depth_limit(|de| visitor.visit_seq(SeqAccess::new(de)));
                 match (ret, self.end_seq()) {
                     (Ok(ret), Ok(())) => Ok(ret),
                     (Err(err), _) | (_, Err(err)) => Err(err),
                 }
             }
             b'{' => {
-                let ret = {
-                    let _ = DepthGuard::guard(self);
-                    visitor.visit_map(MapAccess::new(self))
-                };
+                let ret = self.with_depth_limit(|de| visitor.visit_map(MapAccess::new(de)));
                 match (ret, self.end_map()) {
                     (Ok(ret), Ok(())) => Ok(ret),
                     (Err(err), _) | (_, Err(err)) => Err(err),
@@ -879,10 +858,8 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         match self.parser.skip_space_peek() {
             Some(b'{') => {
                 self.parser.read.eat(1);
-                let value = {
-                    let _ = DepthGuard::guard(self);
-                    tri!(visitor.visit_enum(VariantAccess::new(self)))
-                };
+                let value =
+                    self.with_depth_limit(|de| visitor.visit_enum(VariantAccess::new(de)))?;
 
                 match self.parser.skip_space() {
                     Some(b'}') => Ok(value),
@@ -1378,7 +1355,29 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{object, Value};
+    use crate::{error::ErrorCode, object, Value};
+
+    #[test]
+    fn test_recursion_depth_limit() {
+        // MAX_ALLOWED_DEPTH is 255; nesting 256 levels returns RecursionLimitExceeded.
+        // Use serde_json::Value so we go through the recursive path
+        // (sonic_rs::Value may use a fast path when index==0).
+        std::thread::Builder::new()
+            .name("test_recursion_depth_limit".to_string())
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                let depth = 256;
+                let src = format!("{}{}", "[".repeat(depth), "]".repeat(depth));
+                let err = crate::from_str::<serde_json::Value>(&src).unwrap_err();
+                assert!(matches!(
+                    err.error_code(),
+                    ErrorCode::RecursionLimitExceeded
+                ));
+            })
+            .expect("failed to spawn test thread")
+            .join()
+            .expect("test thread panicked");
+    }
 
     #[test]
     fn test_value_as_deserializer() {
