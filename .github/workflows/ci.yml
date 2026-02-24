@@ -1,6 +1,9 @@
 name: 'CI'
 on: pull_request
 
+permissions:
+  contents: read
+
 env:
   RUST_BACKTRACE: 1
   CARGO_TERM_COLOR: always
@@ -11,9 +14,10 @@ jobs:
         fail-fast: false
         matrix:
             os:
-              - [self-hosted, Linux, amd64]
+              - ubuntu-latest
               - ubuntu-24.04-arm
-    name: Rust stable
+              - macos-latest
+    name: Rust stable (${{ matrix.os }})
     runs-on: ${{matrix.os}}
     timeout-minutes: 45
     steps:
@@ -22,7 +26,7 @@ jobs:
         - run: ./scripts/test.sh
 
   test-stable-wasm:
-    runs-on: [self-hosted, Linux, amd64]
+    runs-on: ubuntu-latest
     env:
       WASMTIME_BACKTRACE_DETAILS: 1
     steps:
@@ -46,9 +50,10 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - [self-hosted, Linux, amd64]
+          - ubuntu-latest
           - ubuntu-24.04-arm
-    name: Rust nightly
+          - macos-latest
+    name: Rust nightly (${{ matrix.os }})
     runs-on: ${{matrix.os}}
     timeout-minutes: 45
     steps:
@@ -58,7 +63,7 @@ jobs:
 
   clippy_lint:
     name: Format check
-    runs-on: [self-hosted, Linux, amd64]
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -77,7 +82,7 @@ jobs:
         san: ["address,leak"]
         feature: ["", "arbitrary_precision", "sort_keys", "utf8_lossy", "non_trailing_zero"]
     name: Sanitize ${{matrix.san}} feature ${{matrix.feature}}
-    runs-on: [self-hosted, Linux, amd64]
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@nightly
@@ -94,7 +99,7 @@ jobs:
       run: ./scripts/sanitize.sh ${{matrix.san}} ${{matrix.feature}}
 
   fuzz:
-    runs-on: [self-hosted, Linux, amd64]
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@nightly
