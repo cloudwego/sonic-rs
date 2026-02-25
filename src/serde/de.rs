@@ -1355,8 +1355,9 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{error::ErrorCode, object, Value};
+    use crate::{object, Value};
 
+    #[cfg(not(target_family = "wasm"))]
     #[test]
     fn test_recursion_depth_limit() {
         // MAX_ALLOWED_DEPTH is 255; nesting 256 levels returns RecursionLimitExceeded.
@@ -1371,7 +1372,7 @@ mod test {
                 let err = crate::from_str::<serde_json::Value>(&src).unwrap_err();
                 assert!(matches!(
                     err.error_code(),
-                    ErrorCode::RecursionLimitExceeded
+                    crate::error::ErrorCode::RecursionLimitExceeded
                 ));
             })
             .expect("failed to spawn test thread")

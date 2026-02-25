@@ -1,4 +1,4 @@
-use std::{
+use core::{
     arch::wasm32::*,
     ops::{BitAnd, BitOr, BitOrAssign},
 };

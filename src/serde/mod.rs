@@ -345,6 +345,7 @@ mod test {
         assert_eq!(time, got);
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn read_file(path: &str, vec: &mut Vec<u8>) {
         use std::io::Read;
         let root = env!("CARGO_MANIFEST_DIR").to_owned();
