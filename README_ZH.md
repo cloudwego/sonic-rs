@@ -5,9 +5,12 @@
 [![Website](https://img.shields.io/website?up_message=cloudwego&url=https%3A%2F%2Fwww.cloudwego.io%2F)](https://www.cloudwego.io/)
 [![License](https://img.shields.io/crates/l/sonic-rs)](#license)
 [![Build Status][actions-badge]][actions-url]
+[![codecov][codecov-badge]][codecov-url]
 
 [actions-badge]: https://github.com/cloudwego/sonic-rs/actions/workflows/ci.yml/badge.svg
 [actions-url]: https://github.com/cloudwego/sonic-rs/actions
+[codecov-badge]: https://codecov.io/gh/cloudwego/sonic-rs/graph/badge.svg
+[codecov-url]: https://codecov.io/gh/cloudwego/sonic-rs
 
 中文 | [English](README.md)
 
