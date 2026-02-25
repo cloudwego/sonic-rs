@@ -42,7 +42,10 @@ jobs:
       - name: Run tests
         run: |
           cargo build --tests --target-dir target --target wasm32-wasip1
-          wasmtime run target/wasm32-wasip1/debug/deps/sonic_rs*.wasm
+          for wasm_file in target/wasm32-wasip1/debug/deps/sonic_rs-*.wasm; do
+            echo "Running $wasm_file"
+            wasmtime run "$wasm_file"
+          done
 
 
   test-nightly-hosted:

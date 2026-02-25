@@ -1670,8 +1670,6 @@ impl Serialize for Value {
 
 #[cfg(test)]
 mod test {
-    use std::path::Path;
-
     use super::*;
     #[cfg(feature = "sort_keys")]
     use crate::object;
@@ -1747,7 +1745,8 @@ mod test {
         }
     }
 
-    fn test_value_file(path: &Path) {
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_value_file(path: &std::path::Path) {
         let data = std::fs::read_to_string(path).unwrap();
         assert!(test_value(&data).is_ok(), "failed json is {path:?}");
     }

@@ -513,6 +513,7 @@ fn check_cross_page(ptr: *const u8, step: usize) -> bool {
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         // not check page cross in fallback envs, always true
+        let (_, _) = (ptr, step);
         true
     }
 }
