@@ -18,7 +18,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Run tests
         shell: bash
-        run: ./scripts/test.sh
+        run: bash ./scripts/test.sh
 
   test-stable-hosted:
     strategy:
