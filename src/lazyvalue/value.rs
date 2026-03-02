@@ -338,6 +338,36 @@ impl<'a> JsonValueTrait for LazyValue<'a> {
 }
 
 impl<'a> LazyValue<'a> {
+    /// Returns `Cow<'de, str>` if `self` is a `string`. The lifetime `'de` is the origin JSON.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sonic_rs::LazyValue;
+    ///
+    /// let lv: LazyValue = sonic_rs::get(r#"{"a": "hello world"}"#, &["a"]).unwrap();
+    /// assert_eq!(lv.as_cow_str().unwrap(), "hello world");
+    /// ```
+    pub fn as_cow_str(&self) -> Option<Cow<'a, str>> {
+        if !self.is_str() {
+            return None;
+        }
+
+        if self.inner.no_escaped() {
+            // remove the quotes
+            Some(match &self.raw {
+                JsonSlice::Raw(r) => {
+                    Cow::Borrowed(unsafe { from_utf8_unchecked(&r[1..r.len() - 1]) })
+                }
+                JsonSlice::FastStr(f) => Cow::Owned(f[1..f.len() - 1].to_string()),
+            })
+        } else {
+            self.inner
+                .parse_from(self.raw.as_ref())
+                .map(|s| Cow::Owned(s.into()))
+        }
+    }
+
     /// Export the raw JSON text as `str`.
     ///
     /// # Examples
@@ -355,12 +385,12 @@ impl<'a> LazyValue<'a> {
         unsafe { from_utf8_unchecked(self.raw.as_ref()) }
     }
 
-    /// Export the raw JSON text as `Cow<'de, str>`.  The lifetime `'de` is the origin JSON.
+    /// Export the raw JSON text as `Cow<'de, str>`. The lifetime `'de` is the origin JSON.
     ///
     /// # Examples
     ///
     /// ```
-    /// use sonic_rs::{get, LazyValue};
+    /// use sonic_rs::LazyValue;
     ///
     /// let lv: LazyValue = sonic_rs::get(r#"{"a": "hello world"}"#, &["a"]).unwrap();
     /// assert_eq!(lv.as_raw_cow(), "\"hello world\"");
