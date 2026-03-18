@@ -21,7 +21,7 @@ impl From<Number> for Value {
         match val.n {
             N::PosInt(u) => Value::new_u64(u),
             N::NegInt(i) => Value::new_i64(i),
-            N::Float(f) => unsafe { Value::new_f64_unchecked(f) },
+            N::Float(f) => Value::new_f64_unchecked(f),
         }
     }
 }

@@ -192,10 +192,7 @@ impl<'a> Reader<'a> for Read<'a> {
     #[inline(always)]
     fn peek_n(&self, n: usize) -> Option<&'a [u8]> {
         let end = self.index + n;
-        (end <= self.slice().len()).then(|| {
-            let ptr = self.slice()[self.index..].as_ptr();
-            unsafe { std::slice::from_raw_parts(ptr, n) }
-        })
+        (end <= self.slice().len()).then(|| &self.slice()[self.index..end])
     }
 
     #[inline(always)]
@@ -300,7 +297,10 @@ pub(crate) struct PaddedSliceRead<'a> {
 impl<'a> PaddedSliceRead<'a> {
     const PADDING_SIZE: usize = 64;
     pub fn new(buffer: &'a mut [u8], json: &'a [u8]) -> Self {
-        let base = unsafe { NonNull::new_unchecked(buffer.as_mut_ptr()) };
+        // Use as_mut_ptr() to preserve provenance over the entire buffer slice.
+        // NonNull::from(&mut buffer[0]) would narrow provenance to a single byte.
+        let base = NonNull::new(buffer.as_mut_ptr())
+            .expect("slice pointer is non-null");
         Self {
             base,
             cur: base,
@@ -330,11 +330,13 @@ impl<'a> Reader<'a> for PaddedSliceRead<'a> {
 
     #[inline(always)]
     fn peek_n(&self, n: usize) -> Option<&'a [u8]> {
+        debug_assert!(self.index() + n <= self.len + Self::PADDING_SIZE);
         unsafe { Some(std::slice::from_raw_parts(self.cur.as_ptr(), n)) }
     }
 
     #[inline(always)]
     fn set_index(&mut self, index: usize) {
+        debug_assert!(index <= self.len + Self::PADDING_SIZE);
         unsafe { self.cur = NonNull::new_unchecked(self.base.as_ptr().add(index)) }
     }
 
@@ -350,6 +352,7 @@ impl<'a> Reader<'a> for PaddedSliceRead<'a> {
 
     #[inline(always)]
     fn next_n(&mut self, n: usize) -> Option<&'a [u8]> {
+        debug_assert!(self.index() + n <= self.len + Self::PADDING_SIZE);
         unsafe {
             let ptr = self.cur.as_ptr();
             self.cur = NonNull::new_unchecked(ptr.add(n));
@@ -363,6 +366,7 @@ impl<'a> Reader<'a> for PaddedSliceRead<'a> {
     }
 
     fn eat(&mut self, n: usize) {
+        debug_assert!(self.index() + n <= self.len + Self::PADDING_SIZE);
         unsafe {
             self.cur = NonNull::new_unchecked(self.cur.as_ptr().add(n));
         }
@@ -380,6 +384,7 @@ impl<'a> Reader<'a> for PaddedSliceRead<'a> {
 
     #[inline(always)]
     fn backward(&mut self, n: usize) {
+        debug_assert!(n <= self.index());
         unsafe {
             self.cur = NonNull::new_unchecked(self.cur.as_ptr().sub(n));
         }

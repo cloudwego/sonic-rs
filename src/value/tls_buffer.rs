@@ -23,9 +23,9 @@ impl TlsBuf {
     #[inline]
     pub fn with_capacity(n: usize) -> Self {
         if n >= Self::MAX_TLS_SIZE {
-            let vec = Box::into_raw(Box::new(Vec::with_capacity(n)));
+            let vec = Box::leak(Box::new(Vec::with_capacity(n)));
             Self {
-                buf: unsafe { NonNull::new_unchecked(vec) },
+                buf: NonNull::from(vec),
                 need_drop: true,
             }
         } else {
@@ -37,7 +37,8 @@ impl TlsBuf {
             });
 
             Self {
-                buf: unsafe { NonNull::new_unchecked(vec) },
+                // pointer from RefCell::borrow_mut() is always non-null
+                buf: NonNull::new(vec).expect("thread-local buffer pointer is non-null"),
                 need_drop: false,
             }
         }

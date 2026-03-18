@@ -3,7 +3,6 @@ use std::{
     fmt::Debug,
     iter::FusedIterator,
     ops::{Deref, DerefMut, RangeBounds},
-    slice::{from_raw_parts, from_raw_parts_mut},
 };
 
 use ref_cast::RefCast;
@@ -266,11 +265,7 @@ impl Array {
         let len = self.len();
         assert!(index < len, "index {index} out of bounds(len: {len})");
         if index != self.len() - 1 {
-            unsafe {
-                let src = self.as_mut_ptr().add(index);
-                let dst = self.as_mut_ptr().add(len - 1);
-                std::ptr::swap(src, dst);
-            }
+            self.swap(index, len - 1);
         }
         self.pop().unwrap()
     }
@@ -657,11 +652,7 @@ pub struct IntoIter {
 impl IntoIter {
     pub fn as_mut_slice(&mut self) -> &mut [Value] {
         if let ValueMut::Array(array) = self.array.0.as_mut() {
-            unsafe {
-                let ptr = array.as_mut_ptr();
-                let len = array.len();
-                from_raw_parts_mut(ptr, len)
-            }
+            array.as_mut_slice()
         } else {
             panic!("Array::as_mut_slice: not an array");
         }
@@ -669,11 +660,7 @@ impl IntoIter {
 
     pub fn as_slice(&self) -> &[Value] {
         if let ValueRefInner::Array(array) = self.array.0.as_ref2() {
-            unsafe {
-                let ptr = array.as_ptr();
-                let len = array.len();
-                from_raw_parts(ptr, len)
-            }
+            array
         } else {
             panic!("Array::as_slice: not an array");
         }
