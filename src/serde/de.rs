@@ -271,6 +271,12 @@ macro_rules! impl_deserialize_number {
 
 // some functions only used for struct visitors.
 impl<'de, R: Reader<'de>> Deserializer<R> {
+    /// Fix error position for deserialized results.
+    #[inline]
+    fn fix_position<T>(&self, result: Result<T>) -> Result<T> {
+        result.map_err(|err| self.parser.fix_position(err))
+    }
+
     pub(crate) fn deserialize_number<V>(&mut self, visitor: V) -> Result<V::Value>
     where
         V: de::Visitor<'de>,
@@ -285,10 +291,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         };
 
         // fixed error position if not matched type
-        match value {
-            Ok(value) => Ok(value),
-            Err(err) => Err(self.parser.fix_position(err)),
-        }
+        self.fix_position(value)
     }
 
     #[cold]
@@ -389,7 +392,11 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
                     self.shared = Some(Arc::new(Shared::default()));
                 }
                 let shared = self.shared.as_mut().unwrap();
-                &mut *(Arc::as_ptr(shared) as *mut _)
+                let ptr = Arc::as_ptr(shared);
+                // Expose Arc allocation provenance for pack_shared's
+                // Arc::increment_strong_count (needs access to Arc header).
+                let _ = ptr as usize;
+                &mut *(ptr as *mut _)
             };
             // deserialize some json parts into `Value`, not use padding buffer, avoid the memory
             // copy
@@ -518,10 +525,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
             _ => Err(self.peek_invalid_type(peek, &visitor)),
         };
 
-        match value {
-            Ok(value) => Ok(value),
-            Err(err) => Err(self.parser.fix_position(err)),
-        }
+        self.fix_position(value)
     }
 
     impl_deserialize_number!(deserialize_i8);
@@ -560,10 +564,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
             }
         };
 
-        match value {
-            Ok(value) => Ok(value),
-            Err(err) => Err(self.parser.fix_position(err)),
-        }
+        self.fix_position(value)
     }
 
     fn deserialize_u128<V>(self, visitor: V) -> Result<V::Value>
@@ -590,10 +591,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
             }
         };
 
-        match value {
-            Ok(value) => Ok(value),
-            Err(err) => Err(self.parser.fix_position(err)),
-        }
+        self.fix_position(value)
     }
 
     fn deserialize_char<V>(self, visitor: V) -> Result<V::Value>
@@ -619,10 +617,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
             _ => Err(self.peek_invalid_type(peek, &visitor)),
         };
 
-        match value {
-            Ok(value) => Ok(value),
-            Err(err) => Err(self.parser.fix_position(err)),
-        }
+        self.fix_position(value)
     }
 
     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
@@ -658,10 +653,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
 
         // check invalid utf8 with allow space here
         let _ = self.parser.check_invalid_utf8(true)?;
-        match value {
-            Ok(value) => Ok(value),
-            Err(err) => Err(self.parser.fix_position(err)),
-        }
+        self.fix_position(value)
     }
 
     #[inline]
@@ -704,10 +696,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
             _ => Err(self.peek_invalid_type(peek, &visitor)),
         };
 
-        match value {
-            Ok(value) => Ok(value),
-            Err(err) => Err(self.parser.fix_position(err)),
-        }
+        self.fix_position(value)
     }
 
     fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
@@ -757,10 +746,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
             }
             _ => return Err(self.peek_invalid_type(peek, &visitor)),
         };
-        match value {
-            Ok(value) => Ok(value),
-            Err(err) => Err(self.parser.fix_position(err)),
-        }
+        self.fix_position(value)
     }
 
     fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value>
@@ -800,10 +786,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
             }
             _ => return Err(self.peek_invalid_type(peek, &visitor)),
         };
-        match value {
-            Ok(value) => Ok(value),
-            Err(err) => Err(self.parser.fix_position(err)),
-        }
+        self.fix_position(value)
     }
 
     fn deserialize_struct<V>(
@@ -837,10 +820,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
             _ => return Err(self.peek_invalid_type(peek, &visitor)),
         };
 
-        match value {
-            Ok(value) => Ok(value),
-            Err(err) => Err(self.parser.fix_position(err)),
-        }
+        self.fix_position(value)
     }
 
     /// Parses an enum as an object like `{"$KEY":$VALUE}`, where $VALUE is either a straight

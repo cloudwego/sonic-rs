@@ -179,7 +179,7 @@ where
     let slice = json.to_u8_slice();
     let reader = Read::new(slice, false);
     let mut parser = Parser::new(reader);
-    let (sub, status) = parser.get_from_with_iter_unchecked(path)?;
+    let (sub, status) = parser.get_from_with_iter(path, false)?;
     Ok(LazyValue::new(json.from_subset(sub), status.into()))
 }
 
@@ -403,7 +403,7 @@ where
     let slice = json.to_u8_slice();
     let reader = Read::new(slice, false);
     let mut parser = Parser::new(reader);
-    let (sub, status) = parser.get_from_with_iter(path)?;
+    let (sub, status) = parser.get_from_with_iter(path, true)?;
     let lv = LazyValue::new(json.from_subset(sub), status.into());
 
     // validate the utf-8 if slice

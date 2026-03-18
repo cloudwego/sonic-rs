@@ -14,7 +14,7 @@ pub enum JsonSlice<'de> {
 
 impl<'de> JsonSlice<'de> {
     #[inline(always)]
-    pub(crate) unsafe fn as_faststr(&self) -> FastStr {
+    pub(crate) fn as_faststr(&self) -> FastStr {
         match self {
             JsonSlice::Raw(sub) => FastStr::new(as_str(sub)),
             JsonSlice::FastStr(f) => f.clone(),

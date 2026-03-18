@@ -88,24 +88,22 @@ impl PartialEq<Value> for &str {
 ///////////////////////////////////////////////////////////////////
 // Copied from serde_json
 
-#[inline]
-fn eq_i64(value: &Value, other: i64) -> bool {
-    value.as_i64() == Some(other)
+macro_rules! impl_eq_fn {
+    ($($name:ident($ty:ty) => $accessor:ident;)*) => {
+        $(
+            #[inline]
+            fn $name(value: &Value, other: $ty) -> bool {
+                value.$accessor() == Some(other)
+            }
+        )*
+    };
 }
 
-#[inline]
-fn eq_u64(value: &Value, other: u64) -> bool {
-    value.as_u64() == Some(other)
-}
-
-#[inline]
-fn eq_f64(value: &Value, other: f64) -> bool {
-    value.as_f64() == Some(other)
-}
-
-#[inline]
-fn eq_bool(value: &Value, other: bool) -> bool {
-    value.as_bool() == Some(other)
+impl_eq_fn! {
+    eq_i64(i64) => as_i64;
+    eq_u64(u64) => as_u64;
+    eq_f64(f64) => as_f64;
+    eq_bool(bool) => as_bool;
 }
 
 #[inline]

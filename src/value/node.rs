@@ -137,10 +137,8 @@ pub(crate) union Data {
 }
 
 #[derive(Copy, Clone)]
-#[repr(C)]
-pub(crate) union Meta {
-    shared: NonNull<Shared>,
-    typ: u64,
+#[repr(transparent)]
+pub(crate) struct Meta {
     val: u64,
 }
 
@@ -181,7 +179,7 @@ impl Meta {
 
 impl Meta {
     pub const fn new(typ: u64) -> Self {
-        Self { typ }
+        Self { val: typ }
     }
 
     fn pack_dom_node(kind: u64, idx: u32, len: u32) -> Self {
@@ -203,6 +201,10 @@ impl Meta {
     }
 
     fn pack_shared(ptr: *const Shared) -> Self {
+        // Use int-to-ptr roundtrip to recover full Arc allocation provenance.
+        // The ptr may have narrow provenance (from &Shared), but the Arc
+        // allocation was exposed in parse_with_padding / Deserializer.
+        let ptr = (ptr as usize) as *const Shared;
         unsafe { Arc::increment_strong_count(ptr) };
         let addr = ptr as usize as u64;
         let val = addr | Self::ROOT_NODE;
@@ -210,13 +212,11 @@ impl Meta {
     }
 
     fn get_kind(&self) -> u64 {
-        let val = unsafe { self.val };
-        val & 0x7
+        self.val & 0x7
     }
 
     fn get_type(&self) -> u64 {
-        let val = unsafe { self.val };
-        let typ = val & Self::TYPE_MASK;
+        let typ = self.val & Self::TYPE_MASK;
         let kind = self.get_kind();
         match kind {
             Self::STAIC_NODE | Self::OWNED_NODE => typ,
@@ -230,9 +230,8 @@ impl Meta {
 
     fn unpack_dom_node(&self) -> NodeMeta {
         debug_assert!(self.in_shared());
-        let val = unsafe { self.val };
-        let idx = (val & Self::IDX_MASK) >> Self::KIND_BITS;
-        let len = val >> Self::LEN_OFFSET;
+        let idx = (self.val & Self::IDX_MASK) >> Self::KIND_BITS;
+        let len = self.val >> Self::LEN_OFFSET;
         NodeMeta {
             idx: idx as u32,
             len: len as u32,
@@ -241,8 +240,7 @@ impl Meta {
 
     fn unpack_root(&self) -> *const Shared {
         debug_assert!(self.get_kind() == Self::ROOT_NODE);
-        let val = unsafe { self.val };
-        let addr = (val & !Self::ROOT_NODE) as usize;
+        let addr = (self.val & !Self::ROOT_NODE) as usize;
         addr as *const Shared
     }
 
@@ -262,8 +260,7 @@ impl Meta {
 
     fn unpack_strlen(&self) -> usize {
         debug_assert!(self.has_strlen());
-        let val = unsafe { self.val };
-        (val >> Self::LEN_OFFSET) as usize
+        (self.val >> Self::LEN_OFFSET) as usize
     }
 }
 
@@ -416,17 +413,18 @@ impl Drop for Value {
         if self.meta.get_kind() == Meta::STAIC_NODE || self.meta.in_shared() {
             return;
         }
-        unsafe {
-            match self.meta.get_type() {
-                Meta::FASTSTR | Meta::RAWNUM_FASTSTR => ManuallyDrop::drop(&mut self.data.str_own),
-                Meta::ARR_MUT => ManuallyDrop::drop(&mut self.data.arr_own),
-                Meta::OBJ_MUT => ManuallyDrop::drop(&mut self.data.obj_own),
-                Meta::ROOT_NODE => {
-                    let dom = self.meta.unpack_root();
-                    drop(Arc::from_raw(dom));
-                }
-                _ => unreachable!("should not be dropped"),
+        // Safety: each arm accesses the Data union field matching the Meta type tag
+        match self.meta.get_type() {
+            Meta::FASTSTR | Meta::RAWNUM_FASTSTR => unsafe {
+                ManuallyDrop::drop(&mut self.data.str_own)
+            },
+            Meta::ARR_MUT => unsafe { ManuallyDrop::drop(&mut self.data.arr_own) },
+            Meta::OBJ_MUT => unsafe { ManuallyDrop::drop(&mut self.data.obj_own) },
+            Meta::ROOT_NODE => {
+                let dom = self.meta.unpack_root();
+                drop(unsafe { Arc::from_raw(dom) });
             }
+            _ => unreachable!("should not be dropped"),
         }
     }
 }
@@ -501,8 +499,15 @@ impl Value {
     }
 
     fn forward_find_shared(current: *const Value, idx: usize) -> *const Shared {
-        assert!(unsafe { (*(current.sub(idx) as *const MetaNode)).canary() });
-        unsafe { (*(current.sub(idx) as *const MetaNode)).shared }
+        // Use integer arithmetic to navigate back to the MetaNode.
+        // This avoids Stacked Borrows provenance issues: `current` may have narrow
+        // provenance (e.g. from &Value indexing), but the bump allocation's provenance
+        // was exposed in visit_root/visit_container_end, so the int-to-ptr cast
+        // recovers it.
+        let meta_addr = (current as usize) - idx * size_of::<Value>();
+        let meta = meta_addr as *const MetaNode;
+        assert!(unsafe { (*meta).canary() });
+        unsafe { (*meta).shared }
     }
 
     fn unpack_shared(&self) -> &Shared {
@@ -511,7 +516,10 @@ impl Value {
             let idx = self.meta.unpack_dom_node().idx;
             let cur = self as *const _;
             let shared: *const Shared = Self::forward_find_shared(cur, idx as usize);
-            &*shared
+            // Use int-to-ptr roundtrip to recover exposed provenance from the
+            // Shared allocation (exposed in DocumentVisitor::new). This avoids
+            // Stacked Borrows issues where the original tag may have been invalidated.
+            &*((shared as usize) as *const Shared)
         }
     }
 
@@ -537,33 +545,32 @@ impl Value {
 
     #[inline(always)]
     fn unpack_ref(&self) -> ValueDetail<'_> {
-        unsafe {
-            match self.meta.get_type() {
-                Meta::NULL => ValueDetail::Null,
-                Meta::TRUE => ValueDetail::Bool(true),
-                Meta::FALSE => ValueDetail::Bool(false),
-                Meta::STATIC_STR => ValueDetail::StaticStr(self.unpack_static_str()),
-                Meta::I64 => ValueDetail::Number(Number::from(self.data.ival)),
-                Meta::U64 => ValueDetail::Number(Number::from(self.data.uval)),
-                Meta::F64 => ValueDetail::Number(Number::try_from(self.data.fval).unwrap()),
-                Meta::EMPTY_ARR => ValueDetail::EmptyArray,
-                Meta::EMPTY_OBJ => ValueDetail::EmptyObject,
-                Meta::STR_NODE | Meta::RAWNUM_NODE | Meta::ARR_NODE | Meta::OBJ_NODE => {
-                    ValueDetail::NodeInDom(NodeInDom {
-                        node: self,
-                        dom: self.unpack_shared(),
-                    })
-                }
-                Meta::FASTSTR => ValueDetail::FastStr(&self.data.str_own),
-                Meta::RAWNUM_FASTSTR => ValueDetail::RawNumFasStr(&self.data.str_own),
-                Meta::ARR_MUT => ValueDetail::Array(&self.data.arr_own),
-                Meta::OBJ_MUT => ValueDetail::Object(&self.data.obj_own),
-                Meta::ROOT_NODE => ValueDetail::Root(NodeInDom {
-                    node: self.data.root.as_ref(),
-                    dom: &*self.meta.unpack_root(),
-                }),
-                _ => unreachable!("unknown type"),
+        // Safety: each arm accesses the Data union field matching the Meta type tag
+        match self.meta.get_type() {
+            Meta::NULL => ValueDetail::Null,
+            Meta::TRUE => ValueDetail::Bool(true),
+            Meta::FALSE => ValueDetail::Bool(false),
+            Meta::STATIC_STR => ValueDetail::StaticStr(self.unpack_static_str()),
+            Meta::I64 => ValueDetail::Number(Number::from(unsafe { self.data.ival })),
+            Meta::U64 => ValueDetail::Number(Number::from(unsafe { self.data.uval })),
+            Meta::F64 => ValueDetail::Number(Number::try_from(unsafe { self.data.fval }).unwrap()),
+            Meta::EMPTY_ARR => ValueDetail::EmptyArray,
+            Meta::EMPTY_OBJ => ValueDetail::EmptyObject,
+            Meta::STR_NODE | Meta::RAWNUM_NODE | Meta::ARR_NODE | Meta::OBJ_NODE => {
+                ValueDetail::NodeInDom(NodeInDom {
+                    node: self,
+                    dom: self.unpack_shared(),
+                })
             }
+            Meta::FASTSTR => ValueDetail::FastStr(unsafe { &self.data.str_own }),
+            Meta::RAWNUM_FASTSTR => ValueDetail::RawNumFasStr(unsafe { &self.data.str_own }),
+            Meta::ARR_MUT => ValueDetail::Array(unsafe { &self.data.arr_own }),
+            Meta::OBJ_MUT => ValueDetail::Object(unsafe { &self.data.obj_own }),
+            Meta::ROOT_NODE => ValueDetail::Root(NodeInDom {
+                node: unsafe { self.data.root.as_ref() },
+                dom: unsafe { &*self.meta.unpack_root() },
+            }),
+            _ => unreachable!("unknown type"),
         }
     }
 }
@@ -677,11 +684,11 @@ impl Display for Value {
 
 impl Debug for Data {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        unsafe {
-            match self.parent {
-                0 => write!(f, "parent: null"),
-                _ => write!(f, "parent: {}", self.parent),
-            }
+        // Safety: reading `parent` (u64) from the union is valid for any bit pattern
+        let parent = unsafe { self.parent };
+        match parent {
+            0 => write!(f, "parent: null"),
+            _ => write!(f, "parent: {parent}"),
         }
     }
 }
@@ -931,7 +938,8 @@ impl Value {
         Value {
             meta: Meta::pack_static_str(Meta::STATIC_STR, val.len()),
             data: Data {
-                static_str: unsafe { NonNull::from(&*val.as_ptr()) },
+                static_str: NonNull::new(val.as_ptr() as *mut u8)
+                    .expect("str::as_ptr() is non-null"),
             },
         }
     }
@@ -956,7 +964,8 @@ impl Value {
 
     #[doc(hidden)]
     #[inline]
-    pub(crate) unsafe fn new_f64_unchecked(fval: f64) -> Self {
+    pub(crate) fn new_f64_unchecked(fval: f64) -> Self {
+        debug_assert!(fval.is_finite(), "f64 must be finite");
         Value {
             meta: Meta::new(Meta::F64),
             data: Data { fval },
@@ -1030,7 +1039,8 @@ impl Value {
         Value {
             meta: Meta::pack_dom_node(kind, node_idx, val.len() as u32),
             data: Data {
-                dom_str: unsafe { NonNull::new_unchecked(val.as_ptr() as *mut _) },
+                dom_str: NonNull::new(val.as_ptr() as *mut _)
+                    .expect("str::as_ptr() is non-null"),
             },
         }
     }
@@ -1098,7 +1108,8 @@ impl Value {
         Value {
             meta: Meta::pack_dom_node(kind, node_idx, str.len() as u32),
             data: Data {
-                dom_str: unsafe { NonNull::new_unchecked(str.as_ptr() as *mut _) },
+                dom_str: NonNull::new(str.as_ptr() as *mut _)
+                    .expect("str::as_ptr() is non-null"),
             },
         }
     }
@@ -1307,6 +1318,10 @@ impl Value {
     pub(crate) fn parse_with_padding(&mut self, json: &[u8], cfg: DeserializeCfg) -> Result<usize> {
         // allocate the padding buffer for the input json
         let mut shared = Arc::new(Shared::default());
+        // Expose Arc allocation provenance (header + data) so that
+        // Arc::increment_strong_count in pack_shared can access the Arc header
+        // via int-to-ptr recovery.
+        let _ = Arc::as_ptr(&shared) as usize;
         let mut buffer = Vec::with_capacity(json.len() + Self::PADDING_SIZE);
         buffer.extend_from_slice(json);
         buffer.extend_from_slice(&b"x\"x"[..]);
@@ -1316,7 +1331,7 @@ impl Value {
         let slice = PaddedSliceRead::new(buffer.as_mut_slice(), json);
         let mut parser = Parser::new(slice).with_config(cfg);
         let mut vis = DocumentVisitor::new(json.len(), smut);
-        parser.parse_dom(&mut vis)?;
+        parser.parse_dom(&mut vis, None)?;
         let idx = parser.read.index();
 
         // NOTE: root node should is the first node
@@ -1334,7 +1349,7 @@ impl Value {
     ) -> Result<()> {
         let remain_len = parser.read.remain();
         let mut vis = DocumentVisitor::new(remain_len, shared);
-        parser.parse_dom2(&mut vis, strbuf)?;
+        parser.parse_dom(&mut vis, Some(strbuf))?;
         *self = unsafe { vis.root.as_ref().clone() };
         Ok(())
     }
@@ -1342,11 +1357,15 @@ impl Value {
 
 // a simple wrapper for visitor
 pub(crate) struct DocumentVisitor<'a> {
-    pub(crate) shared: &'a mut Shared,
+    // Store as raw pointer to avoid Stacked Borrows invalidation:
+    // storing `&'a mut Shared` and later creating `*const Shared` from it
+    // produces a tag that gets invalidated by subsequent mutable accesses.
+    pub(crate) shared: *mut Shared,
     pub(crate) buf: TlsBuf,
     pub(crate) parent: usize,
     pub(crate) nodes_start: usize,
     pub(crate) root: NonNull<Value>,
+    _marker: std::marker::PhantomData<&'a mut Shared>,
 }
 
 impl<'a> DocumentVisitor<'a> {
@@ -1357,17 +1376,22 @@ impl<'a> DocumentVisitor<'a> {
         // if the capacity is not enough, we will return a error.
         let max_len = (json_len / 2) + 2;
         let buf = TlsBuf::with_capacity(max_len);
+        let shared = shared as *mut Shared;
+        // Expose provenance so that forward_find_shared / unpack_shared can
+        // recover the Shared pointer via int-to-ptr casts.
+        let _ = shared as usize;
         DocumentVisitor {
             shared,
             buf,
             parent: 0,
             nodes_start: 0,
             root: NonNull::dangling(),
+            _marker: std::marker::PhantomData,
         }
     }
 
     fn nodes(&mut self) -> &mut Vec<ManuallyDrop<Value>> {
-        unsafe { NonNull::new_unchecked(self.buf.as_vec_mut() as *mut _).as_mut() }
+        self.buf.as_vec_mut()
     }
 
     fn index(&mut self) -> usize {
@@ -1380,6 +1404,11 @@ struct MetaNode {
     shared: *const Shared,
     canary: u64,
 }
+
+const _: () = assert!(
+    std::mem::size_of::<MetaNode>() == std::mem::size_of::<Value>(),
+    "MetaNode and Value must have the same size for transmute safety"
+);
 
 impl MetaNode {
     fn new(shared: *const Shared) -> Self {
@@ -1430,7 +1459,11 @@ impl<'a> DocumentVisitor<'a> {
             let real_count = visited_children.len() + Value::HEAD_NODE_COUNT;
             let layout = Layout::array::<Value>(real_count).unwrap();
             let hdr =
-                vis.shared.get_alloc().alloc_layout(layout).as_ptr() as *mut ManuallyDrop<Value>;
+                (*vis.shared).get_alloc().alloc_layout(layout).as_ptr()
+                    as *mut ManuallyDrop<Value>;
+
+            // Expose provenance so forward_find_shared can navigate back via int arithmetic
+            let _ = hdr as usize;
 
             // copy visited nodes into document
             let visited_children = &vis.nodes()[(parent + 1)..];
@@ -1457,17 +1490,20 @@ impl<'a> DocumentVisitor<'a> {
     fn visit_root(&mut self) {
         // should alloc root node in the bump allocator
         let start = self.nodes_start;
-        let (rm, ru) = unsafe { (self.nodes()[start].meta, self.nodes()[start].data.uval) };
-        let ptr = self.shared as *const _;
-        let (_, root) = self
-            .shared
-            .get_alloc()
+        let ptr = self.shared as *const Shared;
+        let tuple_ref = unsafe { (*self.shared).get_alloc() }
             .alloc((MetaNode::new(ptr), Value::default()));
 
-        // copy visited nodes into document
-        root.meta = rm;
-        root.data.uval = ru;
-        self.root = NonNull::from(root);
+        // Expose provenance of the full (MetaNode, Value) allocation so that
+        // forward_find_shared can navigate back to MetaNode via integer arithmetic.
+        let _ = (tuple_ref as *const (MetaNode, Value)) as usize;
+
+        // Copy source node to root using ptr::copy to preserve pointer provenance
+        // in the Data union. Copying through data.uval (u64) would strip provenance.
+        let src = &self.nodes()[start] as *const ManuallyDrop<Value> as *const Value;
+        let dst = &mut tuple_ref.1 as *mut Value;
+        unsafe { std::ptr::copy_nonoverlapping(src, dst, 1) };
+        self.root = unsafe { NonNull::new_unchecked(dst) };
     }
 
     #[inline(always)]
@@ -1496,7 +1532,7 @@ impl<'a> DocumentVisitor<'a> {
 impl<'de, 'a> JsonVisitor<'de> for DocumentVisitor<'a> {
     #[inline(always)]
     fn visit_dom_start(&mut self) -> bool {
-        let shared = self.shared as *mut _ as *const _;
+        let shared = self.shared as *const Shared;
         self.push_meta(MetaNode::new(shared));
         self.nodes_start = self.nodes().len();
         assert_eq!(self.nodes().len(), 1);
@@ -1510,16 +1546,16 @@ impl<'de, 'a> JsonVisitor<'de> for DocumentVisitor<'a> {
 
     #[inline(always)]
     fn visit_f64(&mut self, val: f64) -> bool {
-        // # Safety
-        // we have checked the f64 in parsing number.
-        let node = unsafe { Value::new_f64_unchecked(val) };
+        let node = Value::new_f64_unchecked(val);
         self.push_node(node)
     }
 
     #[inline(always)]
     fn visit_raw_number(&mut self, val: &str) -> bool {
         let idx = self.index();
-        let node = Value::copy_str_in(Meta::RAWNUM_NODE, val, idx, self.shared);
+        let node = Value::copy_str_in(Meta::RAWNUM_NODE, val, idx, unsafe {
+            &mut *self.shared
+        });
         self.push_node(node)
     }
 
@@ -1568,7 +1604,9 @@ impl<'de, 'a> JsonVisitor<'de> for DocumentVisitor<'a> {
     #[inline(always)]
     fn visit_str(&mut self, val: &str) -> bool {
         let idx = self.index();
-        let node = Value::copy_str_in(Meta::STR_NODE, val, idx, self.shared);
+        let node = Value::copy_str_in(Meta::STR_NODE, val, idx, unsafe {
+            &mut *self.shared
+        });
         self.push_node(node)
     }
 

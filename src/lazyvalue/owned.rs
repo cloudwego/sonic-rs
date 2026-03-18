@@ -590,7 +590,7 @@ impl OwnedLazyValue {
 
 impl<'de> From<LazyValue<'de>> for OwnedLazyValue {
     fn from(lv: LazyValue<'de>) -> Self {
-        let raw = unsafe { lv.raw.as_faststr() };
+        let raw = lv.raw.as_faststr();
         if lv.inner.no_escaped() && raw.as_bytes()[0] == b'"' {
             return Self(LazyPacked::NonEscStrRaw(raw));
         }
