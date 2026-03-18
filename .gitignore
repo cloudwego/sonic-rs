@@ -1,3 +1,6 @@
+.cursor/
+.claude/
+tmp/
 target/
 build/
 .vscode/
