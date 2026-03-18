@@ -500,13 +500,7 @@ impl JsonContainerTrait for OwnedLazyValue {
     #[inline]
     fn as_array(&self) -> Option<&Self::ArrayType> {
         let parsed = match &self.0 {
-            LazyPacked::Raw(raw) => {
-                if raw.get_type() == JsonType::Array {
-                    raw.load().ok()?
-                } else {
-                    return None;
-                }
-            }
+            LazyPacked::Raw(raw) if raw.get_type() == JsonType::Array => raw.load().ok()?,
             LazyPacked::Parsed(parsed) => parsed,
             _ => return None,
         };
@@ -521,13 +515,7 @@ impl JsonContainerTrait for OwnedLazyValue {
     #[inline]
     fn as_object(&self) -> Option<&Self::ObjectType> {
         let parsed = match &self.0 {
-            LazyPacked::Raw(raw) => {
-                if raw.get_type() == JsonType::Object {
-                    raw.load().ok()?
-                } else {
-                    return None;
-                }
-            }
+            LazyPacked::Raw(raw) if raw.get_type() == JsonType::Object => raw.load().ok()?,
             LazyPacked::Parsed(parsed) => parsed,
             _ => return None,
         };
