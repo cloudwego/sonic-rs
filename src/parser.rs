@@ -1448,11 +1448,14 @@ where
     }
 
     pub fn skip_one_checked(&mut self, checked: bool) -> Result<(&'de [u8], ParseStatus)> {
-        let ch = self.skip_space();
+        let ch = match self.skip_space() {
+            Some(ch) => ch,
+            None => return perr!(self, EofWhileParsing),
+        };
         let start = self.read.index() - 1;
         let mut status = ParseStatus::None;
         match ch {
-            Some(c @ b'-' | c @ b'0'..=b'9') => {
+            c @ b'-' | c @ b'0'..=b'9' => {
                 if checked {
                     self.skip_number(c)?;
                 } else {
@@ -1460,7 +1463,7 @@ where
                 }
                 Ok(())
             }
-            Some(b'"') => {
+            b'"' => {
                 status = if checked {
                     self.skip_string()?
                 } else {
@@ -1468,25 +1471,24 @@ where
                 };
                 Ok(())
             }
-            Some(b'{') => {
+            b'{' => {
                 if checked {
                     self.skip_object()
                 } else {
                     self.skip_container(b'{', b'}')
                 }
             }
-            Some(b'[') => {
+            b'[' => {
                 if checked {
                     self.skip_array()
                 } else {
                     self.skip_container(b'[', b']')
                 }
             }
-            Some(b't') => self.parse_literal("rue"),
-            Some(b'f') => self.parse_literal("alse"),
-            Some(b'n') => self.parse_literal("ull"),
-            Some(_) => perr!(self, InvalidJsonValue),
-            None => perr!(self, EofWhileParsing),
+            b't' => self.parse_literal("rue"),
+            b'f' => self.parse_literal("alse"),
+            b'n' => self.parse_literal("ull"),
+            _ => perr!(self, InvalidJsonValue),
         }?;
         let slice = self.read.slice_unchecked(start, self.read.index());
         Ok((slice, status))
