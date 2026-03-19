@@ -136,11 +136,29 @@ pub(crate) union Data {
     pub(crate) parent: u64,
 }
 
+/// Compact metadata for a `Value` node.
+///
+/// This is a union of `u64` (for integer-encoded metadata like kind/idx/len)
+/// and `*const Shared` (for root nodes that store a tagged pointer).
+/// Using a union preserves pointer provenance through storage, enabling
+/// strict-provenance-compatible round-trips for the root_node variant
+/// without needing `expose_provenance` / `with_exposed_provenance`.
+///
+/// All non-root variants read/write through the `val` field (pure integer).
+/// The root variant reads/writes through the `ptr` field (tagged pointer).
 #[derive(Copy, Clone)]
-#[repr(transparent)]
-pub(crate) struct Meta {
+#[repr(C)]
+pub(crate) union Meta {
     val: u64,
+    ptr: *const Shared,
 }
+
+// Safety: Meta contains either a plain integer or a pointer derived from
+// Arc<Shared> (which is Send+Sync). The pointer is never dereferenced
+// through Meta directly — it is only unpacked and used behind Arc's
+// reference counting.
+unsafe impl Send for Meta {}
+unsafe impl Sync for Meta {}
 
 impl Meta {
     const STAIC_NODE: u64 = 0;
@@ -201,23 +219,38 @@ impl Meta {
     }
 
     fn pack_shared(ptr: *const Shared) -> Self {
-        // Use int-to-ptr roundtrip to recover full Arc allocation provenance.
-        // The ptr may have narrow provenance (from &Shared), but the Arc
-        // allocation was exposed in parse_with_padding / Deserializer.
-        let ptr = (ptr as usize) as *const Shared;
-        unsafe { Arc::increment_strong_count(ptr) };
-        let addr = ptr as usize as u64;
-        let val = addr | Self::ROOT_NODE;
-        Self { val }
+        // Use the union's ptr field to preserve provenance through storage.
+        // The tag bits (ROOT_NODE = 0x7) are set via map_addr so provenance
+        // is maintained — no expose/recover roundtrip needed for Meta storage.
+        //
+        // Note: Arc::increment_strong_count needs provenance covering the full
+        // Arc allocation (header + data). The caller's ptr may come from &Shared
+        // (narrow provenance), so the Arc allocation must be exposed beforehand
+        // (done in parse_with_padding / Deserializer).
+        let addr = ptr.expose_provenance();
+        let wide_ptr = std::ptr::with_exposed_provenance::<Shared>(addr);
+        unsafe { Arc::increment_strong_count(wide_ptr) };
+        let tagged = ptr.map_addr(|a| a | Self::ROOT_NODE as usize);
+        Self { ptr: tagged }
+    }
+
+    /// Read the integer representation of this Meta.
+    ///
+    /// Safety: reading `val` when `ptr` was written is sound — both fields
+    /// occupy the same bytes and we only inspect integer bits, never dereference.
+    #[inline(always)]
+    fn read_val(&self) -> u64 {
+        unsafe { self.val }
     }
 
     fn get_kind(&self) -> u64 {
-        self.val & 0x7
+        self.read_val() & Self::KIND_MASK
     }
 
     fn get_type(&self) -> u64 {
-        let typ = self.val & Self::TYPE_MASK;
-        let kind = self.get_kind();
+        let val = self.read_val();
+        let typ = val & Self::TYPE_MASK;
+        let kind = val & Self::KIND_MASK;
         match kind {
             Self::STAIC_NODE | Self::OWNED_NODE => typ,
             Self::STR_NODE | Self::RAWNUM_NODE | Self::ARR_NODE | Self::OBJ_NODE => {
@@ -230,8 +263,9 @@ impl Meta {
 
     fn unpack_dom_node(&self) -> NodeMeta {
         debug_assert!(self.in_shared());
-        let idx = (self.val & Self::IDX_MASK) >> Self::KIND_BITS;
-        let len = self.val >> Self::LEN_OFFSET;
+        let val = self.read_val();
+        let idx = (val & Self::IDX_MASK) >> Self::KIND_BITS;
+        let len = val >> Self::LEN_OFFSET;
         NodeMeta {
             idx: idx as u32,
             len: len as u32,
@@ -240,8 +274,8 @@ impl Meta {
 
     fn unpack_root(&self) -> *const Shared {
         debug_assert!(self.get_kind() == Self::ROOT_NODE);
-        let addr = (self.val & !Self::ROOT_NODE) as usize;
-        addr as *const Shared
+        // Read through the ptr field to recover provenance, then strip the tag.
+        unsafe { self.ptr.map_addr(|a| a & !(Self::ROOT_NODE as usize)) }
     }
 
     fn has_strlen(&self) -> bool {
@@ -260,7 +294,7 @@ impl Meta {
 
     fn unpack_strlen(&self) -> usize {
         debug_assert!(self.has_strlen());
-        (self.val >> Self::LEN_OFFSET) as usize
+        (self.read_val() >> Self::LEN_OFFSET) as usize
     }
 }
 
@@ -499,13 +533,13 @@ impl Value {
     }
 
     fn forward_find_shared(current: *const Value, idx: usize) -> *const Shared {
-        // Use integer arithmetic to navigate back to the MetaNode.
-        // This avoids Stacked Borrows provenance issues: `current` may have narrow
-        // provenance (e.g. from &Value indexing), but the bump allocation's provenance
-        // was exposed in visit_root/visit_container_end, so the int-to-ptr cast
-        // recovers it.
-        let meta_addr = (current as usize) - idx * size_of::<Value>();
-        let meta = meta_addr as *const MetaNode;
+        // Navigate back from a child Value to the MetaNode at the start of the
+        // bump allocation. This requires exposed provenance because `current`
+        // typically has narrow provenance (from &Value indexing), but we need to
+        // access memory outside that provenance range (the MetaNode before it).
+        // The bump allocation's provenance was exposed in visit_root/visit_container_end.
+        let meta_addr = current.expose_provenance() - idx * size_of::<Value>();
+        let meta = std::ptr::with_exposed_provenance::<MetaNode>(meta_addr);
         assert!(unsafe { (*meta).canary() });
         unsafe { (*meta).shared }
     }
@@ -516,10 +550,10 @@ impl Value {
             let idx = self.meta.unpack_dom_node().idx;
             let cur = self as *const _;
             let shared: *const Shared = Self::forward_find_shared(cur, idx as usize);
-            // Use int-to-ptr roundtrip to recover exposed provenance from the
-            // Shared allocation (exposed in DocumentVisitor::new). This avoids
-            // Stacked Borrows issues where the original tag may have been invalidated.
-            &*((shared as usize) as *const Shared)
+            // The shared pointer stored in MetaNode was written with full
+            // provenance from the Shared allocation, so it can be dereferenced
+            // directly.
+            &*shared
         }
     }
 
@@ -1319,9 +1353,9 @@ impl Value {
         // allocate the padding buffer for the input json
         let mut shared = Arc::new(Shared::default());
         // Expose Arc allocation provenance (header + data) so that
-        // Arc::increment_strong_count in pack_shared can access the Arc header
-        // via int-to-ptr recovery.
-        let _ = Arc::as_ptr(&shared) as usize;
+        // Arc::increment_strong_count in pack_shared can recover it
+        // via with_exposed_provenance.
+        Arc::as_ptr(&shared).expose_provenance();
         let mut buffer = Vec::with_capacity(json.len() + Self::PADDING_SIZE);
         buffer.extend_from_slice(json);
         buffer.extend_from_slice(&b"x\"x"[..]);
@@ -1378,8 +1412,8 @@ impl<'a> DocumentVisitor<'a> {
         let buf = TlsBuf::with_capacity(max_len);
         let shared = shared as *mut Shared;
         // Expose provenance so that forward_find_shared / unpack_shared can
-        // recover the Shared pointer via int-to-ptr casts.
-        let _ = shared as usize;
+        // recover the Shared pointer via with_exposed_provenance.
+        (shared as *const Shared).expose_provenance();
         DocumentVisitor {
             shared,
             buf,
@@ -1462,8 +1496,8 @@ impl<'a> DocumentVisitor<'a> {
                 (*vis.shared).get_alloc().alloc_layout(layout).as_ptr()
                     as *mut ManuallyDrop<Value>;
 
-            // Expose provenance so forward_find_shared can navigate back via int arithmetic
-            let _ = hdr as usize;
+            // Expose provenance so forward_find_shared can navigate back via with_exposed_provenance
+            (hdr as *const ManuallyDrop<Value>).expose_provenance();
 
             // copy visited nodes into document
             let visited_children = &vis.nodes()[(parent + 1)..];
@@ -1495,8 +1529,8 @@ impl<'a> DocumentVisitor<'a> {
             .alloc((MetaNode::new(ptr), Value::default()));
 
         // Expose provenance of the full (MetaNode, Value) allocation so that
-        // forward_find_shared can navigate back to MetaNode via integer arithmetic.
-        let _ = (tuple_ref as *const (MetaNode, Value)) as usize;
+        // forward_find_shared can navigate back to MetaNode via with_exposed_provenance.
+        (tuple_ref as *const (MetaNode, Value)).expose_provenance();
 
         // Copy source node to root using ptr::copy to preserve pointer provenance
         // in the Data union. Copying through data.uval (u64) would strip provenance.

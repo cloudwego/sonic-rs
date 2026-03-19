@@ -394,8 +394,8 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
                 let shared = self.shared.as_mut().unwrap();
                 let ptr = Arc::as_ptr(shared);
                 // Expose Arc allocation provenance for pack_shared's
-                // Arc::increment_strong_count (needs access to Arc header).
-                let _ = ptr as usize;
+                // Arc::increment_strong_count (needs access via with_exposed_provenance).
+                ptr.expose_provenance();
                 &mut *(ptr as *mut _)
             };
             // deserialize some json parts into `Value`, not use padding buffer, avoid the memory
