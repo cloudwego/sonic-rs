@@ -138,26 +138,42 @@ pub(crate) union Data {
 
 /// Compact metadata for a `Value` node.
 ///
-/// This is a union of `u64` (for integer-encoded metadata like kind/idx/len)
-/// and `*const Shared` (for root nodes that store a tagged pointer).
+/// On 64-bit targets this is a union of `u64` and `*const Shared`.
 /// Using a union preserves pointer provenance through storage, enabling
 /// strict-provenance-compatible round-trips for the root_node variant
 /// without needing `expose_provenance` / `with_exposed_provenance`.
 ///
-/// All non-root variants read/write through the `val` field (pure integer).
-/// The root variant reads/writes through the `ptr` field (tagged pointer).
+/// On 32-bit targets (e.g. wasm32) the pointer is only 4 bytes while `val`
+/// is 8 bytes, so writing through a `ptr` field would leave the upper half
+/// uninitialized — reading back via `val` would be UB.  Therefore on 32-bit
+/// we fall back to a plain `u64` struct with exposed provenance for the
+/// root_node round-trip.
+///
+/// All non-root variants always read/write through the `val` field.
+/// The root variant writes/reads through the `ptr` field (64-bit) or
+/// through `val` with expose/recover (32-bit).
 #[derive(Copy, Clone)]
+#[cfg(target_pointer_width = "64")]
 #[repr(C)]
 pub(crate) union Meta {
     val: u64,
     ptr: *const Shared,
 }
 
+#[derive(Copy, Clone)]
+#[cfg(not(target_pointer_width = "64"))]
+#[repr(transparent)]
+pub(crate) struct Meta {
+    val: u64,
+}
+
 // Safety: Meta contains either a plain integer or a pointer derived from
 // Arc<Shared> (which is Send+Sync). The pointer is never dereferenced
 // through Meta directly — it is only unpacked and used behind Arc's
 // reference counting.
+#[cfg(target_pointer_width = "64")]
 unsafe impl Send for Meta {}
+#[cfg(target_pointer_width = "64")]
 unsafe impl Sync for Meta {}
 
 impl Meta {
@@ -218,29 +234,50 @@ impl Meta {
         Self { val }
     }
 
+    /// Pack a `*const Shared` pointer into a root Meta node.
+    ///
+    /// On 64-bit: stores the tagged pointer through the union `ptr` field,
+    /// preserving provenance (strict-provenance compatible).
+    ///
+    /// On 32-bit: stores through `val` as a u64, using exposed provenance
+    /// for the Arc::increment_strong_count call.  The pointer address fits
+    /// in the low 32 bits of the u64.
+    #[cfg(target_pointer_width = "64")]
     fn pack_shared(ptr: *const Shared) -> Self {
-        // Use the union's ptr field to preserve provenance through storage.
-        // The tag bits (ROOT_NODE = 0x7) are set via map_addr so provenance
-        // is maintained — no expose/recover roundtrip needed for Meta storage.
-        //
-        // Note: Arc::increment_strong_count needs provenance covering the full
-        // Arc allocation (header + data). The caller's ptr may come from &Shared
-        // (narrow provenance), so the Arc allocation must be exposed beforehand
-        // (done in parse_with_padding / Deserializer).
+        // Arc::increment_strong_count needs provenance covering the full
+        // Arc allocation (header + data). The caller's ptr may come from
+        // &Shared (narrow provenance), so the Arc allocation must be exposed
+        // beforehand (done in parse_with_padding / Deserializer).
         let addr = ptr.expose_provenance();
         let wide_ptr = std::ptr::with_exposed_provenance::<Shared>(addr);
         unsafe { Arc::increment_strong_count(wide_ptr) };
+        // Store tagged pointer through the union ptr field — provenance preserved.
         let tagged = ptr.map_addr(|a| a | Self::ROOT_NODE as usize);
         Self { ptr: tagged }
     }
 
+    #[cfg(not(target_pointer_width = "64"))]
+    fn pack_shared(ptr: *const Shared) -> Self {
+        let addr = ptr.expose_provenance();
+        let wide_ptr = std::ptr::with_exposed_provenance::<Shared>(addr);
+        unsafe { Arc::increment_strong_count(wide_ptr) };
+        let val = addr as u64 | Self::ROOT_NODE;
+        Self { val }
+    }
+
     /// Read the integer representation of this Meta.
-    ///
-    /// Safety: reading `val` when `ptr` was written is sound — both fields
-    /// occupy the same bytes and we only inspect integer bits, never dereference.
     #[inline(always)]
+    #[cfg(target_pointer_width = "64")]
     fn read_val(&self) -> u64 {
+        // Safety: reading `val` when `ptr` was written is sound on 64-bit —
+        // both fields are 8 bytes and we only inspect integer bits.
         unsafe { self.val }
+    }
+
+    #[inline(always)]
+    #[cfg(not(target_pointer_width = "64"))]
+    fn read_val(&self) -> u64 {
+        self.val
     }
 
     fn get_kind(&self) -> u64 {
@@ -272,10 +309,21 @@ impl Meta {
         }
     }
 
+    /// Recover the `*const Shared` from a root Meta node.
+    ///
+    /// On 64-bit: reads through the union `ptr` field (provenance preserved).
+    /// On 32-bit: recovers via `with_exposed_provenance`.
+    #[cfg(target_pointer_width = "64")]
     fn unpack_root(&self) -> *const Shared {
         debug_assert!(self.get_kind() == Self::ROOT_NODE);
-        // Read through the ptr field to recover provenance, then strip the tag.
         unsafe { self.ptr.map_addr(|a| a & !(Self::ROOT_NODE as usize)) }
+    }
+
+    #[cfg(not(target_pointer_width = "64"))]
+    fn unpack_root(&self) -> *const Shared {
+        debug_assert!(self.get_kind() == Self::ROOT_NODE);
+        let addr = (self.val & !Self::ROOT_NODE) as usize;
+        std::ptr::with_exposed_provenance::<Shared>(addr)
     }
 
     fn has_strlen(&self) -> bool {
