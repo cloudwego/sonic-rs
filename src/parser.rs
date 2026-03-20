@@ -305,11 +305,7 @@ where
     /// When `strbuf` is Some, copies into the buffer (owned, calls visit_str).
     /// When `strbuf` is None, parses inplace zero-copy (calls visit_borrowed_str).
     #[inline(always)]
-    fn parse_string_visit<V>(
-        &mut self,
-        vis: &mut V,
-        strbuf: Option<&mut Vec<u8>>,
-    ) -> Result<()>
+    fn parse_string_visit<V>(&mut self, vis: &mut V, strbuf: Option<&mut Vec<u8>>) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
@@ -332,12 +328,7 @@ where
 
     /// Parse a number. When `inplace` is true, visits as borrowed raw number.
     #[inline(always)]
-    fn parse_number_visit<V>(
-        &mut self,
-        first: u8,
-        vis: &mut V,
-        inplace: bool,
-    ) -> Result<()>
+    fn parse_number_visit<V>(&mut self, first: u8, vis: &mut V, inplace: bool) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
@@ -361,11 +352,7 @@ where
         }
     }
 
-    fn parse_array<V>(
-        &mut self,
-        vis: &mut V,
-        mut strbuf: Option<&mut Vec<u8>>,
-    ) -> Result<()>
+    fn parse_array<V>(&mut self, vis: &mut V, mut strbuf: Option<&mut Vec<u8>>) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
@@ -388,11 +375,7 @@ where
         }
     }
 
-    fn parse_object<V>(
-        &mut self,
-        vis: &mut V,
-        mut strbuf: Option<&mut Vec<u8>>,
-    ) -> Result<()>
+    fn parse_object<V>(&mut self, vis: &mut V, mut strbuf: Option<&mut Vec<u8>>) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
@@ -435,9 +418,7 @@ where
         V: JsonVisitor<'de>,
     {
         match ch {
-            Some(c @ b'-' | c @ b'0'..=b'9') => {
-                self.parse_number_visit(c, vis, strbuf.is_none())
-            }
+            Some(c @ b'-' | c @ b'0'..=b'9') => self.parse_number_visit(c, vis, strbuf.is_none()),
             Some(b'"') => self.parse_string_visit(vis, strbuf.as_deref_mut()),
             Some(b'{') => self.parse_object(vis, strbuf.as_deref_mut()),
             Some(b'[') => self.parse_array(vis, strbuf.as_deref_mut()),
@@ -1620,7 +1601,9 @@ where
                 match self.skip_space() {
                     Some(b'{') => self.skip_container(b'{', b'}')?,
                     Some(b'[') => self.skip_container(b'[', b']')?,
-                    Some(b'"') => unsafe { let _ = self.skip_string_unchecked()?; },
+                    Some(b'"') => unsafe {
+                        let _ = self.skip_string_unchecked()?;
+                    },
                     Some(b']') => return perr!(self, GetInEmptyArray),
                     None => return perr!(self, EofWhileParsing),
                     _ => {}
@@ -1758,7 +1741,9 @@ where
                 match self.skip_space() {
                     Some(b'{') => self.skip_container(b'{', b'}')?,
                     Some(b'[') => self.skip_container(b'[', b']')?,
-                    Some(b'"') => unsafe { let _ = self.skip_string_unchecked()?; },
+                    Some(b'"') => unsafe {
+                        let _ = self.skip_string_unchecked()?;
+                    },
                     None => return perr!(self, EofWhileParsing),
                     _ => {}
                 };
@@ -1836,7 +1821,9 @@ where
                 match self.skip_space() {
                     Some(b'{') => self.skip_container(b'{', b'}')?,
                     Some(b'[') => self.skip_container(b'[', b']')?,
-                    Some(b'"') => unsafe { let _ = self.skip_string_unchecked()?; },
+                    Some(b'"') => unsafe {
+                        let _ = self.skip_string_unchecked()?;
+                    },
                     None => return perr!(self, EofWhileParsing),
                     _ => {}
                 };
