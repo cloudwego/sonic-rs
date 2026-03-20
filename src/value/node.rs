@@ -1073,8 +1073,7 @@ impl Value {
         Value {
             meta: Meta::pack_dom_node(kind, node_idx, val.len() as u32),
             data: Data {
-                dom_str: NonNull::new(val.as_ptr() as *mut _)
-                    .expect("str::as_ptr() is non-null"),
+                dom_str: NonNull::new(val.as_ptr() as *mut _).expect("str::as_ptr() is non-null"),
             },
         }
     }
@@ -1142,8 +1141,7 @@ impl Value {
         Value {
             meta: Meta::pack_dom_node(kind, node_idx, str.len() as u32),
             data: Data {
-                dom_str: NonNull::new(str.as_ptr() as *mut _)
-                    .expect("str::as_ptr() is non-null"),
+                dom_str: NonNull::new(str.as_ptr() as *mut _).expect("str::as_ptr() is non-null"),
             },
         }
     }
@@ -1493,10 +1491,10 @@ impl<'a> DocumentVisitor<'a> {
             let real_count = visited_children.len() + Value::HEAD_NODE_COUNT;
             let layout = Layout::array::<Value>(real_count).unwrap();
             let hdr =
-                (*vis.shared).get_alloc().alloc_layout(layout).as_ptr()
-                    as *mut ManuallyDrop<Value>;
+                (*vis.shared).get_alloc().alloc_layout(layout).as_ptr() as *mut ManuallyDrop<Value>;
 
-            // Expose provenance so forward_find_shared can navigate back via with_exposed_provenance
+            // Expose provenance so forward_find_shared can navigate back via
+            // with_exposed_provenance
             (hdr as *const ManuallyDrop<Value>).expose_provenance();
 
             // copy visited nodes into document
@@ -1525,8 +1523,8 @@ impl<'a> DocumentVisitor<'a> {
         // should alloc root node in the bump allocator
         let start = self.nodes_start;
         let ptr = self.shared as *const Shared;
-        let tuple_ref = unsafe { (*self.shared).get_alloc() }
-            .alloc((MetaNode::new(ptr), Value::default()));
+        let tuple_ref =
+            unsafe { (*self.shared).get_alloc() }.alloc((MetaNode::new(ptr), Value::default()));
 
         // Expose provenance of the full (MetaNode, Value) allocation so that
         // forward_find_shared can navigate back to MetaNode via with_exposed_provenance.
@@ -1587,9 +1585,7 @@ impl<'de, 'a> JsonVisitor<'de> for DocumentVisitor<'a> {
     #[inline(always)]
     fn visit_raw_number(&mut self, val: &str) -> bool {
         let idx = self.index();
-        let node = Value::copy_str_in(Meta::RAWNUM_NODE, val, idx, unsafe {
-            &mut *self.shared
-        });
+        let node = Value::copy_str_in(Meta::RAWNUM_NODE, val, idx, unsafe { &mut *self.shared });
         self.push_node(node)
     }
 
@@ -1638,9 +1634,7 @@ impl<'de, 'a> JsonVisitor<'de> for DocumentVisitor<'a> {
     #[inline(always)]
     fn visit_str(&mut self, val: &str) -> bool {
         let idx = self.index();
-        let node = Value::copy_str_in(Meta::STR_NODE, val, idx, unsafe {
-            &mut *self.shared
-        });
+        let node = Value::copy_str_in(Meta::STR_NODE, val, idx, unsafe { &mut *self.shared });
         self.push_node(node)
     }
 

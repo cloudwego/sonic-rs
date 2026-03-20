@@ -299,8 +299,7 @@ impl<'a> PaddedSliceRead<'a> {
     pub fn new(buffer: &'a mut [u8], json: &'a [u8]) -> Self {
         // Use as_mut_ptr() to preserve provenance over the entire buffer slice.
         // NonNull::from(&mut buffer[0]) would narrow provenance to a single byte.
-        let base = NonNull::new(buffer.as_mut_ptr())
-            .expect("slice pointer is non-null");
+        let base = NonNull::new(buffer.as_mut_ptr()).expect("slice pointer is non-null");
         Self {
             base,
             cur: base,
