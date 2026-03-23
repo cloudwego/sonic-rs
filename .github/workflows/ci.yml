@@ -75,6 +75,20 @@ jobs:
         - uses: dtolnay/rust-toolchain@nightly
         - run: ./scripts/test.sh
 
+  miri:
+    name: Miri
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - name: Run Miri
+        run: cargo miri test --all-features
+
   clippy_lint:
     name: Format check
     runs-on: ubuntu-latest
