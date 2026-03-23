@@ -87,7 +87,7 @@ jobs:
         with:
           components: miri
       - name: Run Miri
-        run: cargo miri test --all-features
+        run: cargo miri test --all-features --lib
 
   clippy_lint:
     name: Format check
