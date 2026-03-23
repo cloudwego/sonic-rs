@@ -336,6 +336,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(not(miri))]
     fn test_serde_time() {
         use chrono::{DateTime, Utc};
 
