@@ -1904,6 +1904,7 @@ mod test {
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(miri))]
     fn test_node_from_files3() {
         use std::fs::DirEntry;
         let path = env!("CARGO_MANIFEST_DIR").to_string() + "/benchmarks/benches/testdata/";
@@ -2101,6 +2102,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(not(miri))]
     fn test_arbitrary_precision() {
         use crate::Deserializer;
 
