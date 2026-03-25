@@ -248,6 +248,13 @@ where
         self.read.index()
     }
 
+    /// Enable lossy UTF-8 handling: invalid surrogates produce U+FFFD replacement chars
+    /// instead of errors. Matches Go's encoding/json behavior.
+    pub fn utf8_lossy(mut self) -> Self {
+        self.cfg.utf8_lossy = true;
+        self
+    }
+
     pub(crate) fn with_config(mut self, cfg: DeserializeCfg) -> Self {
         self.cfg = cfg;
         self
@@ -479,7 +486,7 @@ where
             }
             _ => return perr!(self, ExpectedArrayCommaOrEnd),
         };
-        let (raw, status) = self.skip_one_checked(check)?;
+        let (raw, status) = self.skip_one(check)?;
         Ok(Some((raw, status)))
     }
 
@@ -506,7 +513,7 @@ where
 
         let parsed = self.parse_str(strbuf)?;
         self.parse_object_clo()?;
-        let (raw, status) = self.skip_one_checked(check)?;
+        let (raw, status) = self.skip_one(check)?;
 
         Ok(Some(Pair {
             key: parsed.into(),
@@ -551,7 +558,7 @@ where
             _ => {
                 let start = self.read.index() - 1;
                 self.read.backward(1);
-                self.skip_one_checked(strict)?;
+                self.skip_one(strict)?;
                 start
             }
         };
@@ -709,9 +716,11 @@ where
             let point2 = if let Some(asc) = self.read.next_n(6) {
                 if asc[0] != b'\\' || asc[1] != b'u' {
                     if self.cfg.utf8_lossy {
+                        // Backtrack so the non-\uXXXX bytes can be re-parsed
+                        let idx = self.read.index();
+                        self.read.set_index(idx - 6);
                         return Ok(0xFFFD);
                     } else {
-                        // invalid surrogate
                         return perr!(self, InvalidSurrogateUnicodeCodePoint);
                     }
                 }
@@ -727,9 +736,12 @@ where
             let low_bit = point2.wrapping_sub(0xdc00);
             if (low_bit >> 10) != 0 {
                 if self.cfg.utf8_lossy {
+                    // point2 is not a valid low surrogate. Backtrack 6 bytes
+                    // so it can be re-parsed (e.g. \uDA51\uD83D\uDE04 → FFFD + 😄).
+                    let idx = self.read.index();
+                    self.read.set_index(idx - 6);
                     return Ok(0xFFFD);
                 } else {
-                    // invalid surrogate
                     return perr!(self, InvalidSurrogateUnicodeCodePoint);
                 }
             }
@@ -1109,7 +1121,7 @@ where
         loop {
             self.skip_string()?;
             self.parse_object_clo()?;
-            self.skip_one()?;
+            self.skip_one(true)?;
 
             match self.skip_space() {
                 Some(b'}') => return Ok(()),
@@ -1135,7 +1147,7 @@ where
         }
 
         loop {
-            self.skip_one()?;
+            self.skip_one(true)?;
             match self.skip_space() {
                 Some(b']') => return Ok(()),
                 Some(b',') => continue,
@@ -1424,11 +1436,7 @@ where
         Ok(())
     }
 
-    pub fn skip_one(&mut self) -> Result<(&'de [u8], ParseStatus)> {
-        self.skip_one_checked(true)
-    }
-
-    pub fn skip_one_checked(&mut self, checked: bool) -> Result<(&'de [u8], ParseStatus)> {
+    pub fn skip_one(&mut self, checked: bool) -> Result<(&'de [u8], ParseStatus)> {
         let ch = match self.skip_space() {
             Some(ch) => ch,
             None => return perr!(self, EofWhileParsing),
@@ -1531,7 +1539,7 @@ where
             }
 
             if checked {
-                self.skip_one()?;
+                self.skip_one(true)?;
                 match self.skip_space() {
                     Some(b'}') => return perr!(self, GetUnknownKeyInObject),
                     Some(b',') => match self.skip_space() {
@@ -1583,7 +1591,7 @@ where
 
         while count > 0 {
             if checked {
-                self.skip_one()?;
+                self.skip_one(true)?;
                 match self.skip_space() {
                     Some(b']') => return perr!(self, GetIndexOutOfArray),
                     Some(b',') => {}
@@ -1643,7 +1651,7 @@ where
                 unreachable!();
             }?;
         }
-        self.skip_one()
+        self.skip_one(true)
     }
 
     fn get_many_rec(
@@ -1672,7 +1680,7 @@ where
         let mut status = ParseStatus::None;
         match &node.children {
             PointerTreeInner::Empty => {
-                status = self.skip_one()?.1;
+                status = self.skip_one(true)?.1;
             }
             PointerTreeInner::Index(midxs) => {
                 self.get_many_index(midxs, strbuf, out, remain, is_safe)?
@@ -1735,7 +1743,7 @@ where
                     break;
                 }
             } else if checked {
-                self.skip_one()?;
+                self.skip_one(true)?;
             } else {
                 // skip object,array,string at first (unchecked fast path)
                 match self.skip_space() {
@@ -1815,7 +1823,7 @@ where
                     break;
                 }
             } else if checked {
-                self.skip_one()?;
+                self.skip_one(true)?;
             } else {
                 // skip object,array,string at first (unchecked fast path)
                 match self.skip_space() {
@@ -1914,14 +1922,14 @@ where
             b'[' => {
                 self.read.backward(1);
 
-                match self.skip_one() {
+                match self.skip_one(true) {
                     Ok(_) => de::Error::invalid_type(Unexpected::Seq, exp),
                     Err(err) => return err,
                 }
             }
             b'{' => {
                 self.read.backward(1);
-                match self.skip_one() {
+                match self.skip_one(true) {
                     Ok(_) => de::Error::invalid_type(Unexpected::Map, exp),
                     Err(err) => return err,
                 }
@@ -1967,7 +1975,7 @@ where
                 // We should replace the schema object if the object is empty
                 should_replace = key_values.is_empty();
                 if should_replace {
-                    self.skip_one()?;
+                    self.skip_one(true)?;
                 } else {
                     self.read.eat(1);
                     match self.skip_space() {
@@ -1984,7 +1992,7 @@ where
                         if let Some(val) = key_values.get_mut(key.deref()) {
                             self.get_by_schema_rec(val, strbuf)?;
                         } else {
-                            self.skip_one()?;
+                            self.skip_one(true)?;
                         }
 
                         match self.skip_space() {
@@ -2000,7 +2008,7 @@ where
                 }
             }
             _ => {
-                self.skip_one()?;
+                self.skip_one(true)?;
             }
         }
 
