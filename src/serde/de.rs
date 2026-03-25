@@ -864,7 +864,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
     where
         V: de::Visitor<'de>,
     {
-        // NOTE: we use faster skip, and will not validate the skipped parts.
+        // Skip the ignored value with full validation.
         tri!(self.parser.skip_one(true));
         visitor.visit_unit()
     }
