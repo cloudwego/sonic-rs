@@ -744,6 +744,38 @@ mod test {
     }
 
     #[test]
+    fn test_utf8_lossy_surrogate_backtrack() {
+        // high surrogate + non-\u content → FFFD + literal chars
+        let input = br#""\uD800abc""#;
+        let mut de = Deserializer::from_slice(input).utf8_lossy();
+        let value: String = de.deserialize().unwrap();
+        assert_eq!(value, "\u{FFFD}abc");
+
+        // high + invalid-low (another high) + valid-low → FFFD + emoji
+        let input = br#""\uDA51\uD83D\uDE04""#;
+        let mut de = Deserializer::from_slice(input).utf8_lossy();
+        let value: String = de.deserialize().unwrap();
+        assert_eq!(value, "\u{FFFD}\u{1F604}");
+
+        // high + non-surrogate \uXXXX → FFFD + char
+        let input = br#""\uD800\u0041""#;
+        let mut de = Deserializer::from_slice(input).utf8_lossy();
+        let value: String = de.deserialize().unwrap();
+        assert_eq!(value, "\u{FFFD}A");
+
+        // multiple consecutive lone high surrogates
+        let input = br#""\uD800\uD801\uD802abc""#;
+        let mut de = Deserializer::from_slice(input).utf8_lossy();
+        let value: String = de.deserialize().unwrap();
+        assert_eq!(value, "\u{FFFD}\u{FFFD}\u{FFFD}abc");
+
+        // non-lossy mode should still error
+        let input = br#""\uD800abc""#;
+        let mut de = Deserializer::from_slice(input);
+        assert!(de.deserialize::<String>().is_err());
+    }
+
+    #[test]
     fn test_serialize_float_non_trailing_zero() {
         use serde::Serialize;
 

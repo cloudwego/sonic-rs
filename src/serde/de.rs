@@ -342,7 +342,7 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     where
         V: de::Visitor<'de>,
     {
-        let (raw, status) = self.parser.skip_one()?;
+        let (raw, status) = self.parser.skip_one(true)?;
         if status == ParseStatus::HasEscaped {
             visitor.visit_str(as_str(raw))
         } else {
@@ -865,7 +865,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         V: de::Visitor<'de>,
     {
         // NOTE: we use faster skip, and will not validate the skipped parts.
-        tri!(self.parser.skip_one());
+        tri!(self.parser.skip_one(true));
         visitor.visit_unit()
     }
 }
