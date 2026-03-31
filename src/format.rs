@@ -184,7 +184,7 @@ pub trait Formatter: Clone {
 
     /// Writes a string as JSON string to the specified writer. Will escape the string if necessary.
     /// If `need_quote` is `false`, the string will be written without quotes.
-    #[inline]
+    #[inline(always)]
     fn write_string_fast<W>(
         &mut self,
         writer: &mut W,

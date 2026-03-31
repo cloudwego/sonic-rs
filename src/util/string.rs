@@ -478,25 +478,55 @@ const NEED_ESCAPED: [u8; 256] = [
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
+// Split QUOTE_TAB into two aligned tables for faster indexing:
+// - QUOTE_LEN: 1 byte/entry (direct index, no multiply)
+// - QUOTE_ESC: 8 bytes/entry (ch << 3 shift index, no multiply)
+static QUOTE_LEN: [u8; 256] = {
+    let mut t = [0u8; 256];
+    let mut i = 0;
+    while i < 256 {
+        t[i] = QUOTE_TAB[i].0;
+        i += 1;
+    }
+    t
+};
+
+static QUOTE_ESC: [[u8; 8]; 256] = {
+    let mut t = [[0u8; 8]; 256];
+    let mut i = 0;
+    while i < 256 {
+        t[i] = QUOTE_TAB[i].1;
+        i += 1;
+    }
+    t
+};
+
 // only check the src length.
 #[inline(always)]
 unsafe fn escape_unchecked(src: &mut *const u8, nb: &mut usize, dst: &mut *mut u8) {
-    assert!(*nb >= 1);
+    debug_assert!(*nb >= 1);
     loop {
         let ch = *(*src);
-        let cnt = QUOTE_TAB[ch as usize].0 as usize;
-        assert!(
-            cnt != 0,
-            "char is {}, cnt is {},  NEED_ESCAPED is {}",
-            ch as char,
-            cnt,
-            NEED_ESCAPED[ch as usize]
-        );
-        std::ptr::copy_nonoverlapping(QUOTE_TAB[ch as usize].1.as_ptr(), *dst, 8);
-        (*dst) = (*dst).add(cnt);
-        (*src) = (*src).add(1);
-        (*nb) -= 1;
-        if (*nb) == 0 || NEED_ESCAPED[*(*src) as usize] == 0 {
+        // Fast path: " and \ are the most common escaped chars.
+        // Emit directly without table lookup.
+        if ch == b'"' {
+            *(*dst) = b'\\';
+            *(*dst).add(1) = b'"';
+            *dst = (*dst).add(2);
+        } else if ch == b'\\' {
+            *(*dst) = b'\\';
+            *(*dst).add(1) = b'\\';
+            *dst = (*dst).add(2);
+        } else {
+            // Slow path: control chars → table lookup with aligned tables.
+            let cnt = QUOTE_LEN[ch as usize] as usize;
+            debug_assert!(cnt != 0);
+            std::ptr::copy_nonoverlapping(QUOTE_ESC[ch as usize].as_ptr(), *dst, 8);
+            *dst = (*dst).add(cnt);
+        }
+        *src = (*src).add(1);
+        *nb -= 1;
+        if *nb == 0 || NEED_ESCAPED[*(*src) as usize] == 0 {
             return;
         }
     }
