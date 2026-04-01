@@ -374,6 +374,20 @@ where
         loop {
             self.dispatch_value(first, vis, &mut strbuf)?;
             count += 1;
+            // Compact: 2-byte match for ",X" or "]"
+            match self.read.peek2() {
+                &[b',', val_ch] if !is_whitespace(val_ch) => {
+                    self.read.eat(2);
+                    first = Some(val_ch);
+                    continue;
+                }
+                &[b']', ..] => {
+                    self.read.eat(1);
+                    return check_visit!(self, vis.visit_array_end(count));
+                }
+                _ => {}
+            }
+            // Slow path
             first = match self.skip_space() {
                 Some(b']') => return check_visit!(self, vis.visit_array_end(count)),
                 Some(b',') => self.skip_space(),
@@ -395,11 +409,38 @@ where
         }
 
         loop {
+            // ---- parse key ----
             self.parse_string_visit(vis, strbuf.as_deref_mut())?;
-            self.parse_object_clo()?;
-            let next = self.skip_space();
+
+            // ---- find ':' + value start byte (compact: 2-byte match) ----
+            let next = match self.read.peek2() {
+                &[b':', val_ch] if !is_whitespace(val_ch) => {
+                    self.read.eat(2);
+                    Some(val_ch)
+                }
+                _ => {
+                    self.parse_object_clo()?;
+                    self.skip_space()
+                }
+            };
+
+            // ---- parse value ----
             self.dispatch_value(next, vis, &mut strbuf)?;
             count += 1;
+
+            // ---- find separator (compact: 2-byte match) ----
+            match self.read.peek2() {
+                &[b',', b'"'] => {
+                    self.read.eat(2);
+                    continue;
+                }
+                &[b'}', ..] => {
+                    self.read.eat(1);
+                    return check_visit!(self, vis.visit_object_end(count));
+                }
+                _ => {}
+            }
+            // Slow path
             match self.skip_space() {
                 Some(b'}') => return check_visit!(self, vis.visit_object_end(count)),
                 Some(b',') => match self.skip_space() {
