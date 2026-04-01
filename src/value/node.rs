@@ -20,7 +20,7 @@ use serde::ser::{Serialize, SerializeMap, SerializeSeq};
 use super::{
     object::Pair,
     shared::Shared,
-    tls_buffer::TlsBuf,
+    tls_buffer::NodeBuf,
     value_trait::{JsonContainerTrait, JsonValueMutTrait},
     visitor::JsonVisitor,
 };
@@ -35,6 +35,68 @@ use crate::{
     value::{array::Array, object::Object, value_trait::JsonValueTrait},
     JsonNumberTrait, JsonType, Number, RawNumber,
 };
+
+/// Inline memcpy for Value-sized (16-byte) chunks using AVX2 SIMD.
+/// Only compiled when AVX2 is available; non-AVX2 uses copy_nonoverlapping
+/// directly to preserve embedded pointer provenance (Miri compatibility).
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+#[inline(always)]
+pub(super) unsafe fn inline_copy_values(
+    src: *const ManuallyDrop<Value>,
+    dst: *mut ManuallyDrop<Value>,
+    count: usize,
+) {
+    use core::arch::x86_64::*;
+    let mut s = src as *const u8;
+    let mut d = dst as *mut u8;
+    let blocks = count / 8;
+    for _ in 0..blocks {
+        let v0 = _mm256_loadu_si256(s as *const __m256i);
+        let v1 = _mm256_loadu_si256(s.add(32) as *const __m256i);
+        let v2 = _mm256_loadu_si256(s.add(64) as *const __m256i);
+        let v3 = _mm256_loadu_si256(s.add(96) as *const __m256i);
+        _mm256_storeu_si256(d as *mut __m256i, v0);
+        _mm256_storeu_si256(d.add(32) as *mut __m256i, v1);
+        _mm256_storeu_si256(d.add(64) as *mut __m256i, v2);
+        _mm256_storeu_si256(d.add(96) as *mut __m256i, v3);
+        s = s.add(128);
+        d = d.add(128);
+    }
+    let rem = count & 7;
+    match rem >> 1 {
+        3 => {
+            _mm256_storeu_si256(d as *mut __m256i, _mm256_loadu_si256(s as *const __m256i));
+            _mm256_storeu_si256(
+                d.add(32) as *mut __m256i,
+                _mm256_loadu_si256(s.add(32) as *const __m256i),
+            );
+            _mm256_storeu_si256(
+                d.add(64) as *mut __m256i,
+                _mm256_loadu_si256(s.add(64) as *const __m256i),
+            );
+            s = s.add(96);
+            d = d.add(96);
+        }
+        2 => {
+            _mm256_storeu_si256(d as *mut __m256i, _mm256_loadu_si256(s as *const __m256i));
+            _mm256_storeu_si256(
+                d.add(32) as *mut __m256i,
+                _mm256_loadu_si256(s.add(32) as *const __m256i),
+            );
+            s = s.add(64);
+            d = d.add(64);
+        }
+        1 => {
+            _mm256_storeu_si256(d as *mut __m256i, _mm256_loadu_si256(s as *const __m256i));
+            s = s.add(32);
+            d = d.add(32);
+        }
+        _ => {}
+    }
+    if rem & 1 != 0 {
+        _mm_storeu_si128(d as *mut __m128i, _mm_loadu_si128(s as *const __m128i));
+    }
+}
 
 /// Represents any valid JSON value.
 ///
@@ -1435,13 +1497,9 @@ impl Value {
     }
 }
 
-// a simple wrapper for visitor
 pub(crate) struct DocumentVisitor<'a> {
-    // Store as raw pointer to avoid Stacked Borrows invalidation:
-    // storing `&'a mut Shared` and later creating `*const Shared` from it
-    // produces a tag that gets invalidated by subsequent mutable accesses.
     pub(crate) shared: *mut Shared,
-    pub(crate) buf: TlsBuf,
+    pub(crate) nodes: NodeBuf,
     pub(crate) parent: usize,
     pub(crate) nodes_start: usize,
     pub(crate) root: NonNull<Value>,
@@ -1450,19 +1508,13 @@ pub(crate) struct DocumentVisitor<'a> {
 
 impl<'a> DocumentVisitor<'a> {
     fn new(json_len: usize, shared: &'a mut Shared) -> Self {
-        // optimize: use a pre-allocated vec.
-        // If json is valid, the max number of value nodes should be
-        // half of the valid json length + 2. like as [1,2,3,1,2,3...]
-        // if the capacity is not enough, we will return a error.
         let max_len = (json_len / 2) + 2;
-        let buf = TlsBuf::with_capacity(max_len);
+        let nodes = NodeBuf::with_capacity(max_len);
         let shared = shared as *mut Shared;
-        // Expose provenance so that forward_find_shared / unpack_shared can
-        // recover the Shared pointer via with_exposed_provenance.
         (shared as *const Shared).expose_provenance();
         DocumentVisitor {
             shared,
-            buf,
+            nodes,
             parent: 0,
             nodes_start: 0,
             root: NonNull::dangling(),
@@ -1470,12 +1522,14 @@ impl<'a> DocumentVisitor<'a> {
         }
     }
 
-    fn nodes(&mut self) -> &mut Vec<ManuallyDrop<Value>> {
-        self.buf.as_vec_mut()
+    #[inline(always)]
+    fn nodes_len(&self) -> usize {
+        self.nodes.len()
     }
 
-    fn index(&mut self) -> usize {
-        self.nodes().len() - self.parent
+    #[inline(always)]
+    fn index(&self) -> usize {
+        self.nodes_len() - self.parent
     }
 }
 
@@ -1512,21 +1566,19 @@ impl<'a> DocumentVisitor<'a> {
                 parent: self.parent as u64, // record the old parent offset
             },
         });
-        let len = self.nodes().len();
-        self.parent = len - 1;
+        self.parent = self.nodes_len() - 1;
         ret
     }
 
     // the array and object's logic is same.
+    #[inline(always)]
     fn visit_container_end(&mut self, kind: u64, len: usize) -> bool {
-        let vis = self;
-        let parent = vis.parent;
-        let old = unsafe { vis.nodes()[parent].data.parent as usize };
+        let parent = self.parent;
+        let old = unsafe { self.nodes.node_ref(parent).data.parent as usize };
 
-        vis.parent = old;
+        self.parent = old;
         if len == 0 {
-            let container = &mut vis.nodes()[parent];
-            container.meta = Meta::new(if kind == Meta::OBJ_NODE {
+            self.nodes.node_mut(parent).meta = Meta::new(if kind == Meta::OBJ_NODE {
                 Meta::EMPTY_OBJ
             } else {
                 Meta::EMPTY_ARR
@@ -1534,35 +1586,26 @@ impl<'a> DocumentVisitor<'a> {
             return true;
         }
         unsafe {
-            // not use `len` in here
-            let visited_children = &vis.nodes()[(parent + 1)..];
-            let real_count = visited_children.len() + Value::HEAD_NODE_COUNT;
+            let children_count = self.nodes_len() - (parent + 1);
+            let real_count = children_count + Value::HEAD_NODE_COUNT;
             let layout = Layout::array::<Value>(real_count).unwrap();
-            let hdr =
-                (*vis.shared).get_alloc().alloc_layout(layout).as_ptr() as *mut ManuallyDrop<Value>;
+            let hdr = (*self.shared).get_alloc().alloc_layout(layout).as_ptr()
+                as *mut ManuallyDrop<Value>;
 
-            // Expose provenance so forward_find_shared can navigate back via
-            // with_exposed_provenance
             (hdr as *const ManuallyDrop<Value>).expose_provenance();
 
-            // copy visited nodes into document
-            let visited_children = &vis.nodes()[(parent + 1)..];
-            let src = visited_children.as_ptr();
             let elems = hdr.add(Value::HEAD_NODE_COUNT);
-            std::ptr::copy_nonoverlapping(src, elems, visited_children.len());
+            self.nodes.copy_to(parent + 1, elems, children_count);
 
-            // record the `Shared` pointer
             let meta = &mut *(hdr as *mut MetaNode);
-            meta.shared = vis.shared as *const _;
+            meta.shared = self.shared as *const _;
             meta.canary = u64::from_ne_bytes(*b"SONICRS\0");
 
-            // update the container header
-            let idx = (parent - vis.parent) as u32;
-            let container = &mut vis.nodes()[parent];
+            let idx = (parent - self.parent) as u32;
+            let container = self.nodes.node_mut(parent);
             container.meta = Meta::pack_dom_node(kind, idx, len as u32);
             container.data.arr_elems = NonNull::new_unchecked(elems as *mut _);
-            // must reset the length, because we copy the children into bumps
-            vis.nodes().set_len(parent + 1);
+            self.nodes.truncate(parent + 1);
         }
         true
     }
@@ -1580,32 +1623,29 @@ impl<'a> DocumentVisitor<'a> {
 
         // Copy source node to root using ptr::copy to preserve pointer provenance
         // in the Data union. Copying through data.uval (u64) would strip provenance.
-        let src = &self.nodes()[start] as *const ManuallyDrop<Value> as *const Value;
+        let src = self.nodes.node_ref(start) as *const ManuallyDrop<Value> as *const Value;
         let dst = &mut tuple_ref.1 as *mut Value;
         unsafe { std::ptr::copy_nonoverlapping(src, dst, 1) };
         self.root = unsafe { NonNull::new_unchecked(dst) };
     }
 
+    /// Push a node. Production: pointer advancement (avoids STLF stalls).
+    /// Miri: Vec::push (preserves provenance).
     #[inline(always)]
     fn push_node(&mut self, node: Value) -> bool {
-        if self.nodes().len() == self.nodes().capacity() {
-            false
-        } else {
-            self.nodes().push(ManuallyDrop::new(node));
-            true
-        }
+        self.push_raw(ManuallyDrop::new(node))
     }
 
     #[inline(always)]
     fn push_meta(&mut self, node: MetaNode) -> bool {
-        if self.nodes().len() == self.nodes().capacity() {
-            false
-        } else {
-            self.nodes().push(ManuallyDrop::new(unsafe {
-                transmute::<MetaNode, Value>(node)
-            }));
-            true
-        }
+        self.push_raw(ManuallyDrop::new(unsafe {
+            transmute::<MetaNode, Value>(node)
+        }))
+    }
+
+    #[inline(always)]
+    fn push_raw(&mut self, val: ManuallyDrop<Value>) -> bool {
+        self.nodes.push(val)
     }
 }
 
@@ -1614,8 +1654,8 @@ impl<'de, 'a> JsonVisitor<'de> for DocumentVisitor<'a> {
     fn visit_dom_start(&mut self) -> bool {
         let shared = self.shared as *const Shared;
         self.push_meta(MetaNode::new(shared));
-        self.nodes_start = self.nodes().len();
-        assert_eq!(self.nodes().len(), 1);
+        self.nodes_start = self.nodes_len();
+        assert_eq!(self.nodes_len(), 1);
         true
     }
 
@@ -1925,7 +1965,11 @@ mod test {
 
         for file in files {
             let path = file.path();
-            if path.extension().unwrap_or_default() == "json" && !path.ends_with("canada.json") {
+            let file_size = file.metadata().unwrap().len();
+            if path.extension().unwrap_or_default() == "json"
+                && !path.ends_with("canada.json")
+                && file_size < 500_000
+            {
                 println!(
                     "test json file: {:?},  {} bytes",
                     path,

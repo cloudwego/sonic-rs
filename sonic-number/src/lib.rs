@@ -9,10 +9,12 @@ mod decimal;
 mod float;
 mod lemire;
 mod slow;
+pub mod swar;
 mod table;
 
 use self::{common::BiasedFp, float::RawFloat, table::POWER_OF_FIVE_128};
 pub use crate::arch::simd_str2int;
+pub use crate::swar::swar_str2int;
 
 const FLOATING_LONGEST_DIGITS: usize = 17;
 const F64_BITS: u32 = 64;
@@ -124,7 +126,7 @@ fn parse_number_fraction(
     index: &mut usize,
     significant: &mut u64,
     exponent: &mut i32,
-    mut need: isize,
+    need: isize,
     dot_pos: usize,
 ) -> Result<bool, Error> {
     debug_assert!(need < FLOATING_LONGEST_DIGITS as isize);
@@ -246,42 +248,63 @@ pub fn parse_number(data: &[u8], index: &mut usize, negative: bool) -> Result<Pa
             _ => unreachable!("unreachable branch in parse_number_unchecked"),
         }
     } else {
-        // parse significant digits
+        // SWAR-optimized integer digit parsing.
         let digit_start = *index;
-        while is_digit!(data, *index) {
-            // assume most number is not overflow here. When it overflow, we will check digits count
-            // and fallback into the slow path.
-            significant = significant
-                .wrapping_mul(10)
-                .wrapping_add(digit!(data, *index));
-            *index += 1;
-        }
-        let mut digits_cnt = *index - digit_start;
-        if digits_cnt == 0 {
-            return Err(Error::InvalidNumber);
-        }
+        let remaining = &data[*index..];
 
-        // slow path for too long integer
-        if digits_cnt > 19 {
-            *index = digit_start;
-            significant = 0;
-            digits_cnt = 0;
-            while is_digit!(data, *index) && digits_cnt < 19 {
-                significant = significant * 10 + digit!(data, *index);
-                digits_cnt += 1;
-                *index += 1;
+        let digits_cnt;
+        if remaining.len() >= 8 && swar::is_eight_digits(remaining) {
+            // SWAR path: first 8 bytes are all digits.
+            significant = swar::parse_eight_digits(remaining) as u64;
+            *index += 8;
+
+            // Try second 8-digit batch
+            if data.len() - *index >= 8 && swar::is_eight_digits(&data[*index..]) {
+                significant = significant * 100_000_000
+                    + swar::parse_eight_digits(&data[*index..]) as u64;
+                *index += 8;
             }
 
-            // overflow for u64 sig, mark as truncated
+            // Scalar tail for remaining digits (at most 3 more to stay within u64)
+            while (*index - digit_start) < 19 && is_digit!(data, *index) {
+                significant = significant * 10 + digit!(data, *index);
+                *index += 1;
+            }
+            digits_cnt = *index - digit_start;
+
+            // Handle overflow digits beyond 19
             while is_digit!(data, *index) {
                 exponent += 1;
                 *index += 1;
                 trunc = true;
             }
-        }
+        } else {
+            // Scalar path: fewer than 8 leading digits or short input.
+            // Includes single-digit fast path — if only one digit and not followed
+            // by '.', 'e', 'E', return immediately without further checks.
+            if !is_digit!(data, *index) {
+                return Err(Error::InvalidNumber);
+            }
+            significant = digit!(data, *index);
+            *index += 1;
 
-        // TODO: fix special case like `43332000001000000003888e-4`.
-        // it should parse as `4.3332000001000003e18`.
+            if is_digit!(data, *index) {
+                // 2-7 digits: continue scalar loop
+                while is_digit!(data, *index) {
+                    significant = significant * 10 + digit!(data, *index);
+                    *index += 1;
+                }
+                digits_cnt = *index - digit_start;
+            } else if !match_digit!(data, *index, b'.' | b'e' | b'E') {
+                // Single digit integer — fast return
+                if negative {
+                    return Ok(ParserNumber::Signed(-(significant as i64)));
+                }
+                return Ok(ParserNumber::Unsigned(significant));
+            } else {
+                digits_cnt = 1;
+            }
+        }
         if match_digit!(data, *index, b'e' | b'E') {
             // parse exponent
             *index += 1;
@@ -493,6 +516,81 @@ mod test {
             input
         );
         assert_eq!(data[index], b' ', "failed num is {}", input);
+    }
+
+    fn test_parse_int_ok(input: &str, expected: u64) {
+        let mut data = input.as_bytes().to_vec();
+        data.push(b' ');
+        let mut index = 0;
+        let num = parse_number(&data, &mut index, false).unwrap();
+        assert!(
+            matches!(num, ParserNumber::Unsigned(v) if v == expected),
+            "input {} parsed as {:?}, expected Unsigned({})",
+            input,
+            num,
+            expected
+        );
+        assert_eq!(data[index], b' ', "trailing byte for {}", input);
+    }
+
+    fn test_parse_signed_ok(input: &str, expected: i64) {
+        let mut data = input.as_bytes().to_vec();
+        data.push(b' ');
+        let mut index = 1; // skip '-'
+        let num = parse_number(&data, &mut index, true).unwrap();
+        assert!(
+            matches!(num, ParserNumber::Signed(v) if v == expected),
+            "input {} parsed as {:?}, expected Signed({})",
+            input,
+            num,
+            expected
+        );
+    }
+
+    #[test]
+    fn test_parse_number_integers() {
+        // Small integers (scalar fallback path, remaining < 8)
+        test_parse_int_ok("0", 0);
+        test_parse_int_ok("1", 1);
+        test_parse_int_ok("42", 42);
+        test_parse_int_ok("123", 123);
+        test_parse_int_ok("1234", 1234);
+        test_parse_int_ok("12345", 12345);
+        test_parse_int_ok("123456", 123456);
+        test_parse_int_ok("1234567", 1234567);
+        // 8-digit (first SWAR batch boundary)
+        test_parse_int_ok("12345678", 12345678);
+        test_parse_int_ok("99999999", 99999999);
+        // 9-15 digits (SWAR + scalar tail)
+        test_parse_int_ok("123456789", 123456789);
+        test_parse_int_ok("1234567890", 1234567890);
+        test_parse_int_ok("123456789012345", 123456789012345);
+        // 16 digits (two SWAR batches)
+        test_parse_int_ok("1234567890123456", 1234567890123456);
+        // 17-19 digits (two SWAR + scalar tail)
+        test_parse_int_ok("12345678901234567", 12345678901234567);
+        test_parse_int_ok("123456789012345678", 123456789012345678);
+        test_parse_int_ok("1234567890123456789", 1234567890123456789);
+        // u64::MAX
+        test_parse_int_ok("18446744073709551615", u64::MAX);
+        // Negative integers
+        test_parse_signed_ok("-1", -1);
+        test_parse_signed_ok("-12345678", -12345678);
+        test_parse_signed_ok("-1234567890123456789", -1234567890123456789);
+        test_parse_signed_ok("-9223372036854775808", i64::MIN);
+    }
+
+    #[test]
+    fn test_parse_number_overflow_to_float() {
+        // > 20 digits → float
+        test_parse_ok("33333333333333333333", 3.333333333333333e19);
+        test_parse_ok("123456789012345678901", 1.2345678901234568e20);
+        // Truncated integer without dot
+        test_parse_ok("12448139190673828122020e-47", 1.244813919067383e-25);
+        test_parse_ok(
+            "3469446951536141862700000000000000000e-62",
+            3.469446951536142e-26,
+        );
     }
 
     #[test]

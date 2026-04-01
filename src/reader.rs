@@ -49,6 +49,13 @@ pub trait Reader<'de>: Sealed {
     fn set_index(&mut self, index: usize);
     fn next_n(&mut self, n: usize) -> Option<&'de [u8]>;
 
+    /// Peek next 2 bytes as a fixed-size array reference. No bounds check needed
+    /// on padded readers (PaddedSliceRead always has ≥64 bytes of padding).
+    #[inline(always)]
+    fn peek2(&self) -> &[u8; 2] {
+        unsafe { &*(self.peek_n(2).unwrap_unchecked().as_ptr() as *const [u8; 2]) }
+    }
+
     #[inline(always)]
     fn next(&mut self) -> Option<u8> {
         self.peek().inspect(|_| {
@@ -331,6 +338,11 @@ impl<'a> Reader<'a> for PaddedSliceRead<'a> {
     fn peek_n(&self, n: usize) -> Option<&'a [u8]> {
         debug_assert!(self.index() + n <= self.len + Self::PADDING_SIZE);
         unsafe { Some(std::slice::from_raw_parts(self.cur.as_ptr(), n)) }
+    }
+
+    #[inline(always)]
+    fn peek_u16(&self) -> u16 {
+        u16::from_le(unsafe { (self.cur.as_ptr() as *const u16).read_unaligned() })
     }
 
     #[inline(always)]
