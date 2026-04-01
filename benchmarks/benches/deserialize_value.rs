@@ -182,6 +182,17 @@ bench_file!(canada);
 bench_file!(citm_catalog);
 bench_file!(twitter);
 bench_file!(github_events);
+bench_file!(golang_source);
+bench_file!(lottie);
 
-criterion_group!(benches, canada, citm_catalog, twitter, github_events, book);
+criterion_group!(
+    benches,
+    canada,
+    citm_catalog,
+    twitter,
+    github_events,
+    book,
+    golang_source,
+    lottie,
+);
 criterion_main!(benches);
