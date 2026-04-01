@@ -37,9 +37,6 @@ chrono      = { version = "0.4", features = ["serde"] }
 paste       = "1.0"
 schema      = { path = "benches/schema" }
 serde_bytes = "0.11"
-atoi_simd = "0.18.1"
-sonic-number = { path = "../sonic-number" }
-
 [[bench]]
 harness = false
 name    = "deserialize_struct"
@@ -64,9 +61,9 @@ name    = "get_from"
 harness = false
 name    = "value_operator"
 
-[[bench]]
-harness = false
-name    = "number"
+[[example]]
+name = "perf_parse"
+path = "benches/perf_parse.rs"
 
 [features]
 default = []
