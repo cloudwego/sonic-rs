@@ -38,27 +38,49 @@ pub enum Error {
     FloatMustBeFinite,
 }
 
+// Checked macros (with bounds check — safe for any buffer)
 macro_rules! match_digit {
     ($data:expr, $i:expr, $pattern:pat) => {
         $i < $data.len() && matches!($data[$i], $pattern)
     };
 }
-
 macro_rules! is_digit {
     ($data:expr, $i:expr) => {
         $i < $data.len() && $data[$i].is_ascii_digit()
     };
 }
-
 macro_rules! digit {
     ($data:expr, $i:expr) => {
         ($data[$i] - b'0') as u64
     };
 }
-
 macro_rules! check_digit {
     ($data:expr, $i:expr) => {
         if !($i < $data.len() && $data[$i].is_ascii_digit()) {
+            return Err(Error::InvalidNumber);
+        }
+    };
+}
+
+// Unchecked macros (no bounds check — requires >=64 bytes padding after data)
+macro_rules! match_digit_u {
+    ($data:expr, $i:expr, $pattern:pat) => {
+        matches!(unsafe { *$data.get_unchecked($i) }, $pattern)
+    };
+}
+macro_rules! is_digit_u {
+    ($data:expr, $i:expr) => {
+        unsafe { *$data.get_unchecked($i) }.is_ascii_digit()
+    };
+}
+macro_rules! digit_u {
+    ($data:expr, $i:expr) => {
+        (unsafe { *$data.get_unchecked($i) } - b'0') as u64
+    };
+}
+macro_rules! check_digit_u {
+    ($data:expr, $i:expr) => {
+        if !(unsafe { *$data.get_unchecked($i) }.is_ascii_digit()) {
             return Err(Error::InvalidNumber);
         }
     };
@@ -131,22 +153,50 @@ fn parse_number_fraction(
 ) -> Result<bool, Error> {
     debug_assert!(need < FLOATING_LONGEST_DIGITS as isize);
 
-    // native implement:
-    // while need > 0 && is_digit!(data, *index) {
-    //     *significant = *significant * 10 + digit!(data, *index);
-    //     *index += 1;
-    //     need -= 1;
-    // }
+    // Use SWAR (integer pipeline) instead of SSE simd_str2int (FP pipeline).
+    // On AMD Zen, SSE maddubs/madd go through FP ports causing ALU saturation.
+    // Two-step SWAR: 8-digit batch + tolerant SWAR for remaining 1-8 digits,
+    // eliminating the scalar while-loop tail for float-heavy workloads.
     if need > 0 {
-        if data.len() - *index >= 16 {
-            let (frac, ndigits) = unsafe { simd_str2int(&data[*index..], need as usize) };
-            *significant = *significant * POW10_UINT[ndigits] + frac;
-            *index += ndigits;
-        } else {
-            while need > 0 && is_digit!(data, *index) {
-                *significant = *significant * 10 + digit!(data, *index);
-                *index += 1;
-                need -= 1;
+        let need = need as usize;
+        unsafe {
+            let c = data.get_unchecked(*index..);
+            if need >= 8 && c.len() >= 8 && swar::is_eight_digits(c) {
+                let first8 = swar::parse_eight_digits(c) as u64;
+                let remaining = need - 8;
+                if remaining >= 8 && c.len() >= 16 && swar::is_eight_digits(&c[8..]) {
+                    let second8 = swar::parse_eight_digits(&c[8..]) as u64;
+                    *significant = *significant * POW10_UINT[16] + first8 * 100_000_000 + second8;
+                    *index += 16;
+                } else if remaining > 0 && c.len() >= 16 {
+                    // Tolerant SWAR for remaining 1-8 digits (no scalar loop)
+                    let (mut tail_val, tail_n) = swar::parse_digits_tolerant(&c[8..]);
+                    let tail_n = if tail_n > remaining {
+                        // Parsed more digits than needed — drop the excess trailing digits.
+                        tail_val /= POW10_UINT[tail_n - remaining];
+                        remaining
+                    } else {
+                        tail_n
+                    };
+                    let total = 8 + tail_n;
+                    *significant = *significant * POW10_UINT[total] + first8 * POW10_UINT[tail_n] + tail_val;
+                    *index += total;
+                } else {
+                    // c.len() < 16: not enough bytes for tolerant SWAR on tail.
+                    // Parse first 8 digits via SWAR, then scalar tail for remaining.
+                    *significant = *significant * POW10_UINT[8] + first8;
+                    *index += 8;
+                    let mut rem = remaining;
+                    while rem > 0 && is_digit!(data, *index) {
+                        *significant = *significant * 10 + digit!(data, *index);
+                        *index += 1;
+                        rem -= 1;
+                    }
+                }
+            } else {
+                let (frac, ndigits) = swar::swar_str2int(c, need);
+                *significant = *significant * POW10_UINT[ndigits] + frac;
+                *index += ndigits;
             }
         }
     }
@@ -250,7 +300,7 @@ pub fn parse_number(data: &[u8], index: &mut usize, negative: bool) -> Result<Pa
     } else {
         // SWAR-optimized integer digit parsing.
         let digit_start = *index;
-        let remaining = &data[*index..];
+        let remaining = unsafe { data.get_unchecked(*index..) };
 
         let digits_cnt;
         if remaining.len() >= 8 && swar::is_eight_digits(remaining) {
@@ -314,10 +364,31 @@ pub fn parse_number(data: &[u8], index: &mut usize, negative: bool) -> Result<Pa
             check_digit!(data, *index);
             let dot_pos = *index;
 
-            // parse fraction
-            let need = FLOATING_LONGEST_DIGITS as isize - digits_cnt as isize;
-            trunc =
-                parse_number_fraction(data, index, &mut significant, &mut exponent, need, dot_pos)?;
+            if digits_cnt < 8 {
+                // Short integer part — continue scalar accumulation into fraction.
+                // Avoids SIMD setup + POW10 table multiplication overhead.
+                // yyjson uses this approach: sig = sig*10+digit continuously.
+                let mut need = FLOATING_LONGEST_DIGITS as isize - digits_cnt as isize;
+                while need > 0 && is_digit!(data, *index) {
+                    significant = significant * 10 + digit!(data, *index);
+                    *index += 1;
+                    need -= 1;
+                }
+                exponent -= *index as i32 - dot_pos as i32;
+                while is_digit!(data, *index) {
+                    trunc = true;
+                    *index += 1;
+                }
+                if match_digit!(data, *index, b'e' | b'E') {
+                    *index += 1;
+                    exponent += parse_exponent(data, &mut *index)?;
+                }
+            } else {
+                // Long integer part — use SIMD fraction parsing
+                let need = FLOATING_LONGEST_DIGITS as isize - digits_cnt as isize;
+                trunc =
+                    parse_number_fraction(data, index, &mut significant, &mut exponent, need, dot_pos)?;
+            }
         } else {
             // parse integer, all parse has finished.
             if exponent == 0 {
@@ -355,6 +426,198 @@ pub fn parse_number(data: &[u8], index: &mut usize, negative: bool) -> Result<Pa
     parse_float(significant, exponent, negative, trunc, raw_num)
 }
 
+/// Unchecked version — caller must ensure data has >=64 bytes padding.
+#[inline(always)]
+pub unsafe fn parse_number_unchecked(data: &[u8], index: &mut usize, negative: bool) -> Result<ParserNumber, Error> {
+    let mut significant: u64 = 0;
+    let mut exponent: i32 = 0;
+    let mut trunc = false;
+    let raw_num = unsafe { data.get_unchecked(*index..) };
+
+    if match_digit_u!(data, *index, b'0') {
+        *index += 1;
+
+        if !match_digit_u!(data, *index, b'.' | b'e' | b'E') {
+            // view -0 as float number
+            if negative {
+                return Ok(ParserNumber::Float(0.0));
+            }
+            return Ok(ParserNumber::Unsigned(0));
+        }
+
+        // deal with 0e123 or 0.000e123
+        match data[*index] {
+            b'.' => {
+                *index += 1;
+                let dot_pos = *index;
+                check_digit_u!(data, *index);
+                while match_digit_u!(data, *index, b'0') {
+                    *index += 1;
+                }
+                // special case: 0.000e123
+                if match_digit_u!(data, *index, b'e' | b'E') {
+                    *index += 1;
+                    if match_digit_u!(data, *index, b'-' | b'+') {
+                        *index += 1;
+                    }
+                    check_digit_u!(data, *index);
+                    while is_digit_u!(data, *index) {
+                        *index += 1;
+                    }
+                    return Ok(ParserNumber::Float(0.0));
+                }
+
+                // we calculate the first digit here for two reasons:
+                // 1. fastpath for small float number
+                // 2. we only need parse at most 16 digits in parse_number_fraction
+                // and it is friendly for simd
+                if !is_digit_u!(data, *index) {
+                    return Ok(ParserNumber::Float(0.0));
+                }
+
+                significant = digit_u!(data, *index);
+                *index += 1;
+
+                if is_digit_u!(data, *index) {
+                    let need = FLOATING_LONGEST_DIGITS as isize - 1;
+                    trunc = parse_number_fraction(
+                        data,
+                        index,
+                        &mut significant,
+                        &mut exponent,
+                        need,
+                        dot_pos,
+                    )?;
+                } else {
+                    exponent -= *index as i32 - dot_pos as i32;
+                    if match_digit_u!(data, *index, b'e' | b'E') {
+                        *index += 1;
+                        exponent += parse_exponent(data, &mut *index)?;
+                    }
+                }
+            }
+            b'e' | b'E' => {
+                *index += 1;
+                if match_digit_u!(data, *index, b'-' | b'+') {
+                    *index += 1;
+                }
+                check_digit_u!(data, *index);
+                while is_digit_u!(data, *index) {
+                    *index += 1;
+                }
+                return Ok(ParserNumber::Float(0.0));
+            }
+            _ => unreachable!("unreachable branch in parse_number_unchecked"),
+        }
+    } else {
+        // SWAR-optimized integer digit parsing.
+        let digit_start = *index;
+        let remaining = unsafe { data.get_unchecked(*index..) };
+
+        let digits_cnt;
+        if remaining.len() >= 8 && swar::is_eight_digits(remaining) {
+            // SWAR path: first 8 bytes are all digits.
+            significant = swar::parse_eight_digits(remaining) as u64;
+            *index += 8;
+
+            // Try second 8-digit batch
+            if data.len() - *index >= 8 && swar::is_eight_digits(unsafe { data.get_unchecked(*index..) }) {
+                significant = significant * 100_000_000
+                    + swar::parse_eight_digits(unsafe { data.get_unchecked(*index..) }) as u64;
+                *index += 8;
+            }
+
+            // Scalar tail for remaining digits (at most 3 more to stay within u64)
+            while (*index - digit_start) < 19 && is_digit_u!(data, *index) {
+                significant = significant * 10 + digit_u!(data, *index);
+                *index += 1;
+            }
+            digits_cnt = *index - digit_start;
+
+            // Handle overflow digits beyond 19
+            while is_digit_u!(data, *index) {
+                exponent += 1;
+                *index += 1;
+                trunc = true;
+            }
+        } else {
+            // Scalar path: fewer than 8 leading digits or short input.
+            // Includes single-digit fast path — if only one digit and not followed
+            // by '.', 'e', 'E', return immediately without further checks.
+            if !is_digit_u!(data, *index) {
+                return Err(Error::InvalidNumber);
+            }
+            significant = digit_u!(data, *index);
+            *index += 1;
+
+            if is_digit_u!(data, *index) {
+                // 2-7 digits: continue scalar loop
+                while is_digit_u!(data, *index) {
+                    significant = significant * 10 + digit_u!(data, *index);
+                    *index += 1;
+                }
+                digits_cnt = *index - digit_start;
+            } else if !match_digit_u!(data, *index, b'.' | b'e' | b'E') {
+                // Single digit integer — fast return
+                if negative {
+                    return Ok(ParserNumber::Signed(-(significant as i64)));
+                }
+                return Ok(ParserNumber::Unsigned(significant));
+            } else {
+                digits_cnt = 1;
+            }
+        }
+        if match_digit_u!(data, *index, b'e' | b'E') {
+            // parse exponent
+            *index += 1;
+            exponent += parse_exponent(data, index)?;
+        } else if match_digit_u!(data, *index, b'.') {
+            *index += 1;
+            check_digit_u!(data, *index);
+            let dot_pos = *index;
+
+            // parse fraction
+            let need = FLOATING_LONGEST_DIGITS as isize - digits_cnt as isize;
+            trunc =
+                parse_number_fraction(data, index, &mut significant, &mut exponent, need, dot_pos)?;
+        } else {
+            // parse integer, all parse has finished.
+            if exponent == 0 {
+                if negative {
+                    if significant > (1u64 << 63) {
+                        return Ok(ParserNumber::Float(-(significant as f64)));
+                    } else {
+                        // if significant is 0x8000_0000_0000_0000, it will overflow here.
+                        // so, we must use wrapping_sub here.
+                        return Ok(ParserNumber::Signed(0_i64.wrapping_sub(significant as i64)));
+                    }
+                } else {
+                    return Ok(ParserNumber::Unsigned(significant));
+                }
+            } else if exponent == 1 {
+                // now we get 20 digits, it maybe overflow for uint64
+                let last = digit_u!(data, *index - 1);
+                let (out, ov0) = significant.overflowing_mul(10);
+                let (out, ov1) = out.overflowing_add(last);
+                if !ov0 && !ov1 {
+                    // negative must be overflow here.
+                    significant = out;
+                    if negative {
+                        return Ok(ParserNumber::Float(-(significant as f64)));
+                    } else {
+                        return Ok(ParserNumber::Unsigned(significant));
+                    }
+                }
+            }
+            trunc = true;
+        }
+    }
+
+    // raw_num is pass-through for fallback parsing logic
+    parse_float(significant, exponent, negative, trunc, raw_num)
+}
+
+
 #[inline(always)]
 fn parse_float(
     significant: u64,
@@ -364,7 +627,7 @@ fn parse_float(
     raw_num: &[u8],
 ) -> Result<ParserNumber, Error> {
     // parse double fast
-    if significant >> 52 == 0 && (-22..=(22 + 15)).contains(&exponent) {
+    if significant < (1u64 << F64_SIG_FULL_BITS) && (-22..=(22 + 15)).contains(&exponent) {
         if let Some(mut float) = parse_float_fast(exponent, significant) {
             if negative {
                 float = -float;
@@ -622,6 +885,15 @@ mod test {
         test_parse_ok("1.0", 1.0);
         test_parse_ok("1350.0", 1350.0);
         test_parse_ok("1.10000000149011612", 1.1000000014901161);
+
+        // 8+ integer digits + fraction: exercises parse_number_fraction
+        // with digits_cnt >= 8, need <= 9, fraction slice may be < 16 bytes.
+        test_parse_ok("12345678.123456789", 12345678.123456789);
+        test_parse_ok("12345678.1", 12345678.1);
+        test_parse_ok("12345678.12345678", 12345678.12345678);
+        test_parse_ok("123456789.123456", 123456789.123456);
+        test_parse_ok("1234567890.1234567", 1234567890.1234567);
+        test_parse_ok("99999999.99999999", 99999999.99999999);
 
         test_parse_ok("1e0", 1e0);
         test_parse_ok("1.0e0", 1.0e0);

@@ -167,4 +167,39 @@ mod tests {
             assert_eq!(swar_str2int(b"123abc ", 16), (123, 3));
         }
     }
+
+    #[test]
+    fn test_parse_digits_tolerant() {
+        unsafe {
+            // All 8 digits
+            assert_eq!(parse_digits_tolerant(b"12345678"), (12345678, 8));
+            assert_eq!(parse_digits_tolerant(b"00000000"), (0, 8));
+            assert_eq!(parse_digits_tolerant(b"99999999"), (99999999, 8));
+
+            // Boundary: 1 digit
+            assert_eq!(parse_digits_tolerant(b"1......."), (1, 1));
+            assert_eq!(parse_digits_tolerant(b"0......."), (0, 1));
+            assert_eq!(parse_digits_tolerant(b"9......."), (9, 1));
+
+            // 2 digits
+            assert_eq!(parse_digits_tolerant(b"12......"), (12, 2));
+            assert_eq!(parse_digits_tolerant(b"43......"), (43, 2));
+
+            // 3 digits
+            assert_eq!(parse_digits_tolerant(b"123....."), (123, 3));
+
+            // 7 digits
+            assert_eq!(parse_digits_tolerant(b"1234567."), (1234567, 7));
+            assert_eq!(parse_digits_tolerant(b"4333333."), (4333333, 7));
+
+            // 0 digits (non-digit first byte)
+            assert_eq!(parse_digits_tolerant(b".1234567"), (0, 0));
+            assert_eq!(parse_digits_tolerant(b" 1234567"), (0, 0));
+
+            // Mixed: digits then non-digit mid-stream
+            assert_eq!(parse_digits_tolerant(b"12345.78"), (12345, 5));
+            assert_eq!(parse_digits_tolerant(b"1234e678"), (1234, 4));
+            assert_eq!(parse_digits_tolerant(b"123456 8"), (123456, 6));
+        }
+    }
 }

@@ -308,6 +308,20 @@ where
         ret.map_err(|err| self.error(err.into()))
     }
 
+    /// Unchecked number parsing — requires padded buffer (PaddedSliceRead).
+    /// Uses the full padded buffer (including padding) so unchecked access is safe.
+    #[inline(always)]
+    pub fn parse_number_unchecked(&mut self, first: u8) -> Result<ParserNumber> {
+        let reader = &mut self.read;
+        let neg = first == b'-';
+        let mut now = reader.index() - (!neg as usize);
+        // Use padded_slice which includes the padding bytes, so unchecked reads are safe.
+        let data = reader.padded_slice();
+        let ret = unsafe { sonic_number::parse_number_unchecked(data, &mut now, neg) };
+        reader.set_index(now);
+        ret.map_err(|err| self.error(err.into()))
+    }
+
     /// Parse a JSON string and visit it.
     /// When `strbuf` is Some, copies into the buffer (owned, calls visit_str).
     /// When `strbuf` is None, parses inplace zero-copy (calls visit_borrowed_str).
@@ -385,7 +399,13 @@ where
             };
             check_visit!(self, ok)
         } else {
-            let ok = match self.parse_number(first)? {
+            // When inplace=true, buffer has >=64 bytes padding — safe for unchecked.
+            let num = if inplace {
+                self.parse_number_unchecked(first)?
+            } else {
+                self.parse_number(first)?
+            };
+            let ok = match num {
                 ParserNumber::Float(f) => vis.visit_f64(f),
                 ParserNumber::Unsigned(f) => vis.visit_u64(f),
                 ParserNumber::Signed(f) => vis.visit_i64(f),

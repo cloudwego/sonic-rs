@@ -333,6 +333,12 @@ impl<'a> Reader<'a> for PaddedSliceRead<'a> {
         unsafe { std::slice::from_raw_parts(self.base.as_ptr(), self.len) }
     }
 
+    /// Return full buffer including padding (len + PADDING_SIZE bytes).
+    /// Safe for unchecked digit reads that may overshoot by up to 64 bytes.
+    fn padded_slice(&self) -> &'a [u8] {
+        unsafe { std::slice::from_raw_parts(self.base.as_ptr(), self.len + Self::PADDING_SIZE) }
+    }
+
     #[inline(always)]
     fn slice_ref(&self, subset: &'a [u8]) -> JsonSlice<'a> {
         subset.into()
