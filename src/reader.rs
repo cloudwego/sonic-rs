@@ -49,11 +49,21 @@ pub trait Reader<'de>: Sealed {
     fn set_index(&mut self, index: usize);
     fn next_n(&mut self, n: usize) -> Option<&'de [u8]>;
 
-    /// Peek next 2 bytes as a fixed-size array reference. No bounds check needed
-    /// on padded readers (PaddedSliceRead always has ≥64 bytes of padding).
+    /// Return the full buffer including padding. For unchecked number parsing.
+    /// Default: same as as_u8_slice (no padding). PaddedSliceRead overrides.
+    fn padded_slice(&self) -> &'de [u8] {
+        self.as_u8_slice()
+    }
+
+    /// Peek next 2 bytes as a little-endian u16 for single-instruction matching.
+    /// E.g., `peek_u16() == u16::from_le_bytes([b',', b'"'])` matches `,"` in one cmp.
+    /// Returns 0 if fewer than 2 bytes remain (0 won't match any structural char).
     #[inline(always)]
-    fn peek2(&self) -> &[u8; 2] {
-        unsafe { &*(self.peek_n(2).unwrap_unchecked().as_ptr() as *const [u8; 2]) }
+    fn peek_u16(&self) -> u16 {
+        match self.peek_n(2) {
+            Some(s) => u16::from_le(unsafe { (s.as_ptr() as *const u16).read_unaligned() }),
+            None => 0,
+        }
     }
 
     #[inline(always)]

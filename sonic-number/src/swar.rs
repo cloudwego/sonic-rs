@@ -2,7 +2,11 @@
 ///
 /// Based on simdjson's `parse_eight_digits_unrolled` technique.
 /// Uses pure u64 arithmetic to process 8 ASCII digits at a time.
-/// Works on all little-endian architectures without actual SIMD instructions.
+/// Requires little-endian byte order — the u64 load must place the first
+/// string byte in the least-significant byte position.
+
+#[cfg(target_endian = "big")]
+compile_error!("SWAR digit parsing requires little-endian byte order");
 
 /// Check if 8 consecutive bytes are all ASCII digits ('0'-'9').
 #[inline(always)]

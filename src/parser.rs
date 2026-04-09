@@ -333,6 +333,41 @@ where
         }
     }
 
+    /// Fast path for keys that terminate within 24 bytes and contain no escapes (`\\`)
+    /// or control characters (`< 0x20`). Accepts any valid UTF-8 bytes (including
+    /// multi-byte sequences). Falls back to `parse_string_visit` on escape, control
+    /// byte, or if no closing `"` is found within 24 bytes.
+    ///
+    /// # Safety
+    /// Only called when strbuf=None (padded reader path). PaddedSliceRead has 64 bytes
+    /// of zero-padding beyond valid JSON, so scanning 24 bytes ahead is always safe.
+    /// Padding bytes (0x00) are < 0x20 and will bail to parse_string_visit.
+    #[inline(always)]
+    fn parse_key_scalar<V>(&mut self, vis: &mut V) -> Result<()>
+    where
+        V: JsonVisitor<'de>,
+    {
+        unsafe {
+            let mut p = self.read.cur_ptr();
+            let start = p;
+            let end = p.add(24);
+            while p < end {
+                let ch = *p;
+                if ch == b'"' {
+                    let len = p.offset_from(start) as usize;
+                    self.read.set_ptr(p.add(1));
+                    let s = std::str::from_utf8_unchecked(std::slice::from_raw_parts(start, len));
+                    return check_visit!(self, vis.visit_borrowed_str(s));
+                }
+                if ch == b'\\' || ch < 0x20 {
+                    return self.parse_string_visit(vis, None);
+                }
+                p = p.add(1);
+            }
+            self.parse_string_visit(vis, None)
+        }
+    }
+
     /// Parse a number. When `inplace` is true, visits as borrowed raw number.
     #[inline(always)]
     fn parse_number_visit<V>(&mut self, first: u8, vis: &mut V, inplace: bool) -> Result<()>
@@ -374,18 +409,19 @@ where
         loop {
             self.dispatch_value(first, vis, &mut strbuf)?;
             count += 1;
-            // Compact: 2-byte match for ",X" or "]"
-            match self.read.peek2() {
-                &[b',', val_ch] if !is_whitespace(val_ch) => {
+            // Compact: u16 read for single-instruction matching
+            let sep = self.read.peek_u16();
+            if (sep & 0xFF) == b',' as u16 {
+                let val_ch = (sep >> 8) as u8;
+                if !is_whitespace(val_ch) {
                     self.read.eat(2);
                     first = Some(val_ch);
                     continue;
                 }
-                &[b']', ..] => {
-                    self.read.eat(1);
-                    return check_visit!(self, vis.visit_array_end(count));
-                }
-                _ => {}
+            }
+            if (sep & 0xFF) == b']' as u16 {
+                self.read.eat(1);
+                return check_visit!(self, vis.visit_array_end(count));
             }
             // Slow path
             first = match self.skip_space() {
@@ -409,36 +445,44 @@ where
         }
 
         loop {
-            // ---- parse key ----
-            self.parse_string_visit(vis, strbuf.as_deref_mut())?;
+            // ---- parse key (scalar fast path for short ASCII keys) ----
+            if strbuf.is_none() {
+                self.parse_key_scalar(vis)?;
+            } else {
+                self.parse_string_visit(vis, strbuf.as_deref_mut())?;
+            }
 
-            // ---- find ':' + value start byte (compact: 2-byte match) ----
-            let next = match self.read.peek2() {
-                &[b':', val_ch] if !is_whitespace(val_ch) => {
+            // ---- find ':' + value start byte ----
+            // Use u16 read: on little-endian, ':' followed by val_ch = (val_ch << 8) | ':'
+            let pair = self.read.peek_u16();
+            let next = if (pair & 0xFF) == b':' as u16 {
+                let val_ch = (pair >> 8) as u8;
+                if !is_whitespace(val_ch) {
                     self.read.eat(2);
                     Some(val_ch)
-                }
-                _ => {
+                } else {
                     self.parse_object_clo()?;
                     self.skip_space()
                 }
+            } else {
+                self.parse_object_clo()?;
+                self.skip_space()
             };
 
             // ---- parse value ----
             self.dispatch_value(next, vis, &mut strbuf)?;
             count += 1;
 
-            // ---- find separator (compact: 2-byte match) ----
-            match self.read.peek2() {
-                &[b',', b'"'] => {
-                    self.read.eat(2);
-                    continue;
-                }
-                &[b'}', ..] => {
-                    self.read.eat(1);
-                    return check_visit!(self, vis.visit_object_end(count));
-                }
-                _ => {}
+            // ---- find separator: one u16 read to match `,"` or `}x` ----
+            let sep = self.read.peek_u16();
+            // Little-endian: `,"` = 0x222C, `}x` = (x << 8) | 0x7D
+            if sep == u16::from_le_bytes([b',', b'"']) {
+                self.read.eat(2);
+                continue;
+            }
+            if (sep & 0xFF) == b'}' as u16 {
+                self.read.eat(1);
+                return check_visit!(self, vis.visit_object_end(count));
             }
             // Slow path
             match self.skip_space() {
@@ -1742,7 +1786,6 @@ where
         Ok(())
     }
 
-    #[allow(clippy::mutable_key_type)]
     #[allow(clippy::mutable_key_type)]
     fn get_many_keys(
         &mut self,
