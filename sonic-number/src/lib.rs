@@ -157,6 +157,10 @@ fn parse_number_fraction(
     // On AMD Zen, SSE maddubs/madd go through FP ports causing ALU saturation.
     // Two-step SWAR: 8-digit batch + tolerant SWAR for remaining 1-8 digits,
     // eliminating the scalar while-loop tail for float-heavy workloads.
+    //
+    // Note: `significant` may wrap on u64 overflow when the integer part has many
+    // digits. This is harmless — wrapping makes the fast path in `parse_float` fail,
+    // which falls back to `slow::parse_long_mantissa(raw_num)` for a correct result.
     if need > 0 {
         let need = need as usize;
         unsafe {
@@ -220,6 +224,8 @@ pub fn parse_number(data: &[u8], index: &mut usize, negative: bool) -> Result<Pa
     let mut significant: u64 = 0;
     let mut exponent: i32 = 0;
     let mut trunc = false;
+    // Checked slice: validates *index <= data.len() (panics otherwise).
+    // This bounds guarantee is relied upon by the unchecked slice at the SWAR branch below.
     let raw_num = &data[*index..];
 
     if match_digit!(data, *index, b'0') {
@@ -300,6 +306,8 @@ pub fn parse_number(data: &[u8], index: &mut usize, negative: bool) -> Result<Pa
     } else {
         // SWAR-optimized integer digit parsing.
         let digit_start = *index;
+        // Safety: *index <= data.len() is guaranteed by the checked slice `&data[*index..]`
+        // above (line 223), which would have panicked on out-of-bounds.
         let remaining = unsafe { data.get_unchecked(*index..) };
 
         let digits_cnt;
