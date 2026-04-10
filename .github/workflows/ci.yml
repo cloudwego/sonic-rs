@@ -128,10 +128,11 @@ jobs:
 
   fuzz:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      FUZZ_TIME: 3m
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@nightly
-      with:
-        components: rustfmt, clippy
     - name: Fuzz
       run: ./scripts/fuzz.sh

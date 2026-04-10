@@ -1,4 +1,6 @@
 #![allow(clippy::mutable_key_type)]
+pub mod gen;
+
 use std::{borrow::Cow, collections::HashMap, hash::Hash, marker::PhantomData};
 
 use faststr::FastStr;
