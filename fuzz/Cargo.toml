@@ -12,15 +12,47 @@ cargo-fuzz = true
 members = ["."]
 
 [dependencies]
-faststr       = "0.2"
-libfuzzer-sys = "0.4"
-serde         = { version = "1.0", features = ["derive"] }
-serde_json    = { version = "1.0", features = ["float_roundtrip"] }
-simdutf8      = "0.1"
-sonic-rs      = { path = ".." }
+arbitrary      = { version = "1", features = ["derive"] }
+faststr        = "0.2"
+libfuzzer-sys  = { version = "0.4", features = ["arbitrary-derive"] }
+serde          = { version = "1.0", features = ["derive"] }
+serde_json     = { version = "1.0", features = ["float_roundtrip"] }
+simdutf8       = "0.1"
+sonic-number   = { path = "../sonic-number" }
+sonic-rs       = { path = ".." }
 
 [[bin]]
 doc  = false
 name = "fuzz_value"
 path = "fuzz_targets/from_slice.rs"
+test = false
+
+[[bin]]
+doc  = false
+name = "fuzz_number"
+path = "fuzz_targets/number_parse.rs"
+test = false
+
+[[bin]]
+doc  = false
+name = "fuzz_string"
+path = "fuzz_targets/string_escape.rs"
+test = false
+
+[[bin]]
+doc  = false
+name = "fuzz_get_path"
+path = "fuzz_targets/get_path.rs"
+test = false
+
+[[bin]]
+doc  = false
+name = "fuzz_deep_nesting"
+path = "fuzz_targets/deep_nesting.rs"
+test = false
+
+[[bin]]
+doc  = false
+name = "fuzz_serde_roundtrip"
+path = "fuzz_targets/serde_roundtrip.rs"
 test = false
