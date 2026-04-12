@@ -536,8 +536,8 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
     impl_deserialize_number!(deserialize_u16);
     impl_deserialize_number!(deserialize_u32);
     impl_deserialize_number!(deserialize_u64);
-    /// Deserialize f32 by parsing to f64, then re-parsing the raw number string
-    /// as f32 to avoid precision loss from the f64→f32 cast.
+    /// Deserialize f32 using a dedicated single-pass parser to avoid both
+    /// the f64→f32 rounding pitfall and the extra fallback parse.
     ///
     /// The f64→f32 cast can produce an off-by-one ULP error when the original
     /// decimal is at a tie-breaking boundary (e.g., "17005001.000000000000130").
@@ -551,29 +551,13 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
 
         let value = match peek {
             c @ b'-' | c @ b'0'..=b'9' => {
-                let start = self.parser.read.index() - 1;
-                let num = tri!(self.parser.parse_number(c));
-                match num {
-                    ParserNumber::Float(f64_val) => {
-                        let end = self.parser.read.index();
-                        let raw = self.parser.read.slice_unchecked(start, end);
-                        // Safety: parse_number validated these bytes as a valid JSON
-                        // number, which is always valid ASCII (and thus valid UTF-8).
-                        let raw_str = unsafe { core::str::from_utf8_unchecked(raw) };
-                        // parse::<f32>() should not fail since parse_number already
-                        // validated the number string. Fall back to f64→f32 cast
-                        // only if std's parser somehow rejects it.
-                        let f = raw_str.parse::<f32>().unwrap_or(f64_val as f32);
-                        visitor.visit_f32(f)
-                    }
-                    _ => visit_number(&num, visitor),
-                }
+                let f = tri!(self.parser.parse_float32(c));
+                visitor.visit_f32(f)
             }
             _ => Err(self.peek_invalid_type(peek, &visitor)),
         };
         self.fix_position(value)
     }
-
     impl_deserialize_number!(deserialize_f64);
 
     fn deserialize_i128<V>(self, visitor: V) -> Result<V::Value>

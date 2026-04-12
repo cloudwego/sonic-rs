@@ -10,7 +10,7 @@ use std::{
 
 use faststr::FastStr;
 use serde::de::{self, Expected, Unexpected};
-use sonic_number::{parse_number, ParserNumber};
+use sonic_number::{parse_float32, parse_number, ParserNumber};
 #[cfg(all(target_feature = "neon", target_arch = "aarch64"))]
 use sonic_simd::bits::NeonBits;
 use sonic_simd::{i8x32, m8x32, u8x32, u8x64, Mask, Simd};
@@ -304,6 +304,17 @@ where
         let mut now = reader.index() - (!neg as usize);
         let data = reader.as_u8_slice();
         let ret = parse_number(data, &mut now, neg);
+        reader.set_index(now);
+        ret.map_err(|err| self.error(err.into()))
+    }
+
+    #[inline(always)]
+    pub fn parse_float32(&mut self, first: u8) -> Result<f32> {
+        let reader = &mut self.read;
+        let neg = first == b'-';
+        let mut now = reader.index() - (!neg as usize);
+        let data = reader.as_u8_slice();
+        let ret = parse_float32(data, &mut now, neg);
         reader.set_index(now);
         ret.map_err(|err| self.error(err.into()))
     }
