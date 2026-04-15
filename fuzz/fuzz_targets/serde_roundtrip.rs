@@ -131,7 +131,7 @@ fuzz_target!(|input: FuzzInput| {
         FuzzInput::Enum(v) => roundtrip_test(&v),
         FuzzInput::VecComplex(v) => roundtrip_test(&v),
         FuzzInput::MapComplex(v) => roundtrip_test(&v),
-        FuzzInput::Raw(data) => raw_roundtrip_test(&data),
+        FuzzInput::Raw(data) => sonic_rs_fuzz::fuzz_serde_roundtrip_raw(&data),
     }
 });
 
@@ -162,7 +162,8 @@ where
 
     // Self-roundtrip should be identity
     assert_eq!(
-        &sonic_parsed, value,
+        &sonic_parsed,
+        value,
         "sonic-rs roundtrip changed value\njson: {}",
         &sonic_json[..sonic_json.len().min(500)]
     );
@@ -191,36 +192,4 @@ where
     let sv: sonic_rs::Value = sonic_rs::from_str(&sonic_json).unwrap();
     let jv: serde_json::Value = serde_json::from_str(&sonic_json).unwrap();
     sonic_rs_fuzz::compare_value(&jv, &sv);
-}
-
-/// Test raw bytes that might or might not be valid JSON.
-fn raw_roundtrip_test(data: &[u8]) {
-    // Try parsing as various types
-    macro_rules! try_type {
-        ($ty:ty) => {
-            match serde_json::from_slice::<$ty>(data) {
-                Ok(expected) => {
-                    if let Ok(got) = sonic_rs::from_slice::<$ty>(data) {
-                        assert_eq!(
-                            got, expected,
-                            "type {} mismatch on raw input",
-                            stringify!($ty)
-                        );
-                    }
-                }
-                Err(_) => {
-                    let _ = sonic_rs::from_slice::<$ty>(data);
-                }
-            }
-        };
-    }
-
-    try_type!(SimpleStruct);
-    try_type!(TestEnum);
-    try_type!(Vec<i64>);
-    try_type!(HashMap<String, String>);
-    try_type!(Option<String>);
-    try_type!(String);
-    try_type!(f64);
-    try_type!(bool);
 }
