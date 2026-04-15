@@ -584,10 +584,19 @@ mod test {
         let expect: f32 = input.parse().unwrap();
         assert_eq!(got.to_bits(), expect.to_bits());
 
+        let input = "100e11";
+        let got: f32 = crate::from_str(input).unwrap();
+        let expect: f32 = input.parse().unwrap();
+        assert_eq!(got.to_bits(), expect.to_bits());
+
         let input = "-0";
         let got: f32 = crate::from_str(input).unwrap();
         let expect: f32 = input.parse().unwrap();
         assert_eq!(got.to_bits(), expect.to_bits());
+
+        let err = crate::from_str::<f32>("1e39").unwrap_err();
+        assert!(err.is_syntax());
+        assert!(err.to_string().to_lowercase().contains("finite"));
     }
 
     // test deserialize into different mapkeys

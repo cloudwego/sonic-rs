@@ -987,16 +987,19 @@ fn parse_float_fast_generic<T: RawFloat>(mut exp10: i32, mut significant: u64) -
         return None;
     }
 
-    while (exp10 as i64) > T::MAX_EXPONENT_FAST_PATH {
-        if significant % 10 != 0 {
-            return None;
-        }
-        significant /= 10;
-        exp10 -= 1;
+    let exp10_i64 = exp10 as i64;
+    if exp10_i64 < T::MIN_EXPONENT_FAST_PATH || exp10_i64 > T::MAX_EXPONENT_DISGUISED_FAST_PATH {
+        return None;
     }
 
-    if (exp10 as i64) < T::MIN_EXPONENT_FAST_PATH || (exp10 as i64) > T::MAX_EXPONENT_FAST_PATH {
-        return None;
+    if exp10_i64 > T::MAX_EXPONENT_FAST_PATH {
+        let shift = (exp10_i64 - T::MAX_EXPONENT_FAST_PATH) as usize;
+        let pow10 = *POW10_UINT.get(shift)?;
+        significant = significant.checked_mul(pow10)?;
+        if significant > T::MAX_MANTISSA_FAST_PATH {
+            return None;
+        }
+        exp10 = T::MAX_EXPONENT_FAST_PATH as i32;
     }
 
     let mut float = T::from_u64(significant);
@@ -1084,6 +1087,19 @@ mod test {
             input
         );
         assert_eq!(data[index], b' ', "failed num is {}", input);
+    }
+
+    fn test_parse_f32_finite_err(input: &str) {
+        let mut data = input.as_bytes().to_vec();
+        data.push(b' ');
+        let mut index = if input.starts_with('-') { 1 } else { 0 };
+        let err = parse_float32(&data, &mut index, input.starts_with('-')).unwrap_err();
+        assert!(
+            matches!(err, crate::Error::FloatMustBeFinite),
+            "input {} returned {:?}",
+            input,
+            err
+        );
     }
 
     fn test_parse_signed_ok(input: &str, expected: i64) {
@@ -1212,6 +1228,7 @@ mod test {
         test_parse_f32_ok("1", 1.0);
         test_parse_f32_ok("0.1", 0.1);
         test_parse_f32_ok("1.23", 1.23);
+        test_parse_f32_ok("100e11", "100e11".parse().unwrap());
         test_parse_f32_ok(
             "17005001.000000000000130",
             "17005001.000000000000130".parse().unwrap(),
@@ -1222,5 +1239,7 @@ mod test {
             "12448139190673828122020e-47",
             "12448139190673828122020e-47".parse().unwrap(),
         );
+        test_parse_f32_finite_err("3.4028236e38");
+        test_parse_f32_finite_err("1e39");
     }
 }

@@ -45,6 +45,135 @@ macro_rules! test_type {
     };
 }
 
+fn check_f32_literal_with<F>(literal: &str, parse: F) -> Result<(), String>
+where
+    F: Fn(&str) -> Result<f32, String>,
+{
+    match (literal.parse::<f32>(), parse(literal)) {
+        (Ok(expected), Err(_)) if expected.is_infinite() => Ok(()),
+        (Ok(expected), Ok(got)) if expected.is_infinite() => Err(format!(
+            "sonic-rs accepted non-finite f32 literal {literal:?}: std={expected:e} (bits \
+             {:#010x}), sonic={got:e} (bits {:#010x})",
+            expected.to_bits(),
+            got.to_bits(),
+        )),
+        (Ok(expected), Ok(got)) if expected.to_bits() == got.to_bits() => Ok(()),
+        (Ok(expected), Ok(got)) => Err(format!(
+            "f32 mismatch on {literal:?}: std={expected:e} (bits {:#010x}), sonic={got:e} (bits \
+             {:#010x})",
+            expected.to_bits(),
+            got.to_bits(),
+        )),
+        (Ok(expected), Err(err)) => Err(format!(
+            "sonic-rs rejected valid f32 literal {literal:?}: std={expected:e}, sonic error={err}"
+        )),
+        (Err(err), Ok(got)) => Err(format!(
+            "sonic-rs accepted overflow/invalid f32 literal {literal:?}: std error={err}, \
+             sonic={got:e} (bits {:#010x})",
+            got.to_bits(),
+        )),
+        (Err(_), Err(_)) => Ok(()),
+    }
+}
+
+fn assert_f32_literal_matches_std_parse(literal: &str) {
+    check_f32_literal_with(literal, |literal| {
+        sonic_rs::from_str::<f32>(literal).map_err(|err| err.to_string())
+    })
+    .unwrap_or_else(|err| panic!("{err}"));
+}
+
+pub fn fuzz_number_input(input: &gen::NumberInput) {
+    let literal = input.pattern.to_string();
+    if !matches!(input.pattern, gen::NumberPattern::Raw(_)) {
+        assert_f32_literal_matches_std_parse(&literal);
+    }
+
+    let json = input.to_json_bytes();
+
+    // --- Strategy 1: Compare sonic-rs vs serde_json for type-level consistency ---
+    macro_rules! cmp_number {
+        ($ty:ty) => {
+            match serde_json::from_slice::<$ty>(&json) {
+                Ok(expected) => {
+                    let got: $ty = sonic_rs::from_slice(&json).unwrap_or_else(|e| {
+                        panic!(
+                            "sonic-rs failed to parse {:?} as {}: {}",
+                            std::str::from_utf8(&json).unwrap_or("<non-utf8>"),
+                            stringify!($ty),
+                            e
+                        )
+                    });
+                    assert_eq!(
+                        got,
+                        expected,
+                        "mismatch for {} on {:?}",
+                        stringify!($ty),
+                        std::str::from_utf8(&json).unwrap_or("<non-utf8>")
+                    );
+                }
+                Err(_) => {
+                    // serde_json rejects it — sonic-rs should too
+                    let _ = sonic_rs::from_slice::<$ty>(&json);
+                }
+            }
+        };
+    }
+
+    cmp_number!(u8);
+    cmp_number!(u16);
+    cmp_number!(u32);
+    cmp_number!(u64);
+    cmp_number!(u128);
+    cmp_number!(i8);
+    cmp_number!(i16);
+    cmp_number!(i32);
+    cmp_number!(i64);
+    cmp_number!(i128);
+    cmp_number!(f32);
+    cmp_number!(f64);
+
+    // --- Strategy 2: Value-level number parsing ---
+    if let Ok(sv) = sonic_rs::from_slice::<sonic_rs::Value>(&json) {
+        if let Ok(jv) = serde_json::from_slice::<serde_json::Value>(&json) {
+            if let (Some(sn), Some(jn)) = (sv.as_number(), jv.as_number()) {
+                // Compare all numeric representations
+                if jn.is_u64() {
+                    assert_eq!(sn.as_u64(), jn.as_u64(), "u64 mismatch on {:?}", json);
+                }
+                if jn.is_i64() {
+                    assert_eq!(sn.as_i64(), jn.as_i64(), "i64 mismatch on {:?}", json);
+                }
+                if jn.is_f64() {
+                    assert_eq!(sn.as_f64(), jn.as_f64(), "f64 mismatch on {:?}", json);
+                }
+            }
+        }
+    }
+
+    // --- Strategy 3: Round-trip consistency ---
+    if let Ok(sv) = sonic_rs::from_slice::<sonic_rs::Value>(&json) {
+        let serialized = sonic_rs::to_string(&sv).unwrap();
+        let sv2: sonic_rs::Value = sonic_rs::from_str(&serialized).unwrap();
+        // Numbers should round-trip
+        if let Some(n1) = sv.as_number() {
+            let n2 = sv2.as_number().expect("round-trip lost number type");
+            assert_eq!(n1.as_f64(), n2.as_f64(), "f64 round-trip mismatch");
+            assert_eq!(n1.as_u64(), n2.as_u64(), "u64 round-trip mismatch");
+            assert_eq!(n1.as_i64(), n2.as_i64(), "i64 round-trip mismatch");
+        }
+    }
+
+    // --- Strategy 4: Raw bytes fuzzing (non-structured) ---
+    // Also test with the raw json bytes directly for the unchecked path
+    if let Ok(s) = std::str::from_utf8(&json) {
+        let _ = sonic_rs::from_str::<f64>(s);
+        let _ = sonic_rs::from_str::<i64>(s);
+        let _ = sonic_rs::from_str::<u64>(s);
+        let _ = sonic_rs::from_str::<sonic_rs::Value>(s);
+    }
+}
+
 pub fn sonic_rs_fuzz_data(data: &[u8]) {
     match serde_json::from_slice::<JValue>(data) {
         Ok(jv) => {
@@ -349,5 +478,61 @@ mod test {
         ));
 
         sonic_rs_fuzz_data(br#"[45, 48, 10]"#);
+    }
+
+    #[test]
+    fn test_f32_literal_alignment_on_boundaries() {
+        for literal in [
+            "100e11",
+            "17005001.000000000000130",
+            "3.4028235e38",
+            "3.4028236e38",
+            "1e39",
+        ] {
+            assert_f32_literal_matches_std_parse(literal);
+        }
+    }
+
+    #[test]
+    fn test_fuzz_number_input_f32_edges() {
+        for input in [
+            gen::NumberInput {
+                pattern: gen::NumberPattern::Edge(gen::NumberEdge::F32DisguisedFastPath),
+                in_array: false,
+            },
+            gen::NumberInput {
+                pattern: gen::NumberPattern::Edge(gen::NumberEdge::F32TieBoundary),
+                in_array: false,
+            },
+            gen::NumberInput {
+                pattern: gen::NumberPattern::Edge(gen::NumberEdge::F32MaxFinite),
+                in_array: false,
+            },
+            gen::NumberInput {
+                pattern: gen::NumberPattern::Edge(gen::NumberEdge::F32Overflow),
+                in_array: false,
+            },
+            gen::NumberInput {
+                pattern: gen::NumberPattern::Edge(gen::NumberEdge::F32DisguisedFastPath),
+                in_array: true,
+            },
+        ] {
+            fuzz_number_input(&input);
+        }
+    }
+
+    #[test]
+    fn test_f32_fuzz_helper_catches_mocked_boundary_regression() {
+        let err = check_f32_literal_with("100e11", |literal| {
+            if literal == "100e11" {
+                Ok(1e11_f32)
+            } else {
+                literal.parse::<f32>().map_err(|e| e.to_string())
+            }
+        })
+        .unwrap_err();
+
+        assert!(err.contains("100e11"));
+        assert!(err.contains("f32 mismatch"));
     }
 }
