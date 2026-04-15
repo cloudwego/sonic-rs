@@ -56,3 +56,9 @@ doc  = false
 name = "fuzz_serde_roundtrip"
 path = "fuzz_targets/serde_roundtrip.rs"
 test = false
+
+[[bin]]
+doc  = false
+name = "fuzz_f32_literal"
+path = "fuzz_targets/f32_literal.rs"
+test = false

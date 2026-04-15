@@ -4,8 +4,9 @@
 //! enabling the fuzzer to explore deep parsing paths instead of getting
 //! stuck on syntax errors.
 
-use arbitrary::{Arbitrary, Unstructured};
 use std::fmt::Write;
+
+use arbitrary::{Arbitrary, Unstructured};
 
 /// Maximum recursion depth for nested structures.
 const MAX_DEPTH: u8 = 32;
@@ -103,9 +104,9 @@ impl<'a> Arbitrary<'a> for UnicodeStr {
         for _ in 0..len {
             let choice: u8 = u.int_in_range(0..=3)?;
             match choice {
-                0 => s.push('\u{00E9}'),      // e-acute (2-byte UTF-8)
-                1 => s.push('\u{4E2D}'),      // CJK character (3-byte UTF-8)
-                2 => s.push('\u{1F600}'),     // emoji (4-byte UTF-8)
+                0 => s.push('\u{00E9}'),  // e-acute (2-byte UTF-8)
+                1 => s.push('\u{4E2D}'),  // CJK character (3-byte UTF-8)
+                2 => s.push('\u{1F600}'), // emoji (4-byte UTF-8)
                 _ => {
                     let cp = u.int_in_range(0x80u32..=0x07FF)?;
                     if let Some(c) = char::from_u32(cp) {
@@ -344,7 +345,11 @@ pub enum NumberEdge {
     F64MaxIntPlus1,   // 2^53 + 1
     VerySmallFloat,   // 0.000...001
     LeadingZeroFloat, // 0.123
-    ManyDigits,       // 100+ digits
+    F32DisguisedFastPath,
+    F32TieBoundary,
+    F32MaxFinite,
+    F32Overflow,
+    ManyDigits, // 100+ digits
 }
 
 #[derive(Debug)]
@@ -428,7 +433,10 @@ impl NumberPattern {
                     _ => "12345678",
                 };
                 let exp_sign = if *exp_negative { "-" } else { "+" };
-                format!("{}{}.{}e{}{}", sign, int_part, frac_part, exp_sign, exp_value)
+                format!(
+                    "{}{}.{}e{}{}",
+                    sign, int_part, frac_part, exp_sign, exp_value
+                )
             }
             NumberPattern::Edge(edge) => match edge {
                 NumberEdge::Zero => "0".to_string(),
@@ -442,6 +450,10 @@ impl NumberPattern {
                 NumberEdge::F64MaxIntPlus1 => "9007199254740993".to_string(),
                 NumberEdge::VerySmallFloat => "0.00000000000000001".to_string(),
                 NumberEdge::LeadingZeroFloat => "0.123456789012345678".to_string(),
+                NumberEdge::F32DisguisedFastPath => "100e11".to_string(),
+                NumberEdge::F32TieBoundary => "17005001.000000000000130".to_string(),
+                NumberEdge::F32MaxFinite => "3.4028235e38".to_string(),
+                NumberEdge::F32Overflow => "3.4028236e38".to_string(),
                 NumberEdge::ManyDigits => {
                     let mut s = String::with_capacity(120);
                     for _ in 0..110 {

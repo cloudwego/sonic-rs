@@ -13,10 +13,10 @@ pub mod swar;
 mod table;
 
 use self::{common::BiasedFp, float::RawFloat, table::POWER_OF_FIVE_128};
-pub use crate::arch::simd_str2int;
-pub use crate::swar::swar_str2int;
+pub use crate::{arch::simd_str2int, swar::swar_str2int};
 
 const FLOATING_LONGEST_DIGITS: usize = 17;
+const FLOATING_LONGEST_DIGITS_F32: usize = 9;
 const F64_BITS: u32 = 64;
 const F64_SIG_BITS: u32 = 52;
 const F64_SIG_FULL_BITS: u32 = 53;
@@ -183,7 +183,8 @@ fn parse_number_fraction(
                         tail_n
                     };
                     let total = 8 + tail_n;
-                    *significant = *significant * POW10_UINT[total] + first8 * POW10_UINT[tail_n] + tail_val;
+                    *significant =
+                        *significant * POW10_UINT[total] + first8 * POW10_UINT[tail_n] + tail_val;
                     *index += total;
                 } else {
                     // c.len() < 16: not enough bytes for tolerant SWAR on tail.
@@ -318,8 +319,8 @@ pub fn parse_number(data: &[u8], index: &mut usize, negative: bool) -> Result<Pa
 
             // Try second 8-digit batch
             if data.len() - *index >= 8 && swar::is_eight_digits(&data[*index..]) {
-                significant = significant * 100_000_000
-                    + swar::parse_eight_digits(&data[*index..]) as u64;
+                significant =
+                    significant * 100_000_000 + swar::parse_eight_digits(&data[*index..]) as u64;
                 *index += 8;
             }
 
@@ -394,8 +395,14 @@ pub fn parse_number(data: &[u8], index: &mut usize, negative: bool) -> Result<Pa
             } else {
                 // Long integer part — use SIMD fraction parsing
                 let need = FLOATING_LONGEST_DIGITS as isize - digits_cnt as isize;
-                trunc =
-                    parse_number_fraction(data, index, &mut significant, &mut exponent, need, dot_pos)?;
+                trunc = parse_number_fraction(
+                    data,
+                    index,
+                    &mut significant,
+                    &mut exponent,
+                    need,
+                    dot_pos,
+                )?;
             }
         } else {
             // parse integer, all parse has finished.
@@ -434,9 +441,203 @@ pub fn parse_number(data: &[u8], index: &mut usize, negative: bool) -> Result<Pa
     parse_float(significant, exponent, negative, trunc, raw_num)
 }
 
+#[allow(unused_assignments)]
+#[inline(always)]
+pub fn parse_float32(data: &[u8], index: &mut usize, negative: bool) -> Result<f32, Error> {
+    let mut significant: u64 = 0;
+    let mut exponent: i32 = 0;
+    let mut trunc = false;
+    let raw_num = &data[*index..];
+
+    if match_digit!(data, *index, b'0') {
+        *index += 1;
+
+        if *index >= data.len() || !matches!(data[*index], b'.' | b'e' | b'E') {
+            let zero = 0.0f32;
+            return Ok(if negative { -zero } else { zero });
+        }
+
+        match data[*index] {
+            b'.' => {
+                *index += 1;
+                let dot_pos = *index;
+                check_digit!(data, *index);
+                while match_digit!(data, *index, b'0') {
+                    *index += 1;
+                }
+
+                if match_digit!(data, *index, b'e' | b'E') {
+                    *index += 1;
+                    if match_digit!(data, *index, b'-' | b'+') {
+                        *index += 1;
+                    }
+                    check_digit!(data, *index);
+                    while is_digit!(data, *index) {
+                        *index += 1;
+                    }
+                    let zero = 0.0f32;
+                    return Ok(if negative { -zero } else { zero });
+                }
+
+                if !is_digit!(data, *index) {
+                    let zero = 0.0f32;
+                    return Ok(if negative { -zero } else { zero });
+                }
+
+                significant = digit!(data, *index);
+                *index += 1;
+
+                if is_digit!(data, *index) {
+                    let need = FLOATING_LONGEST_DIGITS_F32 as isize - 1;
+                    trunc = parse_number_fraction(
+                        data,
+                        index,
+                        &mut significant,
+                        &mut exponent,
+                        need,
+                        dot_pos,
+                    )?;
+                } else {
+                    exponent -= *index as i32 - dot_pos as i32;
+                    if match_digit!(data, *index, b'e' | b'E') {
+                        *index += 1;
+                        exponent += parse_exponent(data, &mut *index)?;
+                    }
+                }
+            }
+            b'e' | b'E' => {
+                *index += 1;
+                if match_digit!(data, *index, b'-' | b'+') {
+                    *index += 1;
+                }
+                check_digit!(data, *index);
+                while is_digit!(data, *index) {
+                    *index += 1;
+                }
+                let zero = 0.0f32;
+                return Ok(if negative { -zero } else { zero });
+            }
+            _ => unreachable!("unreachable branch in parse_float32"),
+        }
+    } else {
+        let digit_start = *index;
+        let remaining = unsafe { data.get_unchecked(*index..) };
+
+        let digits_cnt;
+        if remaining.len() >= 8 && swar::is_eight_digits(remaining) {
+            significant = swar::parse_eight_digits(remaining) as u64;
+            *index += 8;
+
+            if data.len() - *index >= 8 && swar::is_eight_digits(&data[*index..]) {
+                significant =
+                    significant * 100_000_000 + swar::parse_eight_digits(&data[*index..]) as u64;
+                *index += 8;
+            }
+
+            while (*index - digit_start) < 19 && is_digit!(data, *index) {
+                significant = significant * 10 + digit!(data, *index);
+                *index += 1;
+            }
+            digits_cnt = *index - digit_start;
+
+            while is_digit!(data, *index) {
+                exponent += 1;
+                *index += 1;
+                trunc = true;
+            }
+        } else {
+            if !is_digit!(data, *index) {
+                return Err(Error::InvalidNumber);
+            }
+            significant = digit!(data, *index);
+            *index += 1;
+
+            if is_digit!(data, *index) {
+                while is_digit!(data, *index) {
+                    significant = significant * 10 + digit!(data, *index);
+                    *index += 1;
+                }
+                digits_cnt = *index - digit_start;
+            } else if !match_digit!(data, *index, b'.' | b'e' | b'E') {
+                let mut float = significant as f32;
+                if negative {
+                    float = -float;
+                }
+                return Ok(float);
+            } else {
+                digits_cnt = 1;
+            }
+        }
+
+        if match_digit!(data, *index, b'e' | b'E') {
+            *index += 1;
+            exponent += parse_exponent(data, index)?;
+        } else if match_digit!(data, *index, b'.') {
+            *index += 1;
+            check_digit!(data, *index);
+            let dot_pos = *index;
+
+            if digits_cnt < 8 {
+                let mut need = FLOATING_LONGEST_DIGITS_F32 as isize - digits_cnt as isize;
+                while need > 0 && is_digit!(data, *index) {
+                    significant = significant * 10 + digit!(data, *index);
+                    *index += 1;
+                    need -= 1;
+                }
+                exponent -= *index as i32 - dot_pos as i32;
+                while is_digit!(data, *index) {
+                    trunc = true;
+                    *index += 1;
+                }
+                if match_digit!(data, *index, b'e' | b'E') {
+                    *index += 1;
+                    exponent += parse_exponent(data, &mut *index)?;
+                }
+            } else {
+                let need = FLOATING_LONGEST_DIGITS_F32 as isize - digits_cnt as isize;
+                trunc = parse_number_fraction(
+                    data,
+                    index,
+                    &mut significant,
+                    &mut exponent,
+                    need,
+                    dot_pos,
+                )?;
+            }
+        } else {
+            if exponent == 0 {
+                let mut float = significant as f32;
+                if negative {
+                    float = -float;
+                }
+                return Ok(float);
+            } else if exponent == 1 {
+                let last = digit!(data, *index - 1);
+                let (out, ov0) = significant.overflowing_mul(10);
+                let (out, ov1) = out.overflowing_add(last);
+                if !ov0 && !ov1 {
+                    significant = out;
+                    let mut float = significant as f32;
+                    if negative {
+                        float = -float;
+                    }
+                    return Ok(float);
+                }
+            }
+            trunc = true;
+        }
+    }
+
+    parse_float_generic::<f32>(significant, exponent, negative, trunc, raw_num)
+}
+
 /// Unchecked version — caller must ensure data has >=64 bytes padding.
 #[inline(always)]
-pub unsafe fn parse_number_unchecked(data: &[u8], index: &mut usize, negative: bool) -> Result<ParserNumber, Error> {
+pub unsafe fn parse_number_unchecked(
+    data: &[u8],
+    index: &mut usize,
+    negative: bool,
+) -> Result<ParserNumber, Error> {
     let mut significant: u64 = 0;
     let mut exponent: i32 = 0;
     let mut trunc = false;
@@ -529,7 +730,9 @@ pub unsafe fn parse_number_unchecked(data: &[u8], index: &mut usize, negative: b
             *index += 8;
 
             // Try second 8-digit batch
-            if data.len() - *index >= 8 && swar::is_eight_digits(unsafe { data.get_unchecked(*index..) }) {
+            if data.len() - *index >= 8
+                && swar::is_eight_digits(unsafe { data.get_unchecked(*index..) })
+            {
                 significant = significant * 100_000_000
                     + swar::parse_eight_digits(unsafe { data.get_unchecked(*index..) }) as u64;
                 *index += 8;
@@ -625,7 +828,6 @@ pub unsafe fn parse_number_unchecked(data: &[u8], index: &mut usize, negative: b
     parse_float(significant, exponent, negative, trunc, raw_num)
 }
 
-
 #[inline(always)]
 fn parse_float(
     significant: u64,
@@ -680,6 +882,42 @@ fn parse_float(
         return Err(Error::FloatMustBeFinite);
     }
     Ok(ParserNumber::Float(float))
+}
+
+#[inline(always)]
+fn parse_float_generic<T: RawFloat>(
+    significant: u64,
+    exponent: i32,
+    negative: bool,
+    trunc: bool,
+    raw_num: &[u8],
+) -> Result<T, Error> {
+    if let Some(mut float) = parse_float_fast_generic::<T>(exponent, significant) {
+        if negative {
+            float = -float;
+        }
+        return Ok(float);
+    }
+
+    let exponent = exponent as i64;
+    let mut fp = lemire::compute_float::<T>(exponent, significant);
+    if trunc && fp.e >= 0 && fp != lemire::compute_float::<T>(exponent, significant + 1) {
+        fp.e = -1;
+    }
+
+    if fp.e < 0 {
+        fp = slow::parse_long_mantissa::<T>(raw_num);
+    }
+
+    let mut float = biased_fp_to_float::<T>(fp);
+    if negative {
+        float = -float;
+    }
+
+    if matches!(float.classify(), core::num::FpCategory::Infinite) {
+        return Err(Error::FloatMustBeFinite);
+    }
+    Ok(float)
 }
 
 // This function is modified from yyjson
@@ -744,6 +982,36 @@ fn biased_fp_to_float<T: RawFloat>(x: BiasedFp) -> T {
 }
 
 #[inline(always)]
+fn parse_float_fast_generic<T: RawFloat>(mut exp10: i32, mut significant: u64) -> Option<T> {
+    if significant > T::MAX_MANTISSA_FAST_PATH {
+        return None;
+    }
+
+    let exp10_i64 = exp10 as i64;
+    if exp10_i64 < T::MIN_EXPONENT_FAST_PATH || exp10_i64 > T::MAX_EXPONENT_DISGUISED_FAST_PATH {
+        return None;
+    }
+
+    if exp10_i64 > T::MAX_EXPONENT_FAST_PATH {
+        let shift = (exp10_i64 - T::MAX_EXPONENT_FAST_PATH) as usize;
+        let pow10 = *POW10_UINT.get(shift)?;
+        significant = significant.checked_mul(pow10)?;
+        if significant > T::MAX_MANTISSA_FAST_PATH {
+            return None;
+        }
+        exp10 = T::MAX_EXPONENT_FAST_PATH as i32;
+    }
+
+    let mut float = T::from_u64(significant);
+    if exp10 > 0 {
+        float = float * T::pow10_fast_path(exp10 as usize);
+    } else if exp10 < 0 {
+        float = float / T::pow10_fast_path((-exp10) as usize);
+    }
+    Some(float)
+}
+
+#[inline(always)]
 fn parse_float_fast(exp10: i32, significant: u64) -> Option<f64> {
     let mut d = significant as f64;
     if exp10 > 0 {
@@ -771,7 +1039,7 @@ const POW10_FLOAT: [f64; 23] = [
 
 #[cfg(test)]
 mod test {
-    use crate::{parse_number, ParserNumber};
+    use crate::{parse_float32, parse_number, ParserNumber};
 
     fn test_parse_ok(input: &str, expect: f64) {
         assert_eq!(input.parse::<f64>().unwrap(), expect);
@@ -802,6 +1070,36 @@ mod test {
             expected
         );
         assert_eq!(data[index], b' ', "trailing byte for {}", input);
+    }
+
+    fn test_parse_f32_ok(input: &str, expect: f32) {
+        assert_eq!(input.parse::<f32>().unwrap().to_bits(), expect.to_bits());
+
+        let mut data = input.as_bytes().to_vec();
+        data.push(b' ');
+        let mut index = if input.starts_with('-') { 1 } else { 0 };
+        let num = parse_float32(&data, &mut index, input.starts_with('-')).unwrap();
+        assert_eq!(
+            num.to_bits(),
+            expect.to_bits(),
+            "parsed is {:?} failed num is {}",
+            num,
+            input
+        );
+        assert_eq!(data[index], b' ', "failed num is {}", input);
+    }
+
+    fn test_parse_f32_finite_err(input: &str) {
+        let mut data = input.as_bytes().to_vec();
+        data.push(b' ');
+        let mut index = if input.starts_with('-') { 1 } else { 0 };
+        let err = parse_float32(&data, &mut index, input.starts_with('-')).unwrap_err();
+        assert!(
+            matches!(err, crate::Error::FloatMustBeFinite),
+            "input {} returned {:?}",
+            input,
+            err
+        );
     }
 
     fn test_parse_signed_ok(input: &str, expected: i64) {
@@ -921,5 +1219,27 @@ mod test {
             "3469446951536141862700000000000000000e-62",
             3.469446951536142e-26,
         );
+    }
+
+    #[test]
+    fn test_parse_float32() {
+        test_parse_f32_ok("0", 0.0);
+        test_parse_f32_ok("-0", -0.0);
+        test_parse_f32_ok("1", 1.0);
+        test_parse_f32_ok("0.1", 0.1);
+        test_parse_f32_ok("1.23", 1.23);
+        test_parse_f32_ok("100e11", "100e11".parse().unwrap());
+        test_parse_f32_ok(
+            "17005001.000000000000130",
+            "17005001.000000000000130".parse().unwrap(),
+        );
+        test_parse_f32_ok("3.4028235e38", "3.4028235e38".parse().unwrap());
+        test_parse_f32_ok("1.17549435e-38", "1.17549435e-38".parse().unwrap());
+        test_parse_f32_ok(
+            "12448139190673828122020e-47",
+            "12448139190673828122020e-47".parse().unwrap(),
+        );
+        test_parse_f32_finite_err("3.4028236e38");
+        test_parse_f32_finite_err("1e39");
     }
 }

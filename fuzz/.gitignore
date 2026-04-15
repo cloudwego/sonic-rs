@@ -1,4 +1,8 @@
 artifacts/
-corpus/
+corpus/*
+!corpus/fuzz_f32_literal/
+!corpus/fuzz_f32_literal/*.txt
+!corpus/fuzz_value/
+!corpus/fuzz_value/*.json
 coverage/
 target/
