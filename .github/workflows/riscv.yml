@@ -1,0 +1,21 @@
+name: RISC-V CI
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-riscv
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - run: uname -m
+      - run: gcc --version
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --verbose
