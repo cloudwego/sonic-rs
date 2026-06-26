@@ -18,4 +18,4 @@ jobs:
       - run: uname -m
       - run: gcc --version
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --verbose
+      - run: make
