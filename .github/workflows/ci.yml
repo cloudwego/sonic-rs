@@ -84,7 +84,7 @@ jobs:
           target: riscv64gc-unknown-linux-gnu
           runner: qemu-user
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --verbose --target riscv64gc-unknown-linux-gnu
 
   test-nightly-hosted:
     strategy:
