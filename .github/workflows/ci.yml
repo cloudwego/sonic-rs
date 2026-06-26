@@ -71,6 +71,20 @@ jobs:
             wasmtime run "$wasm_file"
           done
 
+  test-stable-riscv64:
+    name: Rust stable (riscv64gc-unknown-linux-gnu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install RISC-V cross toolchain
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: riscv64gc-unknown-linux-gnu
+          runner: qemu-user
+      - name: Run tests
+        run: cargo test --verbose
 
   test-nightly-hosted:
     strategy:
