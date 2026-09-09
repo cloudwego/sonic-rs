@@ -1,3 +1,5 @@
+use std::fmt::{Display, Formatter};
+
 use crate::{index::Index, JsonNumberTrait, Number, RawNumber};
 
 /// JsonType is an enum that represents the type of a JSON value.
@@ -32,6 +34,19 @@ impl From<u8> for JsonType {
             4 => JsonType::Object,
             5 => JsonType::Array,
             _ => panic!("Invalid JsonType value from u8 {value}"),
+        }
+    }
+}
+
+impl Display for JsonType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JsonType::Null => f.write_str("Null"),
+            JsonType::Boolean => f.write_str("Boolean"),
+            JsonType::Number => f.write_str("Number"),
+            JsonType::String => f.write_str("String"),
+            JsonType::Object => f.write_str("Object"),
+            JsonType::Array => f.write_str("Array"),
         }
     }
 }
