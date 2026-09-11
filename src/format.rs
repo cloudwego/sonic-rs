@@ -148,12 +148,49 @@ pub trait Formatter: Clone {
         W: ?Sized + Write,
     {
         #[cfg(feature = "non_trailing_zero")]
-        if value.fract() == 0.0 && value <= (i64::MAX as f32) && value >= (i64::MIN as f32) {
-            return self.write_i64(writer, value as i64);
+        {
+            const F32_SAFE_GO_JSON_INT_MAX: f32 = {
+                // This is the end of the contiguous prefix where formatting an
+                // integral f32 through the integer fast path matches Go's
+                // shortest-float JSON output. It is not the mathematical upper
+                // bound of integers representable by f32.
+                //
+                // f32 has 24 bits of precision. In [2^25, 2^26), ULP is 4. The
+                // next representable value after 2^25 + 12 is 33_554_448, whose
+                // shortest round-tripping decimal is 33_554_450. The integer
+                // fast path would instead print the exact f32 integer value,
+                // 33_554_448, so stop at 2^25 + 12.
+                const END_OF_CONTIGUOUS_SAFE_PREFIX: u32 = (1 << 25) + 12;
+                assert!(
+                    ((END_OF_CONTIGUOUS_SAFE_PREFIX + 1) as f32)
+                        == (END_OF_CONTIGUOUS_SAFE_PREFIX as f32)
+                );
+                assert!(
+                    ((END_OF_CONTIGUOUS_SAFE_PREFIX + 2) as f32)
+                        == ((END_OF_CONTIGUOUS_SAFE_PREFIX + 4) as f32)
+                );
+
+                END_OF_CONTIGUOUS_SAFE_PREFIX as f32
+            };
+
+            if value != 0.0
+                && value.fract() == 0.0
+                && (-F32_SAFE_GO_JSON_INT_MAX..=F32_SAFE_GO_JSON_INT_MAX).contains(&value)
+            {
+                return self.write_i64(writer, value as i64);
+            }
         }
 
         let mut buffer = zmij::Buffer::new();
         let s = buffer.format_finite(value);
+
+        #[cfg(feature = "non_trailing_zero")]
+        let s = if value.fract() == 0.0 {
+            s.strip_suffix(".0").unwrap_or(s)
+        } else {
+            s
+        };
+
         writer.write_all(s.as_bytes())
     }
 
@@ -164,12 +201,44 @@ pub trait Formatter: Clone {
         W: ?Sized + Write,
     {
         #[cfg(feature = "non_trailing_zero")]
-        if value.fract() == 0.0 && value <= (i64::MAX as f64) && value >= (i64::MIN as f64) {
-            return self.write_i64(writer, value as i64);
+        {
+            const F64_SAFE_GO_JSON_INT_MAX: f64 = {
+                // See the f32 boundary above. The same issue appears for f64
+                // once ULP reaches 4 in [2^54, 2^55). The next representable
+                // value after 2^54 + 4 is 2^54 + 8, whose shorter round-tripping
+                // decimal can differ from the exact integer value printed by
+                // the integer fast path.
+                const END_OF_CONTIGUOUS_SAFE_PREFIX: u64 = (1 << 54) + 4;
+                assert!(
+                    ((END_OF_CONTIGUOUS_SAFE_PREFIX + 1) as f64)
+                        == (END_OF_CONTIGUOUS_SAFE_PREFIX as f64)
+                );
+                assert!(
+                    ((END_OF_CONTIGUOUS_SAFE_PREFIX + 2) as f64)
+                        == ((END_OF_CONTIGUOUS_SAFE_PREFIX + 4) as f64)
+                );
+
+                END_OF_CONTIGUOUS_SAFE_PREFIX as f64
+            };
+
+            if value != 0.0
+                && value.fract() == 0.0
+                && (-F64_SAFE_GO_JSON_INT_MAX..=F64_SAFE_GO_JSON_INT_MAX).contains(&value)
+            {
+                return self.write_i64(writer, value as i64);
+            }
         }
 
         let mut buffer = zmij::Buffer::new();
         let s = buffer.format_finite(value);
+
+        #[cfg(feature = "non_trailing_zero")]
+        let s = if value.fract() == 0.0 {
+            s.strip_suffix(".0").unwrap_or(s)
+        } else {
+            s
+        };
+
         writer.write_all(s.as_bytes())
     }
 

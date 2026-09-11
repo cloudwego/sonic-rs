@@ -224,7 +224,7 @@ impl<'a> Debug for LazyValue<'a> {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("LazyValue")
-            .field("raw json", &format_args!("{}", &self.as_raw_str()))
+            .field("raw json", &format_args!("{}", self.as_raw_str()))
             .field("has_escaped", &self.inner.status)
             .finish()
     }

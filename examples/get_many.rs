@@ -7,8 +7,8 @@ fn main() {
     // build a pointer tree, representing multiple json path
     let mut tree = sonic_rs::PointerTree::new();
 
-    tree.add_path(&["u"]);
-    tree.add_path(&["unknown_key"]);
+    tree.add_path(["u"]);
+    tree.add_path(["unknown_key"]);
     tree.add_path(pointer!["a", "b", "c", 1]);
 
     let nodes = unsafe { sonic_rs::get_many_unchecked(json, &tree) };

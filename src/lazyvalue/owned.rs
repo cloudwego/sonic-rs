@@ -785,8 +785,8 @@ mod test {
              "sonic": "rs"
            }
          }"#;
-        let own_a = OwnedLazyValue::from(get(input, &["a"]).unwrap());
-        let own_c = OwnedLazyValue::from(get(input, &["c"]).unwrap());
+        let own_a = OwnedLazyValue::from(get(input, ["a"]).unwrap());
+        let own_c = OwnedLazyValue::from(get(input, ["c"]).unwrap());
         let own = OwnedLazyValue::from(get(input, pointer![]).unwrap());
         // use as_xx to get the parsed value
         assert_eq!(own_a.as_str().unwrap(), "hello world");

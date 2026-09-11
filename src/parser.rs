@@ -507,7 +507,7 @@ where
             // ---- find separator: one u16 read to match `,"` or `}x` ----
             let sep = self.read.peek_u16();
             // Little-endian: `,"` = 0x222C, `}x` = (x << 8) | 0x7D
-            if sep == u16::from_le_bytes([b',', b'"']) {
+            if sep == u16::from_le_bytes(*b",\"") {
                 self.read.eat(2);
                 continue;
             }
@@ -1404,7 +1404,7 @@ where
 
     #[inline(always)]
     fn skip_number_unsafe(&mut self) -> Result<()> {
-        let _ = self.get_next_token([b']', b'}', b','], 0);
+        let _ = self.get_next_token(*b"]},", 0);
         Ok(())
     }
 
@@ -1640,7 +1640,7 @@ where
         }
 
         // deal with the empty object
-        match self.get_next_token([b'"', b'}'], 1) {
+        match self.get_next_token(*b"\"}", 1) {
             Some(b'"') => {}
             Some(b'}') => return perr!(self, GetInEmptyObject),
             None => return perr!(self, EofWhileParsing),
@@ -1677,7 +1677,7 @@ where
                     _ => {}
                 };
                 // optimize: direct find the next quote of key or object ending
-                match self.get_next_token([b'"', b'}'], 1) {
+                match self.get_next_token(*b"\"}", 1) {
                     Some(b'"') => continue,
                     Some(b'}') => return perr!(self, GetUnknownKeyInObject),
                     None => return perr!(self, EofWhileParsing),
@@ -1733,7 +1733,7 @@ where
                     _ => {}
                 };
                 // optimize: direct find the next token
-                match self.get_next_token([b']', b','], 1) {
+                match self.get_next_token(*b"],", 1) {
                     Some(b']') => return perr!(self, GetIndexOutOfArray),
                     Some(b',') => {
                         count -= 1;
@@ -1841,7 +1841,7 @@ where
                 _ => return perr!(self, ExpectObjectKeyOrEnd),
             }
         } else {
-            match self.get_next_token([b'"', b'}'], 1) {
+            match self.get_next_token(*b"\"}", 1) {
                 Some(b'"') => {}
                 Some(b'}') => return perr!(self, GetInEmptyObject),
                 None => return perr!(self, EofWhileParsing),
@@ -1882,7 +1882,7 @@ where
                 }
             } else {
                 // optimize: direct find the next quote of key. or object ending
-                match self.get_next_token([b'"', b'}'], 1) {
+                match self.get_next_token(*b"\"}", 1) {
                     Some(b'"') => {}
                     Some(b'}') => break,
                     None => return perr!(self, EofWhileParsing),
@@ -1964,7 +1964,7 @@ where
                 }
             } else {
                 // optimize: direct find the next token
-                match self.get_next_token([b']', b','], 1) {
+                match self.get_next_token(*b"],", 1) {
                     Some(b']') => break,
                     Some(b',') => {
                         index += 1;

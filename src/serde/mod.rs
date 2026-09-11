@@ -806,6 +806,11 @@ mod test {
             value: f64,
         }
 
+        #[derive(Serialize)]
+        struct Float32Test {
+            value: f32,
+        }
+
         let test = FloatTest { value: 18.0 };
         let json = to_string(&test).unwrap();
 
@@ -818,5 +823,28 @@ mod test {
         let test = FloatTest { value: 18.1 };
         let json = to_string(&test).unwrap();
         assert_eq!(json, r#"{"value":18.1}"#);
+
+        let test = FloatTest {
+            value: ((1u64 << 54) as f64) + 8.0,
+        };
+        let json = to_string(&test).unwrap();
+        assert_eq!(json, r#"{"value":1.801439850948199e+16}"#);
+
+        let test = Float32Test { value: 1.342178e8 };
+        let json = to_string(&test).unwrap();
+
+        #[cfg(feature = "non_trailing_zero")]
+        assert_eq!(json, r#"{"value":134217800}"#);
+
+        #[cfg(not(feature = "non_trailing_zero"))]
+        assert_eq!(json, r#"{"value":134217800.0}"#);
+
+        let test = Float32Test { value: 1e20 };
+        let json = to_string(&test).unwrap();
+        assert_eq!(json, r#"{"value":1e+20}"#);
+
+        let test = Float32Test { value: 18.25 };
+        let json = to_string(&test).unwrap();
+        assert_eq!(json, r#"{"value":18.25}"#);
     }
 }
