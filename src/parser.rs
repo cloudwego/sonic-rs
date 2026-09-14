@@ -1826,7 +1826,10 @@ where
         remain: &mut usize,
         checked: bool,
     ) -> Result<()> {
-        debug_assert!(strbuf.is_empty());
+        // `parse_str` only clears the buffer before copying an escaped key, so a
+        // key parsed earlier (by the caller or an earlier sibling) can leave its
+        // bytes behind. Nothing reads them past that key's lookup.
+        strbuf.clear();
         match self.skip_space() {
             Some(b'{') => {}
             Some(peek) => return Err(self.peek_invalid_type(peek, &"a JSON object")),
