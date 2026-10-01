@@ -196,6 +196,12 @@ where
         if self.is_ending {
             return None;
         }
+        // Only whitespace left: the stream is done (as serde_json's `StreamDeserializer`), not an
+        // EOF error. A value that starts but is cut short is still an error.
+        if self.de.parser.skip_space_peek().is_none() {
+            self.is_ending = true;
+            return None;
+        }
         let val: Result<T> = self.de.deserialize();
         if val.is_err() {
             self.is_ending = true;
