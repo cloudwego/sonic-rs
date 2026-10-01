@@ -213,6 +213,11 @@ macro_rules! deserialize_numeric_key {
                 _ => return Err(Error::syntax(ErrorCode::ExpectedNumericKey, b"", 0)),
             }
             let number = tri!(de.$using(visitor));
+            // the whole key must be the number: `{"1x": 0}` is not key 1 (as in serde_json, and
+            // as when deserializing from text, where the closing quote must follow the number)
+            if de.parser.read.peek().is_some() {
+                return Err(Error::syntax(ErrorCode::ExpectedNumericKey, b"", 0));
+            }
             Ok(number)
         }
     };
@@ -745,5 +750,38 @@ mod test {
             let v: Value = from_str(bad).unwrap();
             assert!(from_value::<E>(&v).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn test_numeric_map_key_from_value_must_be_whole_number() {
+        // A numeric key is the whole key text. It used to be parsed as a prefix, so
+        // `{"12abc": 1}` gave the key 12 through `from_value` (the text path rejects it).
+        use std::collections::BTreeMap;
+
+        use crate::{from_str, from_value, Value};
+
+        for json in [
+            r#"{"12abc":1}"#,
+            r#"{"1 ":1}"#,
+            r#"{"1,2":1}"#,
+            r#"{"0x1":1}"#,
+            r#"{"08":1}"#,
+        ] {
+            let v: Value = from_str(json).unwrap();
+            assert!(
+                from_value::<BTreeMap<i64, u8>>(&v).is_err(),
+                "i64 key: {json}"
+            );
+            assert!(
+                from_value::<BTreeMap<u32, u8>>(&v).is_err(),
+                "u32 key: {json}"
+            );
+            assert!(from_str::<BTreeMap<i64, u8>>(json).is_err(), "text: {json}");
+        }
+        let v: Value = from_str(r#"{"12":1,"-3":2}"#).unwrap();
+        assert_eq!(
+            from_value::<BTreeMap<i64, u8>>(&v).unwrap(),
+            BTreeMap::from([(12, 1), (-3, 2)])
+        );
     }
 }
