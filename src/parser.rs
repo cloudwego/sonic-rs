@@ -1164,10 +1164,13 @@ where
     fn skip_escaped_chars(&mut self) -> Result<()> {
         match self.read.peek() {
             Some(b'u') => {
-                if self.read.remain() < 6 {
-                    return perr!(self, EofWhileParsing);
-                } else {
-                    self.read.eat(5);
+                // `\u` must be followed by exactly four hex digits, as when the string is parsed
+                match self.read.peek_n(5) {
+                    Some([_, hex @ ..]) if hex.iter().all(u8::is_ascii_hexdigit) => {
+                        self.read.eat(5)
+                    }
+                    Some(_) => return perr!(self, InvalidEscape),
+                    None => return perr!(self, EofWhileParsing),
                 }
             }
             Some(c) => {
