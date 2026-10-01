@@ -742,6 +742,32 @@ mod test {
     }
 
     #[test]
+    fn test_stream_deserializer_ends_without_error() {
+        // A stream with only whitespace left is finished: `next()` returns None, as for
+        // serde_json's StreamDeserializer. It used to yield an extra `Err(EOF while parsing)`.
+        fn collect(json: &str) -> Vec<std::result::Result<Value, ()>> {
+            Deserializer::from_str(json)
+                .into_stream::<Value>()
+                .map(|r| r.map_err(|_| ()))
+                .collect()
+        }
+        assert!(collect("").is_empty());
+        assert!(collect(" \n\t").is_empty());
+        assert_eq!(
+            collect("1 2"),
+            vec![Ok(crate::json!(1)), Ok(crate::json!(2))]
+        );
+        assert_eq!(
+            collect("[1] {} \n"),
+            vec![Ok(crate::json!([1])), Ok(crate::json!({}))]
+        );
+        assert_eq!(collect("true"), vec![Ok(crate::json!(true))]);
+        // garbage or a truncated value is still an error, and ends the stream
+        assert_eq!(collect("1 x"), vec![Ok(crate::json!(1)), Err(())]);
+        assert_eq!(collect("[1] [2"), vec![Ok(crate::json!([1])), Err(())]);
+    }
+
+    #[test]
     fn test_utf8_lossy() {
         let data = [&[b'\"', 0xff, b'\"'][..], br#""\uD800""#, br#""\udc00""#];
 
