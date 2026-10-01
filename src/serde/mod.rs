@@ -407,6 +407,25 @@ mod test {
     }
 
     #[test]
+    fn test_negative_zero_keeps_sign() {
+        // `-0`, `-0.0` and `-0e5` are IEEE 754 negative zero, as `str::parse::<f64>` reads them.
+        for input in ["-0", "-0.0", "-0.000", "-0e5", "-0.0E-3"] {
+            let f: f64 = from_str(input).unwrap();
+            assert!(f == 0.0 && f.is_sign_negative(), "{input} as f64: {f:?}");
+
+            let v: Value = from_str(input).unwrap();
+            let f = crate::JsonValueTrait::as_f64(&v).unwrap();
+            assert!(f == 0.0 && f.is_sign_negative(), "{input} as Value: {v:?}");
+            assert_eq!(to_string(&v).unwrap(), "-0.0", "{input} round trip");
+
+            let arr: Vec<f64> = from_str(&format!("[{input}, 1]")).unwrap();
+            assert!(arr[0].is_sign_negative(), "{input} in an array: {arr:?}");
+        }
+        let f: f64 = from_str("0.0").unwrap();
+        assert!(f.is_sign_positive());
+    }
+
+    #[test]
     fn test_json_number_invalid() {
         fn test_json_failed(json: &str) {
             let ret: Result<RawNumber> = from_str(json);
