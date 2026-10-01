@@ -105,7 +105,10 @@ fn parse_exponent(data: &[u8], index: &mut usize) -> Result<i32, Error> {
     }
 
     check_digit!(data, *index);
-    while exponent < 1000 && is_digit!(data, *index) {
+    // Stop growing the exponent once it is far outside the f64 range, but not too early: it is
+    // later combined with the digit count of the mantissa (`1{4000 digits}e-4294967296` is 0, and
+    // must not become `1e3999 * 1e-4294`). Same cap as `core::num::dec2flt` (0x10000); no overflow.
+    while exponent < 0x10000 && is_digit!(data, *index) {
         exponent = digit!(data, *index) as i32 + exponent * 10;
         *index += 1;
     }
@@ -1261,6 +1264,46 @@ mod test {
                 );
                 assert_eq!(index, input.len(), "{neg}: index");
             }
+        }
+    }
+
+    /// The exponent is combined with the mantissa's digit count, so capping it too early gives
+    /// wrong values for long mantissas: `1{4000}e-4294967296` is 0 (was 1.1e-295), and
+    /// `0.{4000 zeros}1e30800000` is out of range (was 0).
+    #[test]
+    fn test_parse_number_long_mantissa_huge_exponent() {
+        use std::string::String;
+        let ones: String = core::iter::repeat_n('1', 4000).collect();
+        let zeros: String = core::iter::repeat_n('0', 4000).collect();
+        for input in [
+            std::format!("{ones}e-4294967296"),
+            std::format!("{ones}e-30800000"),
+            std::format!("{ones}e-5000"),
+        ] {
+            let expect = input.parse::<f64>().unwrap();
+            assert_eq!(expect, 0.0);
+            let mut data = input.as_bytes().to_vec();
+            data.push(b' ');
+            let mut index = 0;
+            let num = parse_number(&data, &mut index, false);
+            assert!(
+                matches!(num, Ok(ParserNumber::Float(f)) if f.to_bits() == expect.to_bits()),
+                "{}...: {num:?}",
+                &input[input.len() - 16..]
+            );
+        }
+        for input in [
+            std::format!("0.{zeros}1e30800000"),
+            std::format!("0.{zeros}1e4294967296"),
+        ] {
+            let mut data = input.as_bytes().to_vec();
+            data.push(b' ');
+            let mut index = 0;
+            assert!(
+                parse_number(&data, &mut index, false).is_err(),
+                "{}... must be out of range",
+                &input[input.len() - 16..]
+            );
         }
     }
 
