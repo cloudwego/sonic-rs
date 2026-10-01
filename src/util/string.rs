@@ -654,6 +654,35 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_format_string_short_input_next_to_high_bytes() {
+        // format_string loads the tail of the input 32 bytes at a time without copying it (when
+        // that does not cross a page), so the bytes behind a short string are read. They must
+        // not change the result. `serialize_char` passes a string that lives in a 4-byte local;
+        // with 0x80 in the bytes after it, `'"'` came out as `"\x80"` (invalid UTF-8).
+        let mut dst = [0u8; 1000];
+        let fmt = |value: &str, dst: &mut [u8]| -> usize {
+            let dst_ref = unsafe { std::mem::transmute::<&mut [u8], &mut [MaybeUninit<u8>]>(dst) };
+            format_string(value, dst_ref, true)
+        };
+        for junk in [0x00u8, 0x80, 0xff] {
+            for c in ['"', '\\', '\n', '\0', 'a'] {
+                // the char at the start of a 64-byte aligned buffer filled with `junk`, as in
+                // `serialize_char` with whatever the stack held
+                #[repr(align(64))]
+                struct Buf([u8; 64]);
+                let mut buf = Buf([junk; 64]);
+                let s = c.encode_utf8(&mut buf.0);
+                let n = fmt(s, &mut dst);
+                assert_eq!(
+                    std::str::from_utf8(&dst[..n]).unwrap(),
+                    serde_json::to_string(&c).unwrap(),
+                    "{c:?} with 0x{junk:02x} behind it"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn test_quote() {
         let mut dst = [0u8; 1000];
         let fmt = |value: &str, dst: &mut [u8]| -> usize {
