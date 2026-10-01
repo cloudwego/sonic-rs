@@ -1128,6 +1128,13 @@ macro_rules! deserialize_numeric_key {
         where
             V: de::Visitor<'de>,
         {
+            // The key text must be the number itself: `deserialize_number` skips leading
+            // whitespace, which is not part of a numeric key (`{" 1": 0}` is not key 1).
+            match self.de.parser.read.peek() {
+                Some(b'0'..=b'9' | b'-') => {}
+                _ => return Err(self.de.parser.error(ErrorCode::ExpectedNumericKey)),
+            }
+
             let value = tri!(self.de.deserialize_number(visitor));
             if self.de.parser.read.next() != Some(b'"') {
                 return Err(self.de.parser.error(ErrorCode::ExpectedQuote));
