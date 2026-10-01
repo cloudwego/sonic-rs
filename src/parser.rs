@@ -1789,6 +1789,15 @@ where
             return perr!(self, EofWhileParsing);
         }
 
+        // A duplicate key leads to the same node again. Its paths were filled (and counted) on the
+        // first visit: keep that value, as `get` does, and skip this one. Counting it again
+        // stopped the scan early (the enclosing value came back cut short) and underflowed
+        // `remain`.
+        if node.order.first().is_some_and(|&p| out[p].is_some()) {
+            self.skip_one(is_safe)?;
+            return Ok(());
+        }
+
         // need write to out, record the start position
         let start = self.read.index();
         let slice: &'de [u8];

@@ -672,4 +672,40 @@ mod test {
             assert!(many[7].is_none())
         }
     }
+
+    #[test]
+    fn test_get_many_duplicate_keys() {
+        // A duplicate key visited the same tree node twice and counted its paths twice: the
+        // enclosing value came back cut short, and debug builds overflowed. The first value is
+        // kept, as `get` returns it.
+        let json = r#"{"c":1,"a":2,"a":3,"a":4}"#;
+        let mut tree = crate::PointerTree::new();
+        tree.add_path(crate::pointer![].iter());
+        tree.add_path(crate::pointer!["c"].iter());
+        tree.add_path(crate::pointer!["a"].iter());
+        let out: Vec<_> = crate::get_many(json, &tree)
+            .unwrap()
+            .into_iter()
+            .map(|v| v.map(|v| v.as_raw_str().to_string()))
+            .collect();
+        assert_eq!(out[0].as_deref(), Some(json));
+        assert_eq!(out[1].as_deref(), Some("1"));
+        assert_eq!(out[2].as_deref(), Some("2"));
+        assert_eq!(
+            crate::get(json, ["a"]).unwrap().as_raw_str(),
+            out[2].as_deref().unwrap()
+        );
+
+        // nested: the duplicate is an object whose member is requested
+        let json = r#"{"a":{"b":1},"a":{"b":2},"c":3}"#;
+        let mut tree = crate::PointerTree::new();
+        tree.add_path(crate::pointer!["a", "b"].iter());
+        tree.add_path(crate::pointer!["c"].iter());
+        let out: Vec<_> = crate::get_many(json, &tree)
+            .unwrap()
+            .into_iter()
+            .map(|v| v.map(|v| v.as_raw_str().to_string()))
+            .collect();
+        assert_eq!(out, [Some("1".to_string()), Some("3".to_string())]);
+    }
 }
