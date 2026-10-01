@@ -1813,6 +1813,11 @@ where
             PointerTreeInner::Key(mkeys) => {
                 self.get_many_keys(mkeys, strbuf, out, remain, is_safe)?
             }
+            // the value decides: the paths of the other kind cannot match and stay `None`
+            PointerTreeInner::KeyAndIndex(mkeys, midxs) => match ch {
+                Some(b'[') => self.get_many_index(midxs, strbuf, out, remain, is_safe)?,
+                _ => self.get_many_keys(mkeys, strbuf, out, remain, is_safe)?,
+            },
         };
 
         if !node.order.is_empty() {
