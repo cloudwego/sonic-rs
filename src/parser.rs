@@ -1803,45 +1803,47 @@ where
         remain: &mut usize,
         is_safe: bool,
     ) -> Result<()> {
-        self.with_depth_limit(|self_| {
-            // all path has parsed
-            if *remain == 0 {
-                return Ok(());
+        // all path has parsed
+        if *remain == 0 {
+            return Ok(());
+        }
+
+        // skip the leading space
+        let ch = self.skip_space_peek();
+        if ch.is_none() {
+            return perr!(self, EofWhileParsing);
+        }
+
+        // need write to out, record the start position
+        let start = self.read.index();
+        let slice: &'de [u8];
+
+        let mut status = ParseStatus::None;
+        match &node.children {
+            PointerTreeInner::Empty => {
+                status = self.skip_one(true)?.1;
             }
-
-            // skip the leading space
-            let ch = self_.skip_space_peek();
-            if ch.is_none() {
-                return perr!(self_, EofWhileParsing);
+            PointerTreeInner::Index(midxs) => {
+                self.with_depth_limit(|self_| {
+                    self_.get_many_index(midxs, strbuf, out, remain, is_safe)
+                })?;
             }
-
-            // need write to out, record the start position
-            let start = self_.read.index();
-            let slice: &'de [u8];
-
-            let mut status = ParseStatus::None;
-            match &node.children {
-                PointerTreeInner::Empty => {
-                    status = self_.skip_one(true)?.1;
-                }
-                PointerTreeInner::Index(midxs) => {
-                    self_.get_many_index(midxs, strbuf, out, remain, is_safe)?
-                }
-                PointerTreeInner::Key(mkeys) => {
-                    self_.get_many_keys(mkeys, strbuf, out, remain, is_safe)?
-                }
-            };
-
-            if !node.order.is_empty() {
-                slice = self_.read.slice_unchecked(start, self_.read.index());
-                let lv = LazyValue::new(slice.into(), status.into());
-                for p in &node.order {
-                    out[*p] = Some(lv.clone());
-                }
-                *remain -= node.order.len();
+            PointerTreeInner::Key(mkeys) => {
+                self.with_depth_limit(|self_| {
+                    self_.get_many_keys(mkeys, strbuf, out, remain, is_safe)
+                })?;
             }
-            Ok(())
-        })
+        };
+
+        if !node.order.is_empty() {
+            slice = self.read.slice_unchecked(start, self.read.index());
+            let lv = LazyValue::new(slice.into(), status.into());
+            for p in &node.order {
+                out[*p] = Some(lv.clone());
+            }
+            *remain -= node.order.len();
+        }
+        Ok(())
     }
 
     #[allow(clippy::mutable_key_type)]
