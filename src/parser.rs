@@ -206,12 +206,15 @@ pub(crate) struct Pair<'de> {
     pub status: ParseStatus,
 }
 
+pub(crate) const DEFAULT_RECURSION_LIMIT: u8 = 128;
+
 pub struct Parser<R> {
     pub read: R,
     error_index: usize,   // mark the error position
     nospace_bits: u64,    // SIMD marked nospace bitmap
     nospace_start: isize, // the start position of nospace_bits
     pub(crate) cfg: DeserializeCfg,
+    pub(crate) remaining_depth: u8,
 }
 
 /// Records the parse status
@@ -241,7 +244,22 @@ where
             nospace_bits: 0,
             nospace_start: -128,
             cfg: DeserializeCfg::default(),
+            remaining_depth: DEFAULT_RECURSION_LIMIT,
         }
+    }
+
+    #[inline(always)]
+    fn with_depth_limit<F, T>(&mut self, f: F) -> Result<T>
+    where
+        F: FnOnce(&mut Self) -> Result<T>,
+    {
+        if self.remaining_depth == 0 {
+            return Err(self.error(ErrorCode::RecursionLimitExceeded));
+        }
+        self.remaining_depth -= 1;
+        let res = f(self);
+        self.remaining_depth += 1;
+        res
     }
 
     pub fn offset(&self) -> usize {
@@ -429,102 +447,105 @@ where
     where
         V: JsonVisitor<'de>,
     {
-        check_visit!(self, vis.visit_array_start(0))?;
+        self.with_depth_limit(|self_| {
+            check_visit!(self_, vis.visit_array_start(0))?;
 
-        let mut first = match self.skip_space() {
-            Some(b']') => return check_visit!(self, vis.visit_array_end(0)),
-            first => first,
-        };
-
-        let mut count = 0;
-        loop {
-            self.dispatch_value(first, vis, &mut strbuf)?;
-            count += 1;
-            // Compact: u16 read for single-instruction matching
-            let sep = self.read.peek_u16();
-            if (sep & 0xFF) == b',' as u16 {
-                let val_ch = (sep >> 8) as u8;
-                if !is_whitespace(val_ch) {
-                    self.read.eat(2);
-                    first = Some(val_ch);
-                    continue;
-                }
-            }
-            if (sep & 0xFF) == b']' as u16 {
-                self.read.eat(1);
-                return check_visit!(self, vis.visit_array_end(count));
-            }
-            // Slow path
-            first = match self.skip_space() {
-                Some(b']') => return check_visit!(self, vis.visit_array_end(count)),
-                Some(b',') => self.skip_space(),
-                _ => return perr!(self, ExpectedArrayCommaOrEnd),
+            let mut first = match self_.skip_space() {
+                Some(b']') => return check_visit!(self_, vis.visit_array_end(0)),
+                first => first,
             };
-        }
+
+            let mut count = 0;
+            loop {
+                self_.dispatch_value(first, vis, &mut strbuf)?;
+                count += 1;
+                // Compact: u16 read for single-instruction matching
+                let sep = self_.read.peek_u16();
+                if (sep & 0xFF) == b',' as u16 {
+                    let val_ch = (sep >> 8) as u8;
+                    if !is_whitespace(val_ch) {
+                        self_.read.eat(2);
+                        first = Some(val_ch);
+                        continue;
+                    }
+                }
+                if (sep & 0xFF) == b']' as u16 {
+                    self_.read.eat(1);
+                    return check_visit!(self_, vis.visit_array_end(count));
+                }
+                // Slow path
+                first = match self_.skip_space() {
+                    Some(b']') => return check_visit!(self_, vis.visit_array_end(count)),
+                    Some(b',') => self_.skip_space(),
+                    _ => return perr!(self_, ExpectedArrayCommaOrEnd),
+                };
+            }
+        })
     }
 
     fn parse_object<V>(&mut self, vis: &mut V, mut strbuf: Option<&mut Vec<u8>>) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
-        let mut count: usize = 0;
-        check_visit!(self, vis.visit_object_start(0))?;
-        match self.skip_space() {
-            Some(b'}') => return check_visit!(self, vis.visit_object_end(0)),
-            Some(b'"') => {}
-            _ => return perr!(self, ExpectObjectKeyOrEnd),
-        }
-
-        loop {
-            // ---- parse key (scalar fast path for short ASCII keys) ----
-            if strbuf.is_none() {
-                self.parse_key_scalar(vis)?;
-            } else {
-                self.parse_string_visit(vis, strbuf.as_deref_mut())?;
+        self.with_depth_limit(|self_| {
+            let mut count: usize = 0;
+            check_visit!(self_, vis.visit_object_start(0))?;
+            match self_.skip_space() {
+                Some(b'}') => return check_visit!(self_, vis.visit_object_end(0)),
+                Some(b'"') => {}
+                _ => return perr!(self_, ExpectObjectKeyOrEnd),
             }
 
-            // ---- find ':' + value start byte ----
-            // Use u16 read: on little-endian, ':' followed by val_ch = (val_ch << 8) | ':'
-            let pair = self.read.peek_u16();
-            let next = if (pair & 0xFF) == b':' as u16 {
-                let val_ch = (pair >> 8) as u8;
-                if !is_whitespace(val_ch) {
-                    self.read.eat(2);
-                    Some(val_ch)
+            loop {
+                // ---- parse key (scalar fast path for short ASCII keys) ----
+                if strbuf.is_none() {
+                    self_.parse_key_scalar(vis)?;
                 } else {
-                    self.parse_object_clo()?;
-                    self.skip_space()
+                    self_.parse_string_visit(vis, strbuf.as_deref_mut())?;
                 }
-            } else {
-                self.parse_object_clo()?;
-                self.skip_space()
-            };
 
-            // ---- parse value ----
-            self.dispatch_value(next, vis, &mut strbuf)?;
-            count += 1;
+                // ---- find ':' + value start byte ----
+                // Use u16 read: on little-endian, ':' followed by val_ch = (val_ch << 8) | ':'
+                let pair = self_.read.peek_u16();
+                let next = if (pair & 0xFF) == b':' as u16 {
+                    let val_ch = (pair >> 8) as u8;
+                    if !is_whitespace(val_ch) {
+                        self_.read.eat(2);
+                        Some(val_ch)
+                    } else {
+                        self_.parse_object_clo()?;
+                        self_.skip_space()
+                    }
+                } else {
+                    self_.parse_object_clo()?;
+                    self_.skip_space()
+                };
+                // ---- parse value ----
+                self_.dispatch_value(next, vis, &mut strbuf)?;
+                count += 1;
 
-            // ---- find separator: one u16 read to match `,"` or `}x` ----
-            let sep = self.read.peek_u16();
-            // Little-endian: `,"` = 0x222C, `}x` = (x << 8) | 0x7D
-            if sep == u16::from_le_bytes(*b",\"") {
-                self.read.eat(2);
-                continue;
+                // ---- find separator: one u16 read to match `,"` or `}x` ----
+                let sep = self_.read.peek_u16();
+                // Little-endian: `,"` = 0x222C, `}x` = (x << 8) | 0x7D
+                if sep == u16::from_le_bytes(*b",\"") {
+                    self_.read.eat(2);
+                    continue;
+                }
+                if (sep & 0xFF) == b'}' as u16 {
+                    self_.read.eat(1);
+                    return check_visit!(self_, vis.visit_object_end(count));
+                }
+                // Slow path
+                match self_.skip_space() {
+                    Some(b'}') => return check_visit!(self_, vis.visit_object_end(count)),
+                    Some(b',') => match self_.skip_space() {
+                        Some(b'"') => continue,
+                        _ => return perr!(self_, ExpectObjectKeyOrEnd),
+                    },
+                    _ => return perr!(self_, ExpectedArrayCommaOrEnd),
+                }
             }
-            if (sep & 0xFF) == b'}' as u16 {
-                self.read.eat(1);
-                return check_visit!(self, vis.visit_object_end(count));
-            }
-            // Slow path
-            match self.skip_space() {
-                Some(b'}') => return check_visit!(self, vis.visit_object_end(count)),
-                Some(b',') => match self.skip_space() {
-                    Some(b'"') => continue,
-                    _ => return perr!(self, ExpectObjectKeyOrEnd),
-                },
-                _ => return perr!(self, ExpectedArrayCommaOrEnd),
-            }
-        }
+        })
     }
 
     /// Dispatch value parsing based on the peeked byte.
@@ -1227,50 +1248,54 @@ where
 
     #[inline(always)]
     fn skip_object(&mut self) -> Result<()> {
-        match self.skip_space() {
-            Some(b'}') => return Ok(()),
-            Some(b'"') => {}
-            None => return perr!(self, EofWhileParsing),
-            Some(_) => return perr!(self, ExpectObjectKeyOrEnd),
-        }
-
-        loop {
-            self.skip_string()?;
-            self.parse_object_clo()?;
-            self.skip_one(true)?;
-
-            match self.skip_space() {
+        self.with_depth_limit(|self_| {
+            match self_.skip_space() {
                 Some(b'}') => return Ok(()),
-                Some(b',') => match self.skip_space() {
-                    Some(b'"') => continue,
-                    _ => return perr!(self, ExpectObjectKeyOrEnd),
-                },
-                None => return perr!(self, EofWhileParsing),
-                Some(_) => return perr!(self, ExpectedObjectCommaOrEnd),
+                Some(b'"') => {}
+                None => return perr!(self_, EofWhileParsing),
+                Some(_) => return perr!(self_, ExpectObjectKeyOrEnd),
             }
-        }
+
+            loop {
+                self_.skip_string()?;
+                self_.parse_object_clo()?;
+                self_.skip_one(true)?;
+
+                match self_.skip_space() {
+                    Some(b'}') => return Ok(()),
+                    Some(b',') => match self_.skip_space() {
+                        Some(b'"') => continue,
+                        _ => return perr!(self_, ExpectObjectKeyOrEnd),
+                    },
+                    None => return perr!(self_, EofWhileParsing),
+                    Some(_) => return perr!(self_, ExpectedObjectCommaOrEnd),
+                }
+            }
+        })
     }
 
     #[inline(always)]
     fn skip_array(&mut self) -> Result<()> {
-        match self.skip_space_peek() {
-            Some(b']') => {
-                self.read.eat(1);
-                return Ok(());
+        self.with_depth_limit(|self_| {
+            match self_.skip_space_peek() {
+                Some(b']') => {
+                    self_.read.eat(1);
+                    return Ok(());
+                }
+                None => return perr!(self_, EofWhileParsing),
+                _ => {}
             }
-            None => return perr!(self, EofWhileParsing),
-            _ => {}
-        }
 
-        loop {
-            self.skip_one(true)?;
-            match self.skip_space() {
-                Some(b']') => return Ok(()),
-                Some(b',') => continue,
-                None => return perr!(self, EofWhileParsing),
-                _ => return perr!(self, ExpectedArrayCommaOrEnd),
+            loop {
+                self_.skip_one(true)?;
+                match self_.skip_space() {
+                    Some(b']') => return Ok(()),
+                    Some(b',') => continue,
+                    None => return perr!(self_, EofWhileParsing),
+                    _ => return perr!(self_, ExpectedArrayCommaOrEnd),
+                }
             }
-        }
+        })
     }
 
     /// skip_container skip a object or array, and retu
@@ -1778,43 +1803,45 @@ where
         remain: &mut usize,
         is_safe: bool,
     ) -> Result<()> {
-        // all path has parsed
-        if *remain == 0 {
-            return Ok(());
-        }
-
-        // skip the leading space
-        let ch = self.skip_space_peek();
-        if ch.is_none() {
-            return perr!(self, EofWhileParsing);
-        }
-
-        // need write to out, record the start position
-        let start = self.read.index();
-        let slice: &'de [u8];
-
-        let mut status = ParseStatus::None;
-        match &node.children {
-            PointerTreeInner::Empty => {
-                status = self.skip_one(true)?.1;
+        self.with_depth_limit(|self_| {
+            // all path has parsed
+            if *remain == 0 {
+                return Ok(());
             }
-            PointerTreeInner::Index(midxs) => {
-                self.get_many_index(midxs, strbuf, out, remain, is_safe)?
-            }
-            PointerTreeInner::Key(mkeys) => {
-                self.get_many_keys(mkeys, strbuf, out, remain, is_safe)?
-            }
-        };
 
-        if !node.order.is_empty() {
-            slice = self.read.slice_unchecked(start, self.read.index());
-            let lv = LazyValue::new(slice.into(), status.into());
-            for p in &node.order {
-                out[*p] = Some(lv.clone());
+            // skip the leading space
+            let ch = self_.skip_space_peek();
+            if ch.is_none() {
+                return perr!(self_, EofWhileParsing);
             }
-            *remain -= node.order.len();
-        }
-        Ok(())
+
+            // need write to out, record the start position
+            let start = self_.read.index();
+            let slice: &'de [u8];
+
+            let mut status = ParseStatus::None;
+            match &node.children {
+                PointerTreeInner::Empty => {
+                    status = self_.skip_one(true)?.1;
+                }
+                PointerTreeInner::Index(midxs) => {
+                    self_.get_many_index(midxs, strbuf, out, remain, is_safe)?
+                }
+                PointerTreeInner::Key(mkeys) => {
+                    self_.get_many_keys(mkeys, strbuf, out, remain, is_safe)?
+                }
+            };
+
+            if !node.order.is_empty() {
+                slice = self_.read.slice_unchecked(start, self_.read.index());
+                let lv = LazyValue::new(slice.into(), status.into());
+                for p in &node.order {
+                    out[*p] = Some(lv.clone());
+                }
+                *remain -= node.order.len();
+            }
+            Ok(())
+        })
     }
 
     #[allow(clippy::mutable_key_type)]

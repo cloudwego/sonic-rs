@@ -672,4 +672,29 @@ mod test {
             assert!(many[7].is_none())
         }
     }
+
+    #[test]
+    fn test_get_many_recursion_limit() {
+        std::thread::Builder::new()
+            .name("test_get_many_recursion_limit".to_string())
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| {
+                let depth = 10_000;
+                let nested = format!("{}0{}", "[".repeat(depth), "]".repeat(depth));
+                let json = format!(r#"{{"ignored":{nested},"wanted":1}}"#);
+
+                let mut tree = PointerTree::new();
+                tree.add_path(["wanted"]);
+
+                let res = get_many(&json, &tree);
+                assert!(res.is_err());
+                assert!(matches!(
+                    res.unwrap_err().error_code(),
+                    crate::error::ErrorCode::RecursionLimitExceeded
+                ));
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
 }
