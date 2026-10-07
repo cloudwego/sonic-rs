@@ -381,6 +381,7 @@ impl NumberInput {
 }
 
 impl NumberPattern {
+    #[allow(clippy::inherent_to_string)]
     pub fn to_string(&self) -> String {
         match self {
             NumberPattern::Integer { negative, digits } => {
@@ -552,8 +553,8 @@ impl DeepNestInput {
             }
             NestPattern::Mixed { depth, width } => {
                 let d = (*depth).min(256) as usize;
-                let w = (*width).min(8) as usize;
-                let mut s = String::with_capacity(d * w * 8);
+                let w = (*width).clamp(1, 8) as usize;
+                let mut s = String::with_capacity(d * w * 12 + 16);
                 build_mixed(&mut s, d, w);
                 s
             }
@@ -567,17 +568,26 @@ fn build_mixed(out: &mut String, depth: usize, width: usize) {
         return;
     }
     out.push('[');
+    let recursive_index = depth % width;
     for i in 0..width {
         if i > 0 {
             out.push(',');
         }
-        if i % 2 == 0 {
-            build_mixed(out, depth - 1, width);
+        if i == recursive_index {
+            if depth & 1 == 0 {
+                build_mixed(out, depth - 1, width);
+            } else {
+                out.push_str("{\"v\":");
+                build_mixed(out, depth - 1, width);
+                out.push('}');
+            }
         } else {
-            out.push('{');
-            write!(out, "\"v\":").unwrap();
-            build_mixed(out, depth - 1, width);
-            out.push('}');
+            match i % 4 {
+                0 => out.push_str("null"),
+                1 => write!(out, "{{\"v\":{}}}", depth).unwrap(),
+                2 => out.push_str("true"),
+                _ => write!(out, "\"s{}\"", depth).unwrap(),
+            }
         }
     }
     out.push(']');

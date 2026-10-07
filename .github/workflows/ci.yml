@@ -58,7 +58,6 @@ jobs:
             wasmtime run "$wasm_file"
           done
 
-
   test-nightly-hosted:
     strategy:
       fail-fast: false
