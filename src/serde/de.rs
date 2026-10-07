@@ -12,7 +12,7 @@ use sonic_number::ParserNumber;
 use crate::{
     error::{
         Error,
-        ErrorCode::{self, EofWhileParsing, RecursionLimitExceeded},
+        ErrorCode::{self, EofWhileParsing},
         Result,
     },
     parser::{as_str, ParseStatus, ParsedSlice, Parser, Reference},
@@ -20,7 +20,6 @@ use crate::{
     value::{node::Value, shared::Shared},
     JsonInput, OwnedLazyValue,
 };
-const MAX_ALLOWED_DEPTH: u8 = u8::MAX;
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -28,7 +27,6 @@ const MAX_ALLOWED_DEPTH: u8 = u8::MAX;
 pub struct Deserializer<R> {
     pub(crate) parser: Parser<R>,
     scratch: Vec<u8>,
-    remaining_depth: u8,
     shared: Option<Arc<Shared>>, // the shared allocator for `Value`
 }
 
@@ -39,7 +37,6 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
         Self {
             parser: Parser::new(read),
             scratch: Vec::new(),
-            remaining_depth: MAX_ALLOWED_DEPTH,
             shared: Option::None,
         }
     }
@@ -229,12 +226,9 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
     where
         F: FnOnce(&mut Self) -> Result<T>,
     {
-        self.remaining_depth -= 1;
-        if self.remaining_depth == 0 {
-            return Err(self.parser.error(RecursionLimitExceeded));
-        }
+        self.parser.enter_nested()?;
         let result = f(self);
-        self.remaining_depth += 1;
+        self.parser.leave_nested();
         result
     }
 }
