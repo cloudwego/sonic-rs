@@ -21,6 +21,7 @@ bytes        = "1.10"
 cfg-if       = "1.0"
 faststr      = { version = "0.2", features = ["serde"] }
 itoa         = "1.0"
+multiversion = "0.8.0"
 ref-cast     = "1.0"
 serde        = { version = "1.0", features = ["rc", "derive"] }
 simdutf8     = "0.1"

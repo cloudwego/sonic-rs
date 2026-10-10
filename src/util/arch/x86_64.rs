@@ -1,5 +1,9 @@
 use std::arch::x86_64::*;
 
+#[cfg_attr(
+    not(target_feature = "pclmulqdq"),
+    target_feature(enable = "pclmulqdq")
+)]
 #[inline(always)]
 pub unsafe fn prefix_xor(bitmask: u64) -> u64 {
     unsafe {
@@ -9,6 +13,7 @@ pub unsafe fn prefix_xor(bitmask: u64) -> u64 {
     }
 }
 
+#[cfg_attr(not(target_feature = "avx2"), target_feature(enable = "avx2"))]
 #[inline(always)]
 pub unsafe fn get_nonspace_bits(data: &[u8; 64]) -> u64 {
     unsafe {
