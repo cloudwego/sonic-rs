@@ -21,9 +21,11 @@ bytes        = "1.10"
 cfg-if       = "1.0"
 faststr      = { version = "0.2", features = ["serde"] }
 itoa         = "1.0"
+phf          = { version = "0.11", features = ["macros"], optional = true }
 ref-cast     = "1.0"
 serde        = { version = "1.0", features = ["rc", "derive"] }
 simdutf8     = "0.1"
+sonic-derive = { path = "sonic-derive", version = "0.1.0", optional = true }
 sonic-number = { path = "./sonic-number", version = "0.1" }
 sonic-simd   = { path = "./sonic-simd", version = "0.1" }
 thiserror    = "2.0"
@@ -41,6 +43,10 @@ serde_json   = { version = "1.0", features = ["float_roundtrip", "raw_value"] }
 
 [features]
 default = []
+
+# Generate an official `serde::Deserialize` implementation with compile-time
+# field dispatch for wide named structs.
+derive = ["dep:phf", "dep:sonic-derive"]
 
 # Use an arbitrary precision number type representation when parsing JSON into `sonic_rs::Value`.
 # This allows the JSON numbers will be serialized without loss of precision.

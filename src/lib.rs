@@ -2,6 +2,8 @@
 #![allow(clippy::needless_lifetimes)]
 #![doc(test(attr(warn(unused))))]
 
+extern crate self as sonic_rs;
+
 mod config;
 pub mod error;
 mod index;
@@ -17,12 +19,18 @@ pub mod serde;
 pub mod value;
 pub mod writer;
 
+#[cfg(feature = "derive")]
+#[doc(hidden)]
+pub mod __private;
+
 // re-export FastStr
 pub use ::faststr::FastStr;
 // re-export the serde trait
 pub use ::serde::{Deserialize, Serialize};
 #[doc(inline)]
 pub use reader::Read;
+#[cfg(feature = "derive")]
+pub use sonic_derive::SonicDeserialize;
 
 #[doc(inline)]
 pub use crate::error::{Error, Result};
