@@ -201,8 +201,12 @@ where
 
     #[inline]
     fn serialize_char(self, value: char) -> Result<()> {
-        // A char encoded as UTF-8 takes 4 bytes at most.
-        let mut buf = [0; 4];
+        // A char encoded as UTF-8 takes 4 bytes at most, but `format_string` loads the tail of the
+        // string 32 bytes at a time (it only avoids crossing a page). From a 4-byte local that load
+        // reads past the end of the array, which is undefined behaviour: release builds produced
+        // `"\x80"` for `'"'` when the stack held 0x80 there (invalid UTF-8 in a `String`). Keep the
+        // char at the start of a buffer large enough for those loads.
+        let mut buf = [0u8; 64];
         self.serialize_str(value.encode_utf8(&mut buf))
     }
 

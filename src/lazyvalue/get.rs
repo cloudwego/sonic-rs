@@ -673,28 +673,72 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_get_many_recursion_limit() {
+    /// Skipping is recursive and debug builds use a lot of stack per level, so these run on a
+    /// thread with the same 64 MB stack as the `Value` depth tests.
+    #[cfg(not(target_family = "wasm"))]
+    fn with_big_stack(f: impl FnOnce() + Send + 'static) {
         std::thread::Builder::new()
-            .name("test_get_many_recursion_limit".to_string())
-            .stack_size(16 * 1024 * 1024)
-            .spawn(|| {
-                let depth = 10_000;
-                let nested = format!("{}0{}", "[".repeat(depth), "]".repeat(depth));
-                let json = format!(r#"{{"ignored":{nested},"wanted":1}}"#);
-
-                let mut tree = PointerTree::new();
-                tree.add_path(["wanted"]);
-
-                let res = get_many(&json, &tree);
-                assert!(res.is_err());
-                assert!(matches!(
-                    res.unwrap_err().error_code(),
-                    crate::error::ErrorCode::RecursionLimitExceeded
-                ));
-            })
+            .stack_size(64 * 1024 * 1024)
+            .spawn(f)
             .unwrap()
             .join()
             .unwrap();
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn ignored_nested_arrays(depth: usize) -> String {
+        format!(
+            r#"{{"ignored":{}0{},"wanted":1}}"#,
+            "[".repeat(depth),
+            "]".repeat(depth)
+        )
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn assert_too_deep<T: std::fmt::Debug>(res: crate::Result<T>) {
+        let err = res.unwrap_err();
+        let message = err.to_string();
+        assert!(
+            matches!(
+                err.error_code(),
+                crate::error::ErrorCode::RecursionLimitExceeded
+            ),
+            "{message}"
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_family = "wasm"))]
+    fn test_get_many_recursion_limit() {
+        with_big_stack(|| {
+            let mut tree = PointerTree::new();
+            tree.add_path(["wanted"]);
+
+            // A deeply nested value that is only skipped must not overflow the stack.
+            assert_too_deep(get_many(&ignored_nested_arrays(10_000), &tree));
+
+            // Same limit as the rest of the parser: at most 254 nested containers in total,
+            // here the root object plus the skipped arrays.
+            let json = ignored_nested_arrays(253);
+            let many = get_many(&json, &tree).unwrap();
+            assert_eq!(many[0].as_ref().unwrap().as_raw_str(), "1");
+            assert_too_deep(get_many(&ignored_nested_arrays(254), &tree));
+        });
+    }
+
+    #[test]
+    #[cfg(not(target_family = "wasm"))]
+    fn test_ignored_field_recursion_limit() {
+        #[derive(Debug, serde::Deserialize)]
+        struct Wanted {
+            #[allow(dead_code)]
+            wanted: u32,
+        }
+
+        with_big_stack(|| {
+            // Unknown fields are skipped by the same code path as `get_many`.
+            assert_too_deep(crate::from_str::<Wanted>(&ignored_nested_arrays(10_000)));
+            assert!(crate::from_str::<Wanted>(&ignored_nested_arrays(253)).is_ok());
+        });
     }
 }
