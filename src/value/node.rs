@@ -1536,6 +1536,11 @@ impl<'a> DocumentVisitor<'a> {
 #[repr(C)]
 struct MetaNode {
     shared: *const Shared,
+    // 32-bit x86 aligns `u64` to 4, so without this the struct is 12 bytes.
+    // Pad explicitly instead of raising the alignment: a MetaNode is also
+    // written and read through pointers into `Value` arrays.
+    #[cfg(target_pointer_width = "32")]
+    _pad: u32,
     canary: u64,
 }
 
@@ -1544,11 +1549,18 @@ const _: () = assert!(
     "MetaNode and Value must have the same size for transmute safety"
 );
 
+const _: () = assert!(
+    std::mem::align_of::<MetaNode>() <= std::mem::align_of::<Value>(),
+    "MetaNode is accessed through pointers into Value arrays"
+);
+
 impl MetaNode {
     fn new(shared: *const Shared) -> Self {
         let canary = b"SONICRS\0";
         MetaNode {
             shared,
+            #[cfg(target_pointer_width = "32")]
+            _pad: 0,
             canary: u64::from_ne_bytes(*canary),
         }
     }
