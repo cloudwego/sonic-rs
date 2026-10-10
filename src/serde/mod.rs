@@ -742,6 +742,41 @@ mod test {
     }
 
     #[test]
+    fn test_numeric_key_rejects_leading_whitespace() {
+        // A numeric map key is the number itself; whitespace inside the quotes is not skipped
+        // (serde_json rejects these too). It used to be: `{" 1": 2}` gave the key 1.
+        for json in [
+            r#"{" 1":2}"#,
+            r#"{"  -1":2}"#,
+            "{\"\t1\":2}",
+            "{\"\n1\":2}",
+            r#"{" 1.5":2}"#,
+        ] {
+            assert!(
+                crate::from_str::<BTreeMap<i64, u8>>(json).is_err(),
+                "i64 key: {json:?}"
+            );
+            assert!(
+                crate::from_str::<BTreeMap<u32, u8>>(json).is_err(),
+                "u32 key: {json:?}"
+            );
+            assert!(
+                crate::from_str::<BTreeMap<i8, u8>>(json).is_err(),
+                "i8 key: {json:?}"
+            );
+            assert!(
+                serde_json::from_str::<BTreeMap<i64, u8>>(json).is_err(),
+                "serde_json: {json:?}"
+            );
+        }
+        // as a string key it is fine, and plain numeric keys are unchanged
+        let m: BTreeMap<String, u8> = crate::from_str(r#"{" 1":2}"#).unwrap();
+        assert_eq!(m.get(" 1"), Some(&2));
+        let m: BTreeMap<i64, u8> = crate::from_str(r#"{"1":2,"-3":4}"#).unwrap();
+        assert_eq!(m, BTreeMap::from([(1, 2), (-3, 4)]));
+    }
+
+    #[test]
     fn test_utf8_lossy() {
         let data = [&[b'\"', 0xff, b'\"'][..], br#""\uD800""#, br#""\udc00""#];
 
