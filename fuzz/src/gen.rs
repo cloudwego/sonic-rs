@@ -553,7 +553,9 @@ impl DeepNestInput {
             NestPattern::Mixed { depth, width } => {
                 let d = (*depth).min(256) as usize;
                 let w = (*width).min(8) as usize;
-                let mut s = String::with_capacity(d * w * 8);
+                // One recursive child per level keeps both size and work O(d * w).
+                // Each level adds at most 10 * w - 2 bytes, plus the 2-byte leaf.
+                let mut s = String::with_capacity(d * w * 10 + 2);
                 build_mixed(&mut s, d, w);
                 s
             }
@@ -566,19 +568,118 @@ fn build_mixed(out: &mut String, depth: usize, width: usize) {
         out.push_str("42");
         return;
     }
+    if width == 0 {
+        out.push_str("[]");
+        return;
+    }
     out.push('[');
+    let recursive_index = depth % width;
     for i in 0..width {
         if i > 0 {
             out.push(',');
         }
-        if i % 2 == 0 {
-            build_mixed(out, depth - 1, width);
+        if i == recursive_index {
+            if depth & 1 == 0 {
+                build_mixed(out, depth - 1, width);
+            } else {
+                out.push_str("{\"v\":");
+                build_mixed(out, depth - 1, width);
+                out.push('}');
+            }
         } else {
-            out.push('{');
-            write!(out, "\"v\":").unwrap();
-            build_mixed(out, depth - 1, width);
-            out.push('}');
+            match i % 4 {
+                0 => out.push_str("null"),
+                1 => write!(out, "{{\"v\":{}}}", depth).unwrap(),
+                2 => out.push_str("true"),
+                _ => write!(out, "\"s{}\"", depth).unwrap(),
+            }
         }
     }
     out.push(']');
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mixed(depth: u16, width: u8) -> String {
+        DeepNestInput {
+            pattern: NestPattern::Mixed { depth, width },
+        }
+        .to_json()
+    }
+
+    fn container_depth(json: &str) -> usize {
+        // Generated scalar strings never contain container delimiters.
+        let mut depth = 0;
+        let mut max_depth = 0;
+        for byte in json.bytes() {
+            match byte {
+                b'[' | b'{' => {
+                    depth += 1;
+                    max_depth = max_depth.max(depth);
+                }
+                b']' | b'}' => depth -= 1,
+                _ => {}
+            }
+        }
+        assert_eq!(depth, 0);
+        max_depth
+    }
+
+    #[test]
+    fn test_mixed_oom_seed() {
+        // oom-4e7e1fd8304555ceaf9b1d1409231a40e1d24c48, base64 DgBr96D6BA==.
+        let bytes = [0x0e, 0x00, 0x6b, 0xf7, 0xa0, 0xfa, 0x04];
+        let input = DeepNestInput::arbitrary(&mut Unstructured::new(&bytes)).unwrap();
+        assert!(matches!(
+            &input.pattern,
+            NestPattern::Mixed {
+                depth: 64160,
+                width: 4,
+            }
+        ));
+        let json = input.to_json();
+        assert!(json.len() <= 256 * (10 * 4 - 2) + 2);
+        assert_eq!(json.matches('[').count(), 256);
+        assert_eq!(json.matches("\"v\":[").count(), 127);
+        assert_eq!(container_depth(&json), 384);
+        serde_json::from_str::<serde::de::IgnoredAny>(&json).unwrap();
+    }
+
+    #[test]
+    fn test_mixed_size_and_depth_bounds() {
+        for depth in [0, 1, 2, 127, 256, 257, u16::MAX] {
+            for width in [0, 1, 2, 3, 4, 8, 9, u8::MAX] {
+                let json = mixed(depth, width);
+                let d = depth.min(256) as usize;
+                let w = width.min(8) as usize;
+                if d == 0 {
+                    assert_eq!(json, "42");
+                } else if w == 0 {
+                    assert_eq!(json, "[]");
+                } else {
+                    assert!(json.len() <= d * (10 * w - 2) + 2);
+                    assert_eq!(json.matches('[').count(), d);
+                    assert_eq!(json.matches("\"v\":[").count(), (d - 1) / 2);
+                    assert_eq!(container_depth(&json), d + d / 2 + d % 2);
+                }
+                assert!(json.len() < 32 * 1024);
+                // IgnoredAny validates the full grammar with an iterative parser,
+                // avoiding Value's recursion limit and deeply recursive drop.
+                serde_json::from_str::<serde::de::IgnoredAny>(&json).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn test_mixed_valid_json() {
+        // Keep below serde_json's recursion limit; maximum-depth coverage is above.
+        for depth in [0, 1, 2, 4, 16, 32] {
+            for width in [0, 1, 2, 3, 4, 8, 9, u8::MAX] {
+                let json = mixed(depth, width);
+                serde_json::from_str::<serde_json::Value>(&json).unwrap();
+            }
+        }
+    }
 }

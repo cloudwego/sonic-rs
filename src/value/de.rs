@@ -461,6 +461,8 @@ impl<'de> VariantAccess<'de> for VariantRefDeserializer<'de> {
     {
         match self.value.map(|v| v.as_ref()) {
             Some(ValueRef::Object(v)) => visit_object_ref(v, visitor),
+            // a struct variant may be written as a sequence, as when deserializing from text
+            Some(ValueRef::Array(v)) => visit_array_ref(v, visitor),
             Some(other) => Err(serde::de::Error::invalid_type(
                 other.unexpected(),
                 &"struct variant",
@@ -720,5 +722,28 @@ mod test {
     #[test]
     fn test_value_as_deserializer() {
         // unimplemented!()
+    }
+
+    #[test]
+    fn test_struct_variant_from_value_sequence() {
+        // A struct variant written as a sequence deserializes from text; from a Value it failed
+        // with "invalid type: sequence, expected struct variant".
+        #[derive(Debug, PartialEq, serde::Deserialize)]
+        enum E {
+            S { a: u8, b: String },
+        }
+        use crate::{from_str, from_value, Value};
+        let text = r#"{"S":[5,"k"]}"#;
+        let expected = E::S {
+            a: 5,
+            b: "k".to_owned(),
+        };
+        assert_eq!(from_str::<E>(text).unwrap(), expected);
+        let v: Value = from_str(text).unwrap();
+        assert_eq!(from_value::<E>(&v).unwrap(), expected);
+        for bad in [r#"{"S":[5]}"#, r#"{"S":[5,"k",1]}"#] {
+            let v: Value = from_str(bad).unwrap();
+            assert!(from_value::<E>(&v).is_err(), "{bad}");
+        }
     }
 }
