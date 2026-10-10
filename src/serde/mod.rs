@@ -742,6 +742,38 @@ mod test {
     }
 
     #[test]
+    fn test_skipped_string_validates_unicode_escape() {
+        // A string that is skipped (unknown field, IgnoredAny, lazy get) must still be valid
+        // JSON: `\u` needs four hex digits. It used to skip any five bytes after the backslash.
+        #[derive(Debug, Deserialize)]
+        struct S {
+            #[serde(default)]
+            _a: i64,
+        }
+        for json in [
+            r#"{"z":"\uf**k"}"#,
+            r#"{"z":"\u12"}"#,
+            r#"{"z":"\u12G4"}"#,
+            r#"{"z":"\u"}"#,
+        ] {
+            assert!(crate::from_str::<S>(json).is_err(), "struct: {json}");
+            assert!(
+                crate::from_str::<IgnoredAny>(json).is_err(),
+                "IgnoredAny: {json}"
+            );
+            assert!(crate::get(json, &["z"]).is_err(), "get: {json}");
+            assert!(
+                serde_json::from_str::<S>(json).is_err(),
+                "serde_json: {json}"
+            );
+        }
+        for json in [r#"{"z":"\u00e9\uD83D\uDE00"}"#, r#"{"z":"\uABCD"}"#] {
+            assert!(crate::from_str::<S>(json).is_ok(), "struct: {json}");
+            assert!(crate::get(json, &["z"]).is_ok(), "get: {json}");
+        }
+    }
+
+    #[test]
     fn test_utf8_lossy() {
         let data = [&[b'\"', 0xff, b'\"'][..], br#""\uD800""#, br#""\udc00""#];
 
