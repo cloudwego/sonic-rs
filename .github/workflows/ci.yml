@@ -9,6 +9,19 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  check-i686-sse2:
+    name: Check i686 with SSE2
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-unknown-linux-gnu
+      - name: Check sonic-simd
+        env:
+          RUSTFLAGS: -C target-feature=+sse2
+        run: cargo check -p sonic-simd --target i686-unknown-linux-gnu
+
   test-stable-windows:
     name: Rust stable (Windows)
     runs-on: windows-latest
