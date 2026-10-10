@@ -1829,6 +1829,158 @@ mod test {
     use crate::object;
     use crate::{error::make_error, from_slice, from_str, pointer, util::mock::MockString};
 
+    /// `Value` is built by the DOM parser, which recurses once per array or object. It stops at
+    /// the same depth as the serde visitors instead of overflowing the stack.
+    #[cfg(not(target_family = "wasm"))]
+    mod depth_limit {
+        use std::collections::HashMap;
+
+        use crate::{
+            error::ErrorCode::RecursionLimitExceeded, from_slice, from_str, Deserializer, Read,
+            Value,
+        };
+
+        /// The deepest nesting that parses: the counter starts at 255 and fails on reaching 0.
+        const MAX: usize = 254;
+
+        fn arrays(depth: usize) -> String {
+            format!("{}{}", "[".repeat(depth), "]".repeat(depth))
+        }
+
+        fn objects(depth: usize) -> String {
+            format!("{}1{}", r#"{"a":"#.repeat(depth), "}".repeat(depth))
+        }
+
+        fn mixed(depth: usize) -> String {
+            let open: String = (0..depth)
+                .map(|i| if i % 2 == 0 { "[" } else { r#"{"a":"# })
+                .collect();
+            let close: String = (0..depth)
+                .rev()
+                .map(|i| if i % 2 == 0 { "]" } else { "}" })
+                .collect();
+            format!("{open}1{close}")
+        }
+
+        fn assert_too_deep<T: std::fmt::Debug>(result: crate::Result<T>) {
+            let err = result.unwrap_err();
+            let message = err.to_string();
+            assert!(
+                matches!(err.error_code(), RecursionLimitExceeded),
+                "{message}"
+            );
+        }
+
+        /// Debug builds use about 75 KB of stack per nested object, so the maximum depth needs
+        /// about 19 MB.
+        fn with_stack(f: impl FnOnce() + Send + 'static) {
+            std::thread::Builder::new()
+                .stack_size(64 * 1024 * 1024)
+                .spawn(f)
+                .unwrap()
+                .join()
+                .unwrap();
+        }
+
+        #[test]
+        fn accepts_the_maximum_and_rejects_one_more() {
+            with_stack(|| {
+                for json in [arrays, objects, mixed] {
+                    assert!(from_str::<Value>(&json(MAX)).is_ok());
+                    assert!(from_slice::<Value>(json(MAX).as_bytes()).is_ok());
+                    assert_too_deep(from_str::<Value>(&json(MAX + 1)));
+                    assert_too_deep(from_slice::<Value>(json(MAX + 1).as_bytes()));
+                }
+            });
+        }
+
+        /// Before the limit, this overflowed the stack and aborted the process.
+        #[test]
+        fn rejects_huge_nesting_without_overflowing() {
+            with_stack(|| {
+                for json in [arrays, objects, mixed] {
+                    assert_too_deep(from_str::<Value>(&json(1_000_000)));
+                }
+                // Unterminated: the limit is hit before the end of input.
+                assert_too_deep(from_str::<Value>(&"[".repeat(1_000_000)));
+            });
+        }
+
+        #[test]
+        fn siblings_do_not_add_up() {
+            with_stack(|| {
+                let siblings = vec![arrays(MAX - 1); 100].join(",");
+                assert!(from_str::<Value>(&format!("[{siblings}]")).is_ok());
+
+                let siblings = (0..100)
+                    .map(|i| format!(r#""k{i}":{}"#, objects(MAX - 1)))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                assert!(from_str::<Value>(&format!("{{{siblings}}}")).is_ok());
+            });
+        }
+
+        /// A `Value` inside a serde container shares the depth: the container is one level.
+        #[test]
+        fn is_shared_with_the_serde_visitors() {
+            #[derive(serde::Deserialize, Debug)]
+            #[allow(dead_code)]
+            struct Wrapper {
+                inner: Vec<Value>,
+            }
+
+            with_stack(|| {
+                let in_map = |depth| format!(r#"{{"a":{}}}"#, arrays(depth));
+                assert!(from_str::<HashMap<String, Value>>(&in_map(MAX - 1)).is_ok());
+                assert_too_deep(from_str::<HashMap<String, Value>>(&in_map(MAX)));
+                assert_too_deep(from_str::<HashMap<String, Value>>(&in_map(1_000_000)));
+
+                let in_seq = |depth| format!("[{}]", arrays(depth));
+                assert!(from_str::<Vec<Value>>(&in_seq(MAX - 1)).is_ok());
+                assert_too_deep(from_str::<Vec<Value>>(&in_seq(MAX)));
+
+                let in_struct = |depth| format!(r#"{{"inner":[{}]}}"#, arrays(depth));
+                assert!(from_str::<Wrapper>(&in_struct(MAX - 2)).is_ok());
+                assert_too_deep(from_str::<Wrapper>(&in_struct(MAX - 1)));
+            });
+        }
+
+        /// Parsing one `Value` leaves the depth as it found it for the next one.
+        #[test]
+        fn is_restored_between_values() {
+            with_stack(|| {
+                let two = format!(r#"{{"a":{0},"b":{0}}}"#, arrays(MAX - 1));
+                assert!(from_str::<HashMap<String, Value>>(&two).is_ok());
+
+                let stream = format!("{0} {0} {0}", arrays(MAX));
+                let mut de = Deserializer::new(Read::from(&stream));
+                for _ in 0..3 {
+                    assert!(de.deserialize::<Value>().is_ok());
+                }
+            });
+        }
+
+        /// Invalid UTF-8 with `utf8_lossy` parses a repaired copy: a separate path.
+        #[test]
+        fn applies_to_utf8_lossy_input() {
+            with_stack(|| {
+                let json = |depth| {
+                    let mut bytes = format!(r#"["\xff",{}]"#, arrays(depth)).into_bytes();
+                    let at = bytes.iter().position(|&b| b == b'\\').unwrap();
+                    bytes.splice(at..at + 4, [0xff]);
+                    bytes
+                };
+                let parse = |bytes: Vec<u8>| {
+                    Deserializer::new(Read::from(bytes.as_slice()))
+                        .utf8_lossy()
+                        .deserialize::<Value>()
+                };
+                assert!(parse(json(MAX - 1)).is_ok());
+                assert_too_deep(parse(json(MAX)));
+            });
+        }
+    }
+
     #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
     struct ValueInStruct {
         val: Value,
