@@ -710,7 +710,7 @@ impl<'a> Entry<'a> {
     #[inline]
     pub fn key(&self) -> &str {
         match self {
-            Entry::Occupied(entry) => entry.handle.as_str().unwrap(),
+            Entry::Occupied(entry) => entry.key,
             Entry::Vacant(entry) => entry.key(),
         }
     }
@@ -991,6 +991,21 @@ impl<'de> serde::de::Deserialize<'de> for Object {
 mod test {
     use super::*;
     use crate::{from_str, to_string, Array, JsonValueMutTrait};
+
+    #[test]
+    fn test_entry_key_occupied() {
+        // `Entry::key` on an occupied entry returned the entry's *value* as a string: the value
+        // when it is a string, and a panic (unwrap on None) for any other value.
+        let mut obj = object! {"a": "value", "b": 1, "c": null, "d": [1]};
+        for k in ["a", "b", "c", "d"] {
+            let entry = obj.entry(k);
+            assert!(matches!(entry, Entry::Occupied(_)));
+            assert_eq!(entry.key(), k);
+        }
+        let entry = obj.entry("e");
+        assert!(matches!(entry, Entry::Vacant(_)));
+        assert_eq!(entry.key(), "e");
+    }
 
     #[test]
     fn test_object_serde() {

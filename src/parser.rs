@@ -206,11 +206,16 @@ pub(crate) struct Pair<'de> {
     pub status: ParseStatus,
 }
 
+/// The maximum nesting depth of arrays and objects: deeper JSON returns
+/// [`ErrorCode::RecursionLimitExceeded`] instead of overflowing the stack.
+pub(crate) const MAX_ALLOWED_DEPTH: u8 = u8::MAX;
+
 pub struct Parser<R> {
     pub read: R,
     error_index: usize,   // mark the error position
     nospace_bits: u64,    // SIMD marked nospace bitmap
     nospace_start: isize, // the start position of nospace_bits
+    remaining_depth: u8,  // shared by the serde visitors and the DOM parser
     pub(crate) cfg: DeserializeCfg,
 }
 
@@ -240,8 +245,24 @@ where
             error_index: usize::MAX,
             nospace_bits: 0,
             nospace_start: -128,
+            remaining_depth: MAX_ALLOWED_DEPTH,
             cfg: DeserializeCfg::default(),
         }
+    }
+
+    /// Enters a nested array or object, failing once [`MAX_ALLOWED_DEPTH`] is reached.
+    #[inline(always)]
+    pub(crate) fn enter_nested(&mut self) -> Result<()> {
+        if self.remaining_depth == 1 {
+            return perr!(self, RecursionLimitExceeded);
+        }
+        self.remaining_depth -= 1;
+        Ok(())
+    }
+
+    #[inline(always)]
+    pub(crate) fn leave_nested(&mut self) {
+        self.remaining_depth += 1;
     }
 
     pub fn offset(&self) -> usize {
@@ -425,7 +446,12 @@ where
         }
     }
 
-    fn parse_array<V>(&mut self, vis: &mut V, mut strbuf: Option<&mut Vec<u8>>) -> Result<()>
+    fn parse_array<V>(
+        &mut self,
+        vis: &mut V,
+        mut strbuf: Option<&mut Vec<u8>>,
+        depth: u8,
+    ) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
@@ -438,7 +464,7 @@ where
 
         let mut count = 0;
         loop {
-            self.dispatch_value(first, vis, &mut strbuf)?;
+            self.dispatch_value(first, vis, &mut strbuf, depth)?;
             count += 1;
             // Compact: u16 read for single-instruction matching
             let sep = self.read.peek_u16();
@@ -463,7 +489,12 @@ where
         }
     }
 
-    fn parse_object<V>(&mut self, vis: &mut V, mut strbuf: Option<&mut Vec<u8>>) -> Result<()>
+    fn parse_object<V>(
+        &mut self,
+        vis: &mut V,
+        mut strbuf: Option<&mut Vec<u8>>,
+        depth: u8,
+    ) -> Result<()>
     where
         V: JsonVisitor<'de>,
     {
@@ -501,7 +532,7 @@ where
             };
 
             // ---- parse value ----
-            self.dispatch_value(next, vis, &mut strbuf)?;
+            self.dispatch_value(next, vis, &mut strbuf, depth)?;
             count += 1;
 
             // ---- find separator: one u16 read to match `,"` or `}x` ----
@@ -536,6 +567,7 @@ where
         ch: Option<u8>,
         vis: &mut V,
         strbuf: &mut Option<&mut Vec<u8>>,
+        depth: u8,
     ) -> Result<()>
     where
         V: JsonVisitor<'de>,
@@ -543,8 +575,9 @@ where
         match ch {
             Some(c @ b'-' | c @ b'0'..=b'9') => self.parse_number_visit(c, vis, strbuf.is_none()),
             Some(b'"') => self.parse_string_visit(vis, strbuf.as_deref_mut()),
-            Some(b'{') => self.parse_object(vis, strbuf.as_deref_mut()),
-            Some(b'[') => self.parse_array(vis, strbuf.as_deref_mut()),
+            Some(b'{') if depth > 0 => self.parse_object(vis, strbuf.as_deref_mut(), depth - 1),
+            Some(b'[') if depth > 0 => self.parse_array(vis, strbuf.as_deref_mut(), depth - 1),
+            Some(b'{' | b'[') => perr!(self, RecursionLimitExceeded),
             Some(first) => self.parse_literal_visit(first, vis),
             None => perr!(self, EofWhileParsing),
         }
@@ -767,7 +800,9 @@ where
     {
         check_visit!(self, vis.visit_dom_start())?;
         let ch = self.skip_space();
-        self.dispatch_value(ch, vis, &mut strbuf)?;
+        // The depth is passed down the recursion, which keeps it in a register.
+        let depth = self.remaining_depth - 1;
+        self.dispatch_value(ch, vis, &mut strbuf, depth)?;
         check_visit!(self, vis.visit_dom_end())
     }
 

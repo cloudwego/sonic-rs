@@ -2,6 +2,9 @@
 
 set -ex
 
+# Run generator regressions before the fuzz targets.
+cargo +nightly test --manifest-path fuzz/Cargo.toml --lib gen::tests
+
 cargo install cargo-fuzz
 
 FUZZ_TIME="${FUZZ_TIME:-5m}"
