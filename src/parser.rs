@@ -1824,6 +1824,15 @@ where
             return perr!(self, EofWhileParsing);
         }
 
+        // A duplicate key leads to the same node again. Its paths were filled (and counted) on the
+        // first visit: keep that value, as `get` does, and skip this one. Counting it again
+        // stopped the scan early (the enclosing value came back cut short) and underflowed
+        // `remain`.
+        if node.order.first().is_some_and(|&p| out[p].is_some()) {
+            self.skip_one(is_safe)?;
+            return Ok(());
+        }
+
         // need write to out, record the start position
         let start = self.read.index();
         let slice: &'de [u8];
@@ -1839,6 +1848,11 @@ where
             PointerTreeInner::Key(mkeys) => {
                 self.get_many_keys(mkeys, strbuf, out, remain, is_safe)?
             }
+            // the value decides: the paths of the other kind cannot match and stay `None`
+            PointerTreeInner::KeyAndIndex(mkeys, midxs) => match ch {
+                Some(b'[') => self.get_many_index(midxs, strbuf, out, remain, is_safe)?,
+                _ => self.get_many_keys(mkeys, strbuf, out, remain, is_safe)?,
+            },
         };
 
         if !node.order.is_empty() {
