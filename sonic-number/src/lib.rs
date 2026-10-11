@@ -105,7 +105,10 @@ fn parse_exponent(data: &[u8], index: &mut usize) -> Result<i32, Error> {
     }
 
     check_digit!(data, *index);
-    while exponent < 1000 && is_digit!(data, *index) {
+    // Stop growing the exponent once it is far outside the f64 range, but not too early: it is
+    // later combined with the digit count of the mantissa (`1{4000 digits}e-4294967296` is 0, and
+    // must not become `1e3999 * 1e-4294`). Same cap as `core::num::dec2flt` (0x10000); no overflow.
+    while exponent < 0x10000 && is_digit!(data, *index) {
         exponent = digit!(data, *index) as i32 + exponent * 10;
         *index += 1;
     }
@@ -220,6 +223,17 @@ fn parse_number_fraction(
     Ok(trunc)
 }
 
+/// Zero with the sign of the literal: `-0`, `-0.0` and `-0e5` are negative zero (IEEE 754), as in
+/// `parse_float32` and in Rust's `str::parse::<f64>`.
+#[inline(always)]
+fn signed_zero(negative: bool) -> f64 {
+    if negative {
+        -0.0
+    } else {
+        0.0
+    }
+}
+
 #[inline(always)]
 pub fn parse_number(data: &[u8], index: &mut usize, negative: bool) -> Result<ParserNumber, Error> {
     let mut significant: u64 = 0;
@@ -233,9 +247,9 @@ pub fn parse_number(data: &[u8], index: &mut usize, negative: bool) -> Result<Pa
         *index += 1;
 
         if *index >= data.len() || !matches!(data[*index], b'.' | b'e' | b'E') {
-            // view -0 as float number
+            // view -0 as float number, so that it keeps its sign
             if negative {
-                return Ok(ParserNumber::Float(0.0));
+                return Ok(ParserNumber::Float(-0.0));
             }
             return Ok(ParserNumber::Unsigned(0));
         }
@@ -259,7 +273,7 @@ pub fn parse_number(data: &[u8], index: &mut usize, negative: bool) -> Result<Pa
                     while is_digit!(data, *index) {
                         *index += 1;
                     }
-                    return Ok(ParserNumber::Float(0.0));
+                    return Ok(ParserNumber::Float(signed_zero(negative)));
                 }
 
                 // we calculate the first digit here for two reasons:
@@ -267,7 +281,7 @@ pub fn parse_number(data: &[u8], index: &mut usize, negative: bool) -> Result<Pa
                 // 2. we only need parse at most 16 digits in parse_number_fraction
                 // and it is friendly for simd
                 if !is_digit!(data, *index) {
-                    return Ok(ParserNumber::Float(0.0));
+                    return Ok(ParserNumber::Float(signed_zero(negative)));
                 }
 
                 significant = digit!(data, *index);
@@ -300,7 +314,7 @@ pub fn parse_number(data: &[u8], index: &mut usize, negative: bool) -> Result<Pa
                 while is_digit!(data, *index) {
                     *index += 1;
                 }
-                return Ok(ParserNumber::Float(0.0));
+                return Ok(ParserNumber::Float(signed_zero(negative)));
             }
             _ => unreachable!("unreachable branch in parse_number_unchecked"),
         }
@@ -647,9 +661,9 @@ pub unsafe fn parse_number_unchecked(
         *index += 1;
 
         if !match_digit_u!(data, *index, b'.' | b'e' | b'E') {
-            // view -0 as float number
+            // view -0 as float number, so that it keeps its sign
             if negative {
-                return Ok(ParserNumber::Float(0.0));
+                return Ok(ParserNumber::Float(-0.0));
             }
             return Ok(ParserNumber::Unsigned(0));
         }
@@ -673,7 +687,7 @@ pub unsafe fn parse_number_unchecked(
                     while is_digit_u!(data, *index) {
                         *index += 1;
                     }
-                    return Ok(ParserNumber::Float(0.0));
+                    return Ok(ParserNumber::Float(signed_zero(negative)));
                 }
 
                 // we calculate the first digit here for two reasons:
@@ -681,7 +695,7 @@ pub unsafe fn parse_number_unchecked(
                 // 2. we only need parse at most 16 digits in parse_number_fraction
                 // and it is friendly for simd
                 if !is_digit_u!(data, *index) {
-                    return Ok(ParserNumber::Float(0.0));
+                    return Ok(ParserNumber::Float(signed_zero(negative)));
                 }
 
                 significant = digit_u!(data, *index);
@@ -714,7 +728,7 @@ pub unsafe fn parse_number_unchecked(
                 while is_digit_u!(data, *index) {
                     *index += 1;
                 }
-                return Ok(ParserNumber::Float(0.0));
+                return Ok(ParserNumber::Float(signed_zero(negative)));
             }
             _ => unreachable!("unreachable branch in parse_number_unchecked"),
         }
@@ -1219,6 +1233,78 @@ mod test {
             "3469446951536141862700000000000000000e-62",
             3.469446951536142e-26,
         );
+    }
+
+    /// A negative zero literal keeps its sign (IEEE 754 -0.0), like `str::parse::<f64>`.
+    #[test]
+    fn test_parse_number_negative_zero() {
+        for (input, neg) in [
+            ("0", "-0"),
+            ("0.0", "-0.0"),
+            ("0.000", "-0.000"),
+            ("0e5", "-0e5"),
+            ("0E-5", "-0E-5"),
+            ("0.00e+12", "-0.00e+12"),
+        ] {
+            let expect = neg.parse::<f64>().unwrap();
+            assert!(expect.is_sign_negative());
+            for unchecked in [false, true] {
+                // data starts after the '-', as the parser calls it; padded for the unchecked path
+                let mut data = [b' '; 80];
+                data[..input.len()].copy_from_slice(input.as_bytes());
+                let mut index = 0;
+                let num = if unchecked {
+                    unsafe { crate::parse_number_unchecked(&data, &mut index, true) }.unwrap()
+                } else {
+                    parse_number(&data, &mut index, true).unwrap()
+                };
+                assert!(
+                    matches!(num, ParserNumber::Float(f) if f.to_bits() == expect.to_bits()),
+                    "{neg} (unchecked: {unchecked}) parsed as {num:?}, expected -0.0"
+                );
+                assert_eq!(index, input.len(), "{neg}: index");
+            }
+        }
+    }
+
+    /// The exponent is combined with the mantissa's digit count, so capping it too early gives
+    /// wrong values for long mantissas: `1{4000}e-4294967296` is 0 (was 1.1e-295), and
+    /// `0.{4000 zeros}1e30800000` is out of range (was 0).
+    #[test]
+    fn test_parse_number_long_mantissa_huge_exponent() {
+        use std::string::String;
+        let ones: String = core::iter::repeat_n('1', 4000).collect();
+        let zeros: String = core::iter::repeat_n('0', 4000).collect();
+        for input in [
+            std::format!("{ones}e-4294967296"),
+            std::format!("{ones}e-30800000"),
+            std::format!("{ones}e-5000"),
+        ] {
+            let expect = input.parse::<f64>().unwrap();
+            assert_eq!(expect, 0.0);
+            let mut data = input.as_bytes().to_vec();
+            data.push(b' ');
+            let mut index = 0;
+            let num = parse_number(&data, &mut index, false);
+            assert!(
+                matches!(num, Ok(ParserNumber::Float(f)) if f.to_bits() == expect.to_bits()),
+                "{}...: {num:?}",
+                &input[input.len() - 16..]
+            );
+        }
+        for input in [
+            std::format!("0.{zeros}1e30800000"),
+            std::format!("0.{zeros}1e4294967296"),
+        ] {
+            let mut data = input.as_bytes().to_vec();
+            data.push(b' ');
+            let mut index = 0;
+            assert!(
+                parse_number(&data, &mut index, false).is_err(),
+                "{}... must be out of range",
+                &input[input.len() - 16..]
+            );
+        }
     }
 
     #[test]
