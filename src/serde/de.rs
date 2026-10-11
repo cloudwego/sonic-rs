@@ -372,14 +372,32 @@ impl<'de, R: Reader<'de>> Deserializer<R> {
             let json = self.parser.read.as_u8_slice();
 
             // get n to check trailing characters in later
-            let n = if cfg.utf8_lossy && self.parser.read.next_invalid_utf8() != usize::MAX {
+            if cfg.utf8_lossy && self.parser.read.next_invalid_utf8() != usize::MAX {
                 // repr the invalid utf8, not need to care about the invalid UTF8 char in non-string
                 // parts, it will cause errors when parsing.
-                val.parse_with_padding(String::from_utf8_lossy(json).as_bytes(), cfg)?
+                let lossy = String::from_utf8_lossy(json);
+                let n = val.parse_with_padding(lossy.as_bytes(), cfg)?;
+                // `n` is an offset into the lossy copy, where every invalid sequence became the
+                // 3-byte U+FFFD, so it is not an offset into `json`. What follows the value is
+                // the same in both (whitespace or trailing characters; invalid UTF-8 there is a
+                // trailing-character error either way), so count it from the end.
+                // `n` past the end means the parser ran into the padding (unterminated input):
+                // keep it past the end of `json` by the same amount, so that is still reported.
+                let consumed = if n >= lossy.len() {
+                    json.len() + (n - lossy.len())
+                } else {
+                    json.len() - (lossy.len() - n)
+                };
+                self.parser.read.eat(consumed);
+                // the invalid UTF-8 inside the value has been replaced: look for it only in the
+                // part that is still to be read (if any; past the end is reported as EOF)
+                if consumed <= json.len() {
+                    self.parser.read.check_invalid_utf8();
+                }
             } else {
-                val.parse_with_padding(json, cfg)?
-            };
-            self.parser.read.eat(n);
+                let n = val.parse_with_padding(json, cfg)?;
+                self.parser.read.eat(n);
+            }
         } else {
             let shared = unsafe {
                 if self.shared.is_none() {

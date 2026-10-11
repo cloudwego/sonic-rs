@@ -766,6 +766,42 @@ mod test {
     }
 
     #[test]
+    fn test_utf8_lossy_value_trailing() {
+        // Into `Value`, the lossy path parses a copy where each invalid sequence became the 3-byte
+        // U+FFFD; its end offset was used as an offset into the original input. So valid input
+        // failed in `end()`, and trailing characters after the value were skipped.
+        let parse = |json: &[u8]| -> Result<Value> {
+            let mut de = Deserializer::from_slice(json).utf8_lossy();
+            let value: Value = de.deserialize()?;
+            de.end()?;
+            Ok(value)
+        };
+        for json in [
+            &b"[\"a\xa0b\"]"[..],
+            b"[\"a\xa0b\"]\n",
+            b"{\"k\":\"\xc3\"}",
+            b"\"\xff\"",
+        ] {
+            parse(json).unwrap_or_else(|e| panic!("{json:?}: {e}"));
+        }
+        assert_eq!(
+            parse(b"[\"a\xa0b\"]").unwrap(),
+            crate::json!(["a\u{fffd}b"])
+        );
+        for json in [
+            &b"[\"a\xa0b\"]xx"[..],
+            b"[\"\xa0\xa0\xa0\"]  [1]",
+            b"\"\xa0\"1",
+        ] {
+            let err = parse(json).expect_err(&format!("{json:?} has trailing characters"));
+            assert!(err.to_string().contains("trailing"), "{json:?}: {err}");
+        }
+        // unterminated input is still an error
+        assert!(parse(b"[\"a\xa0").is_err());
+        assert!(parse(b"\"abc\xfa").is_err());
+    }
+
+    #[test]
     fn test_utf8_lossy_surrogate_backtrack() {
         // high surrogate + non-\u content → FFFD + literal chars
         let input = br#""\uD800abc""#;
