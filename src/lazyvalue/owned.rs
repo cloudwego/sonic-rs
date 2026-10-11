@@ -640,10 +640,15 @@ pub struct LazyObject(OwnedLazyValue);
 impl std::ops::Deref for LazyObject {
     type Target = Vec<(FastStr, OwnedLazyValue)>;
     fn deref(&self) -> &Self::Target {
-        if let LazyPacked::Parsed(Parsed::LazyObject(obj)) = &self.0 .0 {
-            obj
-        } else {
-            unreachable!("must be a lazy object");
+        // `as_object(&self)` hands out a `LazyObject` for a value that is still `Raw` (its parse
+        // is cached in `LazyRaw::parsed`), so both representations reach here.
+        match &self.0 .0 {
+            LazyPacked::Parsed(Parsed::LazyObject(obj)) => obj,
+            LazyPacked::Raw(raw) => match raw.load() {
+                Ok(Parsed::LazyObject(obj)) => obj,
+                _ => unreachable!("must be a lazy object"),
+            },
+            _ => unreachable!("must be a lazy object"),
         }
     }
 }
@@ -727,10 +732,15 @@ impl std::ops::DerefMut for LazyArray {
 impl std::ops::Deref for LazyArray {
     type Target = Vec<OwnedLazyValue>;
     fn deref(&self) -> &Self::Target {
-        if let LazyPacked::Parsed(Parsed::LazyArray(obj)) = &self.0 .0 {
-            obj
-        } else {
-            unreachable!("must be a lazy array");
+        // `as_array(&self)` hands out a `LazyArray` for a value that is still `Raw` (its parse is
+        // cached in `LazyRaw::parsed`), so both representations reach here.
+        match &self.0 .0 {
+            LazyPacked::Parsed(Parsed::LazyArray(arr)) => arr,
+            LazyPacked::Raw(raw) => match raw.load() {
+                Ok(Parsed::LazyArray(arr)) => arr,
+                _ => unreachable!("must be a lazy array"),
+            },
+            _ => unreachable!("must be a lazy array"),
         }
     }
 }
@@ -793,6 +803,36 @@ mod test {
         assert_eq!(own.get("a\\").as_str().unwrap(), "\\hello \" world");
         assert_eq!(own_c.as_str(), None);
         assert!(own_c.is_array());
+    }
+
+    #[test]
+    fn test_owned_as_array_as_object_on_raw() {
+        // `as_array`/`as_object` (the `&self` versions) return a view of a value that is still
+        // unparsed; using it (len, iter, index) used to panic with "must be a lazy array".
+        let lv: OwnedLazyValue = crate::from_str(r#"[1, "a", [2]]"#).unwrap();
+        let arr = lv.as_array().unwrap();
+        assert_eq!(arr.len(), 3);
+        assert_eq!(arr[1].as_str(), Some("a"));
+        assert_eq!(arr.iter().count(), 3);
+        assert_eq!(arr[2].as_array().unwrap().len(), 1);
+
+        let lv: OwnedLazyValue = crate::from_str(r#"{"a": 1, "b": {"c": [true]}}"#).unwrap();
+        let obj = lv.as_object().unwrap();
+        assert_eq!(obj.len(), 2);
+        let keys: Vec<&str> = obj.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(keys, ["a", "b"]);
+        let inner = obj[1].1.as_object().unwrap();
+        assert_eq!(inner[0].1.as_array().unwrap()[0].as_bool(), Some(true));
+
+        let empty: OwnedLazyValue = crate::from_str("[]").unwrap();
+        assert!(empty.as_array().unwrap().is_empty());
+        let empty: OwnedLazyValue = crate::from_str("{}").unwrap();
+        assert!(empty.as_object().unwrap().is_empty());
+
+        // wrong kind is still None
+        assert!(lv.as_array().is_none());
+        let n: OwnedLazyValue = crate::from_str("1").unwrap();
+        assert!(n.as_array().is_none() && n.as_object().is_none());
     }
 
     #[test]
