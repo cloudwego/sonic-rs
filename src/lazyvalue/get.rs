@@ -636,6 +636,38 @@ mod test {
     }
 
     #[test]
+    fn test_get_many_after_escaped_key() {
+        // A key with a simple escape is unescaped into the key buffer. A later
+        // borrowed key must not carry that leftover into the nested lookup.
+        let mut tree = PointerTree::new();
+        tree.add_path(pointer!["c", "d"].iter());
+        tree.add_path(pointer!["e", 0, "f"].iter());
+        let json = r#"{"\f":9,"c":{"d":1},"\n":2,"e":[{"f":3}]}"#;
+
+        let many = get_many(json, &tree).unwrap();
+        assert_eq!(many[0].as_ref().unwrap().as_raw_str(), "1");
+        assert_eq!(many[1].as_ref().unwrap().as_raw_str(), "3");
+
+        let many = unsafe { get_many_unchecked(json, &tree).unwrap() };
+        assert_eq!(many[0].as_ref().unwrap().as_raw_str(), "1");
+        assert_eq!(many[1].as_ref().unwrap().as_raw_str(), "3");
+
+        // The leftover can also come from the last key of an earlier array element.
+        let mut tree = PointerTree::new();
+        tree.add_path(pointer!["a", 0, "x"].iter());
+        tree.add_path(pointer!["a", 1, "y"].iter());
+        let json = r#"{"a":[{"x":1,"\f":2},{"y":3}]}"#;
+
+        let many = get_many(json, &tree).unwrap();
+        assert_eq!(many[0].as_ref().unwrap().as_raw_str(), "1");
+        assert_eq!(many[1].as_ref().unwrap().as_raw_str(), "3");
+
+        let many = unsafe { get_many_unchecked(json, &tree).unwrap() };
+        assert_eq!(many[0].as_ref().unwrap().as_raw_str(), "1");
+        assert_eq!(many[1].as_ref().unwrap().as_raw_str(), "3");
+    }
+
+    #[test]
     fn test_get_many() {
         let json = Bytes::from(
             r#"{
