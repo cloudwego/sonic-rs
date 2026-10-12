@@ -11,9 +11,9 @@ use std::{
     sync::Arc,
 };
 
-#[cfg(not(feature = "sort_keys"))]
-use ahash::AHashMap;
 use faststr::FastStr;
+#[cfg(not(feature = "sort_keys"))]
+use hashbrown::HashMap;
 use ref_cast::RefCast;
 use serde::ser::{Serialize, SerializeMap, SerializeSeq};
 
@@ -151,27 +151,27 @@ pub struct Value {
 //  - Owned Node : mutable
 //  - Shared Node: in SharedDom, not mutable
 //
-// |  Kind        | 3 bits | 5 bits |       24 bits     |     ---->  32 bits ---->       |    32 bits    |    32 bits    |       limit          |
-// |--------------|-----------------|-------------------|--------------------------------|-------------------------------|----------------------|
-// |   Null       |   0    |   0    |                                                    +                               |                      |
-// |   True       |   0    |   1    |                                                    +                               |                      |
-// |   False      |   0    |   2    |                                                    +                               |                      |
-// |   I64        |   0    |   3    |                                                    +             i64               |                      |
-// |   U64        |   0    |   4    |                                                    +             u64               |                      |
-// |   F64        |   0    |   5    |                                                    +             f64               |                      |
-// |  empty arr   |   0    |   6    |                                                                                    |
-// |  empty obj   |   0    |   7    |                                                                                    |
-// |  static str  |   0    |   8    |                   |           string length        +          *const u8            | excced will fallback |
-// |   faststr    |   1    |   0    |                                                    +         Box<FastStr>          |                      |
-// |rawnum_faststr|   1    |   1    |                                                    +         Box<FastStr>          |                      |
-// |   arr_mut    |   1    |   2    |                                                    +        Arc<Vec<Node>>         |                      |
-// |   obj_mut    |   1    |   3    |                                                    + Arc<AHashMap<FastStr, Value>> |                      |
-// |   str_node   |   2    |        node idx            |           string length        +          *const u8            |    max len 2^32      |
-// | raw_num_node |   3    |        node idx            |           string length        +          *const u8            |    max len 2^32      |
-// |   arr_node   |   4    |        node idx            |           array length         +          *const Node          |    max len 2^32      |
-// |   obj_node   |   5    |        node idx            |           object length        +          *const Pair          |    max len 2^32      |
+// |  Kind        | 3 bits | 5 bits |       24 bits     |     ---->  32 bits ---->       |    32 bits    |    32 bits   |       limit          |
+// |--------------|-----------------|-------------------|--------------------------------|------------------------------|----------------------|
+// |   Null       |   0    |   0    |                                                    +                              |                      |
+// |   True       |   0    |   1    |                                                    +                              |                      |
+// |   False      |   0    |   2    |                                                    +                              |                      |
+// |   I64        |   0    |   3    |                                                    +             i64              |                      |
+// |   U64        |   0    |   4    |                                                    +             u64              |                      |
+// |   F64        |   0    |   5    |                                                    +             f64              |                      |
+// |  empty arr   |   0    |   6    |                                                                                   |
+// |  empty obj   |   0    |   7    |                                                                                   |
+// |  static str  |   0    |   8    |                   |           string length        +          *const u8           | excced will fallback |
+// |   faststr    |   1    |   0    |                                                    +         Box<FastStr>         |                      |
+// |rawnum_faststr|   1    |   1    |                                                    +         Box<FastStr>         |                      |
+// |   arr_mut    |   1    |   2    |                                                    +        Arc<Vec<Node>>        |                      |
+// |   obj_mut    |   1    |   3    |                                                    + Arc<HashMap<FastStr, Value>> |                      |
+// |   str_node   |   2    |        node idx            |           string length        +          *const u8           |    max len 2^32      |
+// | raw_num_node |   3    |        node idx            |           string length        +          *const u8           |    max len 2^32      |
+// |   arr_node   |   4    |        node idx            |           array length         +          *const Node         |    max len 2^32      |
+// |   obj_node   |   5    |        node idx            |           object length        +          *const Pair         |    max len 2^32      |
 // |   _reserved  |   6    |
-// |  root_node   |   7    |      *const ShardDom (from Arc, MUST aligned 8)             +      *const Node (head)       |                      |
+// |  root_node   |   7    |      *const ShardDom (from Arc, MUST aligned 8)             +      *const Node (head)      |                      |
 //
 // NB: we will check the JSON length when parsing, if JSON is >= 4GB, will return a error, so we will not check the limits when parsing or using dom.
 #[allow(clippy::box_collection)]
@@ -190,7 +190,7 @@ pub(crate) union Data {
 
     pub(crate) str_own: ManuallyDrop<Box<FastStr>>,
     #[cfg(not(feature = "sort_keys"))]
-    pub(crate) obj_own: ManuallyDrop<Arc<AHashMap<FastStr, Value>>>,
+    pub(crate) obj_own: ManuallyDrop<Arc<HashMap<FastStr, Value>>>,
     #[cfg(feature="sort_keys")]
     pub(crate) obj_own: ManuallyDrop<Arc<BTreeMap<FastStr, Value>>>,
     pub(crate) arr_own: ManuallyDrop<Arc<Vec<Value>>>,
@@ -474,7 +474,7 @@ enum ValueDetail<'a> {
     RawNumFasStr(&'a FastStr),
     Array(&'a Arc<Vec<Value>>),
     #[cfg(not(feature = "sort_keys"))]
-    Object(&'a Arc<AHashMap<FastStr, Value>>),
+    Object(&'a Arc<HashMap<FastStr, Value>>),
     #[cfg(feature = "sort_keys")]
     Object(&'a Arc<BTreeMap<FastStr, Value>>),
     Root(NodeInDom<'a>),
@@ -523,7 +523,7 @@ pub enum ValueRefInner<'a> {
     Array(&'a [Value]),
     Object(&'a [Pair]),
     #[cfg(not(feature = "sort_keys"))]
-    ObjectOwned(&'a Arc<AHashMap<FastStr, Value>>),
+    ObjectOwned(&'a Arc<HashMap<FastStr, Value>>),
     #[cfg(feature = "sort_keys")]
     ObjectOwned(&'a Arc<BTreeMap<FastStr, Value>>),
     EmptyArray,
@@ -533,7 +533,7 @@ pub enum ValueRefInner<'a> {
 impl<'a> From<&'a [Pair]> for Value {
     fn from(value: &'a [Pair]) -> Self {
         #[cfg(not(feature = "sort_keys"))]
-        let mut newd = AHashMap::with_capacity(value.len());
+        let mut newd = HashMap::with_capacity(value.len());
         #[cfg(feature = "sort_keys")]
         let mut newd = BTreeMap::new();
 
@@ -581,7 +581,7 @@ pub(crate) enum ValueMut<'a> {
     RawNum,
     Array(&'a mut Vec<Value>),
     #[cfg(not(feature = "sort_keys"))]
-    Object(&'a mut AHashMap<FastStr, Value>),
+    Object(&'a mut HashMap<FastStr, Value>),
     #[cfg(feature = "sort_keys")]
     Object(&'a mut BTreeMap<FastStr, Value>),
 }
@@ -762,8 +762,8 @@ impl From<Arc<Vec<Value>>> for Value {
 }
 
 #[cfg(not(feature = "sort_keys"))]
-impl From<Arc<AHashMap<FastStr, Value>>> for Value {
-    fn from(value: Arc<AHashMap<FastStr, Value>>) -> Self {
+impl From<Arc<HashMap<FastStr, Value>>> for Value {
+    fn from(value: Arc<HashMap<FastStr, Value>>) -> Self {
         Self {
             meta: Meta::new(Meta::OBJ_MUT),
             data: Data {
@@ -1273,7 +1273,7 @@ impl Value {
     ) -> Self {
         let obj_own = ManuallyDrop::new(Arc::new(
             #[cfg(not(feature = "sort_keys"))]
-            AHashMap::with_capacity(capacity),
+            HashMap::with_capacity(capacity),
             #[cfg(feature = "sort_keys")]
             BTreeMap::new(),
         ));
