@@ -1262,6 +1262,14 @@ where
 
     #[inline(always)]
     fn skip_object(&mut self) -> Result<()> {
+        self.enter_nested()?;
+        let ret = self.skip_object_inner();
+        self.leave_nested();
+        ret
+    }
+
+    #[inline(always)]
+    fn skip_object_inner(&mut self) -> Result<()> {
         match self.skip_space() {
             Some(b'}') => return Ok(()),
             Some(b'"') => {}
@@ -1288,6 +1296,14 @@ where
 
     #[inline(always)]
     fn skip_array(&mut self) -> Result<()> {
+        self.enter_nested()?;
+        let ret = self.skip_array_inner();
+        self.leave_nested();
+        ret
+    }
+
+    #[inline(always)]
+    fn skip_array_inner(&mut self) -> Result<()> {
         match self.skip_space_peek() {
             Some(b']') => {
                 self.read.eat(1);
@@ -1830,14 +1846,21 @@ where
 
         let mut status = ParseStatus::None;
         match &node.children {
+            // A leaf is charged once by `skip_one` when it is a container.
             PointerTreeInner::Empty => {
                 status = self.skip_one(true)?.1;
             }
             PointerTreeInner::Index(midxs) => {
-                self.get_many_index(midxs, strbuf, out, remain, is_safe)?
+                self.enter_nested()?;
+                let ret = self.get_many_index(midxs, strbuf, out, remain, is_safe);
+                self.leave_nested();
+                ret?
             }
             PointerTreeInner::Key(mkeys) => {
-                self.get_many_keys(mkeys, strbuf, out, remain, is_safe)?
+                self.enter_nested()?;
+                let ret = self.get_many_keys(mkeys, strbuf, out, remain, is_safe);
+                self.leave_nested();
+                ret?
             }
         };
 
