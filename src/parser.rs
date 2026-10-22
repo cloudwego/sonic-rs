@@ -1260,51 +1260,89 @@ where
         }
     }
 
-    #[inline(always)]
-    fn skip_object(&mut self) -> Result<()> {
-        match self.skip_space() {
-            Some(b'}') => return Ok(()),
-            Some(b'"') => {}
-            None => return perr!(self, EofWhileParsing),
-            Some(_) => return perr!(self, ExpectObjectKeyOrEnd),
-        }
-
+    // Keep ancestor containers on the heap, not the call stack. A raw or ignored
+    // value may be deeper than a typed DTO without materializing nested values.
+    fn skip_container_checked(&mut self, opening: u8) -> Result<()> {
+        let mut parents = Vec::new();
+        let mut enclosing = None;
+        let mut ch = opening;
         loop {
-            self.skip_string()?;
-            self.parse_object_clo()?;
-            self.skip_one(true)?;
-
-            match self.skip_space() {
-                Some(b'}') => return Ok(()),
-                Some(b',') => match self.skip_space() {
-                    Some(b'"') => continue,
-                    _ => return perr!(self, ExpectObjectKeyOrEnd),
+            let entered = match ch {
+                b'[' | b'{' => {
+                    parents.extend(enclosing.take());
+                    Some(ch)
+                }
+                b'"' => {
+                    self.skip_string()?;
+                    None
+                }
+                b'-' | b'0'..=b'9' => {
+                    self.skip_number(ch)?;
+                    None
+                }
+                b't' => {
+                    self.parse_literal("rue")?;
+                    None
+                }
+                b'f' => {
+                    self.parse_literal("alse")?;
+                    None
+                }
+                b'n' => {
+                    self.parse_literal("ull")?;
+                    None
+                }
+                _ => return perr!(self, InvalidJsonValue),
+            };
+            let (mut after_value, mut container) = match entered {
+                Some(container) => (false, container),
+                None => match enclosing.take() {
+                    Some(container) => (true, container),
+                    None => return Ok(()),
                 },
-                None => return perr!(self, EofWhileParsing),
-                Some(_) => return perr!(self, ExpectedObjectCommaOrEnd),
-            }
-        }
-    }
-
-    #[inline(always)]
-    fn skip_array(&mut self) -> Result<()> {
-        match self.skip_space_peek() {
-            Some(b']') => {
+            };
+            loop {
+                match self.skip_space_peek() {
+                    Some(b',') if after_value => {
+                        self.read.eat(1);
+                        break;
+                    }
+                    Some(b']') if container == b'[' => {}
+                    Some(b'}') if container == b'{' => {}
+                    Some(_) if !after_value => break,
+                    Some(_) => {
+                        return perr!(
+                            self,
+                            if container == b'[' {
+                                ExpectedArrayCommaOrEnd
+                            } else {
+                                ExpectedObjectCommaOrEnd
+                            }
+                        );
+                    }
+                    None => return perr!(self, EofWhileParsing),
+                }
                 self.read.eat(1);
-                return Ok(());
+                container = match parents.pop() {
+                    Some(container) => container,
+                    None => return Ok(()),
+                };
+                after_value = true;
             }
-            None => return perr!(self, EofWhileParsing),
-            _ => {}
-        }
-
-        loop {
-            self.skip_one(true)?;
-            match self.skip_space() {
-                Some(b']') => return Ok(()),
-                Some(b',') => continue,
+            if container == b'{' {
+                match self.skip_space() {
+                    Some(b'"') => {}
+                    Some(_) => return perr!(self, ExpectObjectKeyOrEnd),
+                    None => return perr!(self, EofWhileParsing),
+                }
+                self.skip_string()?;
+                self.parse_object_clo()?;
+            }
+            enclosing = Some(container);
+            ch = match self.skip_space() {
+                Some(ch) => ch,
                 None => return perr!(self, EofWhileParsing),
-                _ => return perr!(self, ExpectedArrayCommaOrEnd),
-            }
+            };
         }
     }
 
@@ -1613,14 +1651,14 @@ where
             }
             b'{' => {
                 if checked {
-                    self.skip_object()
+                    self.skip_container_checked(b'{')
                 } else {
                     self.skip_container(b'{', b'}')
                 }
             }
             b'[' => {
                 if checked {
-                    self.skip_array()
+                    self.skip_container_checked(b'[')
                 } else {
                     self.skip_container(b'[', b']')
                 }
