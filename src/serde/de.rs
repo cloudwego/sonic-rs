@@ -226,6 +226,35 @@ macro_rules! tri {
 pub(crate) use tri;
 
 impl<'de, R: Reader<'de>> Deserializer<R> {
+    // String/number parsing has a large stack frame in debug builds. Keep it
+    // out of the recursive container visitor so the depth limit is reachable.
+    #[inline]
+    fn deserialize_scalar<V>(&mut self, ch: u8, visitor: V) -> Result<V::Value>
+    where
+        V: de::Visitor<'de>,
+    {
+        match ch {
+            b'n' => {
+                tri!(self.parser.parse_literal("ull"));
+                visitor.visit_unit()
+            }
+            b't' => {
+                tri!(self.parser.parse_literal("rue"));
+                visitor.visit_bool(true)
+            }
+            b'f' => {
+                tri!(self.parser.parse_literal("alse"));
+                visitor.visit_bool(false)
+            }
+            c @ b'-' | c @ b'0'..=b'9' => visit_number(&tri!(self.parser.parse_number(c)), visitor),
+            b'"' => match tri!(self.parser.parse_str(&mut self.scratch)) {
+                Reference::Borrowed(s) => visitor.visit_borrowed_str(s),
+                Reference::Copied(s) => visitor.visit_str(s),
+            },
+            _ => Err(self.parser.error(ErrorCode::InvalidJsonValue)),
+        }
+    }
+
     /// Ensures recursion depth limit; calls `f` with `self` and restores depth on return.
     #[inline]
     fn with_depth_limit<F, T>(&mut self, f: F) -> Result<T>
@@ -478,23 +507,6 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
         };
 
         let value = match peek {
-            b'n' => {
-                tri!(self.parser.parse_literal("ull"));
-                visitor.visit_unit()
-            }
-            b't' => {
-                tri!(self.parser.parse_literal("rue"));
-                visitor.visit_bool(true)
-            }
-            b'f' => {
-                tri!(self.parser.parse_literal("alse"));
-                visitor.visit_bool(false)
-            }
-            c @ b'-' | c @ b'0'..=b'9' => visit_number(&tri!(self.parser.parse_number(c)), visitor),
-            b'"' => match tri!(self.parser.parse_str(&mut self.scratch)) {
-                Reference::Borrowed(s) => visitor.visit_borrowed_str(s),
-                Reference::Copied(s) => visitor.visit_str(s),
-            },
             b'[' => {
                 let ret = self.with_depth_limit(|de| visitor.visit_seq(SeqAccess::new(de)));
                 match (ret, self.end_seq()) {
@@ -509,7 +521,7 @@ impl<'de, 'a, R: Reader<'de>> de::Deserializer<'de> for &'a mut Deserializer<R> 
                     (Err(err), _) | (_, Err(err)) => Err(err),
                 }
             }
-            _ => Err(self.parser.error(ErrorCode::InvalidJsonValue)),
+            _ => self.deserialize_scalar(peek, visitor),
         };
 
         match value {
@@ -961,7 +973,8 @@ impl<'a, R: 'a> MapAccess<'a, R> {
 impl<'de, 'a, R: Reader<'de> + 'a> de::MapAccess<'de> for MapAccess<'a, R> {
     type Error = Error;
 
-    #[inline(always)]
+    // Forced inlining retains key parsing's stack frame while visiting values.
+    #[inline]
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
     where
         K: de::DeserializeSeed<'de>,
@@ -1015,7 +1028,7 @@ impl<'de, 'a, R: Reader<'de> + 'a> de::MapAccess<'de> for MapAccess<'a, R> {
         self.next_entry_seed(PhantomData, PhantomData)
     }
 
-    #[inline(always)]
+    #[inline]
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
     where
         V: de::DeserializeSeed<'de>,
