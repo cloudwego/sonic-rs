@@ -13,7 +13,7 @@ use crate::{
     error::{Error, ErrorCode},
     reader::Reader,
     serde::{number::N, tri},
-    value::{node::Value, Object},
+    value::{node::Value, Array, Object},
 };
 
 /// Interpret a `sonic_rs::Value` as an instance of type `T`.
@@ -109,6 +109,103 @@ impl<'de> Visitor<'de> for ValueVisitor {
             );
             Ok(dom.assume_init())
         }
+    }
+
+    /// Any deserializer other than sonic-rs's own: build the value from its parts.
+    fn visit_newtype_struct<D>(self, deserializer: D) -> StdResult<Value, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(ValueBuilder)
+    }
+}
+
+/// Builds a `Value` from any self-describing deserializer, as `serde_json::Value` does. Unlike
+/// [`ValueVisitor`], it never takes bytes as a ready `Value`.
+struct ValueBuilder;
+
+impl<'de> DeserializeSeed<'de> for ValueBuilder {
+    type Value = Value;
+
+    fn deserialize<D>(self, deserializer: D) -> StdResult<Value, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(self)
+    }
+}
+
+impl<'de> Visitor<'de> for ValueBuilder {
+    type Value = Value;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("a valid json")
+    }
+
+    fn visit_bool<E>(self, v: bool) -> StdResult<Value, E> {
+        Ok(Value::new_bool(v))
+    }
+
+    fn visit_i64<E>(self, v: i64) -> StdResult<Value, E> {
+        Ok(Value::new_i64(v))
+    }
+
+    fn visit_u64<E>(self, v: u64) -> StdResult<Value, E> {
+        Ok(Value::new_u64(v))
+    }
+
+    /// A non-finite float has no JSON form and becomes `null`, as in `serde_json::Value`.
+    fn visit_f64<E>(self, v: f64) -> StdResult<Value, E> {
+        Ok(Value::new_f64(v).unwrap_or_default())
+    }
+
+    fn visit_str<E>(self, v: &str) -> StdResult<Value, E> {
+        Ok(Value::from(v))
+    }
+
+    fn visit_unit<E>(self) -> StdResult<Value, E> {
+        Ok(Value::new_null())
+    }
+
+    fn visit_none<E>(self) -> StdResult<Value, E> {
+        Ok(Value::new_null())
+    }
+
+    fn visit_some<D>(self, deserializer: D) -> StdResult<Value, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(self)
+    }
+
+    fn visit_newtype_struct<D>(self, deserializer: D) -> StdResult<Value, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(self)
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> StdResult<Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut array = Array::with_capacity(seq.size_hint().unwrap_or(0));
+        while let Some(item) = seq.next_element_seed(ValueBuilder)? {
+            array.push(item);
+        }
+        Ok(array.into_value())
+    }
+
+    fn visit_map<A>(self, mut map: A) -> StdResult<Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let mut object = Object::with_capacity(map.size_hint().unwrap_or(0));
+        while let Some(key) = map.next_key::<String>()? {
+            let value = map.next_value_seed(ValueBuilder)?;
+            object.insert(&key, value);
+        }
+        Ok(object.into_value())
     }
 }
 
@@ -573,12 +670,27 @@ impl<'de> serde::Deserializer<'de> for &'de Value {
     #[inline]
     fn deserialize_newtype_struct<V>(
         self,
-        _name: &'static str,
+        name: &'static str,
         visitor: V,
     ) -> Result<V::Value, Error>
     where
         V: Visitor<'de>,
     {
+        if name == TOKEN {
+            // A `Value` from a `Value`: hand over a clone, as the text deserializer hands over
+            // the value it parsed (a clone shares the document).
+            let val = std::mem::ManuallyDrop::new(self.clone());
+            // #Safety
+            // `ValueVisitor::visit_bytes` takes ownership of the value passed as its bytes; it
+            // is not dropped here.
+            return unsafe {
+                let binary = &*std::ptr::slice_from_raw_parts(
+                    &*val as *const Value as *const u8,
+                    std::mem::size_of::<Value>(),
+                );
+                visitor.visit_bytes(binary)
+            };
+        }
         visitor.visit_newtype_struct(self)
     }
 
@@ -750,6 +862,43 @@ mod test {
             let v: Value = from_str(bad).unwrap();
             assert!(from_value::<E>(&v).is_err(), "{bad}");
         }
+    }
+
+    #[derive(Debug, PartialEq, serde::Deserialize)]
+    struct WithValue {
+        id: u32,
+        ext: crate::Value,
+        opt: Option<crate::Value>,
+    }
+
+    const WITH_VALUE: &str = r#"{"id":7,"ext":{"a":[1,-2,3.5,"s",null,true],"b":{}},"opt":[]}"#;
+
+    #[test]
+    fn test_value_field_from_value() {
+        // A `Value` field decoded from a `Value` failed with "invalid type: newtype struct,
+        // expected a valid json".
+        use crate::{from_str, from_value, Value};
+        let expected: WithValue = from_str(WITH_VALUE).unwrap();
+        let v: Value = from_str(WITH_VALUE).unwrap();
+        assert_eq!(from_value::<WithValue>(&v).unwrap(), expected);
+        assert_eq!(from_value::<Value>(&v).unwrap(), v);
+        assert_eq!(from_value::<Value>(&v["ext"]["a"]).unwrap(), v["ext"]["a"]);
+    }
+
+    #[test]
+    fn test_value_from_other_deserializer() {
+        // Any self-describing deserializer can build a `Value`, as with `serde_json::Value`.
+        use crate::{from_str, Value};
+        let expected: WithValue = from_str(WITH_VALUE).unwrap();
+        assert_eq!(
+            serde_json::from_str::<WithValue>(WITH_VALUE).unwrap(),
+            expected
+        );
+        let v: Value = serde_json::from_str("[18446744073709551615,-9223372036854775808]").unwrap();
+        assert_eq!(
+            v,
+            from_str::<Value>("[18446744073709551615,-9223372036854775808]").unwrap()
+        );
     }
 
     #[test]
