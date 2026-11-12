@@ -705,28 +705,86 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_get_many_recursion_limit() {
+    #[cfg(not(target_family = "wasm"))]
+    fn ignored_nested_arrays(depth: usize) -> String {
+        format!(
+            r#"{{"ignored":{}0{},"wanted":1}}"#,
+            "[".repeat(depth),
+            "]".repeat(depth)
+        )
+    }
+
+    // Preserve the PR's large-stack setup for recursive traversal boundary tests.
+    // Iterative skipped-value tests below use the ordinary test-thread stack.
+    #[cfg(not(target_family = "wasm"))]
+    fn with_big_stack(f: impl FnOnce() + Send + 'static) {
         std::thread::Builder::new()
-            .name("test_get_many_recursion_limit".to_string())
-            .stack_size(16 * 1024 * 1024)
-            .spawn(|| {
-                let depth = 10_000;
-                let nested = format!("{}0{}", "[".repeat(depth), "]".repeat(depth));
-                let json = format!(r#"{{"ignored":{nested},"wanted":1}}"#);
-
-                let mut tree = PointerTree::new();
-                tree.add_path(["wanted"]);
-
-                let res = get_many(&json, &tree);
-                assert!(res.is_err());
-                assert!(matches!(
-                    res.unwrap_err().error_code(),
-                    crate::error::ErrorCode::RecursionLimitExceeded
-                ));
-            })
+            .stack_size(64 * 1024 * 1024)
+            .spawn(f)
             .unwrap()
             .join()
             .unwrap();
+    }
+
+    #[test]
+    #[cfg(not(target_family = "wasm"))]
+    fn test_get_many_recursion_limit() {
+        with_big_stack(|| {
+            // Pointer-tree traversal still recurses, even though skipping does not.
+            for depth in [1, 2, 32, 254, 255, 1000] {
+                for keys in [false, true] {
+                    let mut tree = PointerTree::new();
+                    let json = if keys {
+                        tree.add_path(std::iter::repeat_n("a", depth));
+                        format!("{}0{}", r#"{"a":"#.repeat(depth), "}".repeat(depth))
+                    } else {
+                        tree.add_path(std::iter::repeat_n(0usize, depth));
+                        format!("{}0{}", "[".repeat(depth), "]".repeat(depth))
+                    };
+                    for checked in [true, false] {
+                        let result = if checked {
+                            get_many(&json, &tree)
+                        } else {
+                            unsafe { get_many_unchecked(&json, &tree) }
+                        };
+                        if depth <= 254 {
+                            let many = result.unwrap();
+                            assert_eq!(many[0].as_ref().unwrap().as_raw_str(), "0");
+                        } else {
+                            let err = result.unwrap_err();
+                            assert!(matches!(
+                                err.error_code(),
+                                crate::error::ErrorCode::RecursionLimitExceeded
+                            ));
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    #[test]
+    #[cfg(not(target_family = "wasm"))]
+    fn test_get_many_skips_deep_unselected_values() {
+        let mut tree = PointerTree::new();
+        tree.add_path(["wanted"]);
+        for depth in [253, 254, 10_000] {
+            let json = ignored_nested_arrays(depth);
+            let many = get_many(&json, &tree).unwrap();
+            assert_eq!(many[0].as_ref().unwrap().as_raw_str(), "1");
+        }
+    }
+
+    #[test]
+    #[cfg(not(target_family = "wasm"))]
+    fn test_ignored_fields_keep_iterative_skipping() {
+        #[derive(Debug, serde::Deserialize)]
+        struct Wanted {
+            wanted: u32,
+        }
+        for depth in [253, 254, 10_000] {
+            let value = crate::from_str::<Wanted>(&ignored_nested_arrays(depth)).unwrap();
+            assert_eq!(value.wanted, 1);
+        }
     }
 }
