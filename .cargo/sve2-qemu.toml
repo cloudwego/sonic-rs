@@ -1,0 +1,9 @@
+# Opt-in Linux SVE2 emulation; ordinary cargo test does not load this file.
+# Requires qemu-user, gcc-aarch64-linux-gnu and the Rust target.
+# From the repository root:
+# cargo --config .cargo/sve2-qemu.toml test --target aarch64-unknown-linux-gnu
+
+[target.aarch64-unknown-linux-gnu]
+runner   = "qemu-aarch64 -L /usr/aarch64-linux-gnu -cpu max,sve=on"
+rustflags = ["-C", "target-feature=+sve2"]
+linker   = "aarch64-linux-gnu-gcc"
