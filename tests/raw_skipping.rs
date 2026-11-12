@@ -131,3 +131,47 @@ fn typed_values_return_a_depth_error_on_the_normal_stack() {
         }
     }
 }
+
+#[test]
+#[cfg(not(target_family = "wasm"))]
+fn typed_depth_boundary_fits_a_two_megabyte_stack() {
+    std::thread::Builder::new()
+        .name("typed-depth-boundary".into())
+        .stack_size(2 * 1024 * 1024)
+        .spawn(|| {
+            // The parser budget allows 254 containers. Test both container visitors and
+            // their alternation; the explicit stack size is independent of RUST_MIN_STACK.
+            for depth in [254, 255, 1000] {
+                for shape in 0..3 {
+                    let mut input = String::new();
+                    for level in 0..depth {
+                        input.push_str(if shape == 0 || (shape == 2 && level % 2 == 0) {
+                            "["
+                        } else {
+                            r#"{"a":"#
+                        });
+                    }
+                    input.push('0');
+                    for level in (0..depth).rev() {
+                        input.push(if shape == 0 || (shape == 2 && level % 2 == 0) {
+                            ']'
+                        } else {
+                            '}'
+                        });
+                    }
+                    let result = json::from_str::<serde_json::Value>(&input);
+                    if depth == 254 {
+                        assert!(result.is_ok(), "shape={shape}: {result:?}");
+                    } else {
+                        assert!(result
+                            .unwrap_err()
+                            .to_string()
+                            .contains("Encountered nesting of JSON maps and arrays"));
+                    }
+                }
+            }
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}

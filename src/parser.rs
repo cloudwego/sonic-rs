@@ -1394,7 +1394,10 @@ where
         perr!(self, EofWhileParsing)
     }
 
-    #[inline(always)]
+    // SIMD whitespace scanning has a large frame without optimizations. Avoid forcing that
+    // frame into every recursive serde visitor in debug builds; keep release inlining unchanged.
+    #[cfg_attr(debug_assertions, inline)]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     pub fn skip_space(&mut self) -> Option<u8> {
         let reader = &mut self.read;
         // fast path 1: for nospace or single space
