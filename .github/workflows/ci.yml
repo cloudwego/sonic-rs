@@ -65,11 +65,27 @@ jobs:
 
       - name: Run tests
         run: |
-          cargo build --tests --target-dir target --target wasm32-wasip1
-          for wasm_file in target/wasm32-wasip1/debug/deps/sonic_rs-*.wasm; do
-            echo "Running $wasm_file"
-            wasmtime run "$wasm_file"
-          done
+          cargo test --no-run --tests --target-dir target --target wasm32-wasip1 --message-format=json > wasm-test-artifacts.jsonl
+          python3 - <<'PYTHON'
+          import json
+          import subprocess
+
+          with open("wasm-test-artifacts.jsonl") as artifacts:
+              modules = {
+                  message["executable"]
+                  for line in artifacts
+                  if (message := json.loads(line)).get("reason") == "compiler-artifact"
+                  and message.get("profile", {}).get("test")
+                  and message.get("target", {}).get("name") == "sonic_rs"
+                  and "lib" in message.get("target", {}).get("kind", [])
+                  and (message.get("executable") or "").endswith(".wasm")
+              }
+          if not modules:
+              raise SystemExit("Cargo did not emit a sonic-rs Wasm library test executable")
+          for module in sorted(modules):
+              print(f"Running {module}", flush=True)
+              subprocess.run(["wasmtime", "run", module], check=True)
+          PYTHON
 
 
   test-nightly-hosted:
