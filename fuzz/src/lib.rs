@@ -1021,6 +1021,20 @@ mod test {
     }
 
     #[test]
+    fn test_deep_mixed_generation_is_bounded() {
+        let input = gen::DeepNestInput {
+            pattern: gen::NestPattern::Mixed {
+                depth: 256,
+                width: 253,
+            },
+        };
+        let json = input.to_json();
+
+        assert!(json.len() < 32 * 1024, "json len: {}", json.len());
+        assert!(json.contains("{\"v\":["));
+    }
+
+    #[test]
     fn test_fuzz_serde_roundtrip_raw_seeds() {
         for seed in [
             br#"{"name":"alice","value":42,"active":true}"#.as_slice(),

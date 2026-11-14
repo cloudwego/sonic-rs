@@ -381,6 +381,7 @@ impl NumberInput {
 }
 
 impl NumberPattern {
+    #[allow(clippy::inherent_to_string)]
     pub fn to_string(&self) -> String {
         match self {
             NumberPattern::Integer { negative, digits } => {
