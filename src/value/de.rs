@@ -1,4 +1,4 @@
-use std::{mem::MaybeUninit, result::Result as StdResult, slice};
+use std::{result::Result as StdResult, slice};
 
 use ::serde::{
     de::{
@@ -13,6 +13,7 @@ use crate::{
     error::{Error, ErrorCode},
     reader::Reader,
     serde::{number::N, tri},
+    util::hand_off,
     value::{node::Value, Array, Object},
 };
 
@@ -90,25 +91,13 @@ impl<'de> Visitor<'de> for ValueVisitor {
         formatter.write_str("a valid json")
     }
 
-    fn visit_bytes<E>(self, value_binary: &[u8]) -> StdResult<Value, E>
+    /// sonic-rs's own deserializers hand over the value they built (see `util::hand_off`). Any
+    /// other byte string is not a JSON value.
+    fn visit_bytes<E>(self, v: &[u8]) -> StdResult<Value, E>
     where
         E: de::Error,
     {
-        // we pass the value from value_binary
-        unsafe {
-            assert!(
-                value_binary.len() == std::mem::size_of::<Value>(),
-                "invalid value size {}",
-                value_binary.len()
-            );
-            let mut dom: MaybeUninit<Value> = MaybeUninit::zeroed();
-            std::ptr::copy_nonoverlapping(
-                value_binary.as_ptr() as *const Value,
-                dom.as_mut_ptr(),
-                1,
-            );
-            Ok(dom.assume_init())
-        }
+        hand_off::take(v).ok_or_else(|| E::invalid_type(Unexpected::Bytes(v), &self))
     }
 
     /// Any deserializer other than sonic-rs's own: build the value from its parts.
@@ -679,17 +668,7 @@ impl<'de> serde::Deserializer<'de> for &'de Value {
         if name == TOKEN {
             // A `Value` from a `Value`: hand over a clone, as the text deserializer hands over
             // the value it parsed (a clone shares the document).
-            let val = std::mem::ManuallyDrop::new(self.clone());
-            // #Safety
-            // `ValueVisitor::visit_bytes` takes ownership of the value passed as its bytes; it
-            // is not dropped here.
-            return unsafe {
-                let binary = &*std::ptr::slice_from_raw_parts(
-                    &*val as *const Value as *const u8,
-                    std::mem::size_of::<Value>(),
-                );
-                visitor.visit_bytes(binary)
-            };
+            return hand_off::hand_off(self.clone(), visitor);
         }
         visitor.visit_newtype_struct(self)
     }

@@ -1,10 +1,10 @@
-use std::{marker::PhantomData, mem::MaybeUninit};
+use std::marker::PhantomData;
 
 use ::serde::{de, de::Visitor, Deserialize, Deserializer};
 use faststr::FastStr;
 
 use super::{owned::OwnedLazyValue, value::LazyValue};
-use crate::lazyvalue::value::HasEsc;
+use crate::{lazyvalue::value::HasEsc, util::hand_off};
 
 impl<'de: 'a, 'a> Deserialize<'de> for LazyValue<'a> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -61,25 +61,13 @@ impl<'de> Deserialize<'de> for OwnedLazyValue {
                 formatter.write_str("expect a valid json")
             }
 
-            fn visit_bytes<E>(self, value_binary: &[u8]) -> std::result::Result<Self::Value, E>
+            /// sonic-rs's own deserializer hands over the value it built (see
+            /// `util::hand_off`). Any other byte string is not a JSON value.
+            fn visit_bytes<E>(self, v: &[u8]) -> std::result::Result<Self::Value, E>
             where
                 E: de::Error,
             {
-                // we pass the value from value_binary
-                unsafe {
-                    assert!(
-                        value_binary.len() == std::mem::size_of::<Self::Value>(),
-                        "invalid value size {}",
-                        value_binary.len()
-                    );
-                    let mut dom: MaybeUninit<Self::Value> = MaybeUninit::zeroed();
-                    std::ptr::copy_nonoverlapping(
-                        value_binary.as_ptr() as *const Self::Value,
-                        dom.as_mut_ptr(),
-                        1,
-                    );
-                    Ok(dom.assume_init())
-                }
+                hand_off::take(v).ok_or_else(|| E::invalid_type(de::Unexpected::Bytes(v), &self))
             }
         }
 
