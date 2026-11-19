@@ -222,7 +222,7 @@ fn parse_number_fraction(
 
 #[inline(always)]
 pub fn parse_number(data: &[u8], index: &mut usize, negative: bool) -> Result<ParserNumber, Error> {
-    let mut significant: u64 = 0;
+    let mut significant: u64;
     let mut exponent: i32 = 0;
     let mut trunc = false;
     // Checked slice: validates *index <= data.len() (panics otherwise).
@@ -638,7 +638,7 @@ pub unsafe fn parse_number_unchecked(
     index: &mut usize,
     negative: bool,
 ) -> Result<ParserNumber, Error> {
-    let mut significant: u64 = 0;
+    let mut significant: u64;
     let mut exponent: i32 = 0;
     let mut trunc = false;
     let raw_num = unsafe { data.get_unchecked(*index..) };
