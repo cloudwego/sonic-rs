@@ -107,6 +107,29 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn custom_receiver_with_the_same_output_keeps_its_callback() {
+        struct Reject<'a>(&'a Cell<bool>);
+        impl<'de> Visitor<'de> for Reject<'_> {
+            type Value = Value;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a value rejected by the wrapper")
+            }
+
+            fn visit_bytes<E: de::Error>(self, bytes: &[u8]) -> Result<Value, E> {
+                self.0.set(true);
+                assert!(take::<Value>(bytes).is_some());
+                Err(E::custom("wrapper rejected value"))
+            }
+        }
+
+        let called = Cell::new(false);
+        let result: Result<Value, Error> = hand_off(Value::new_null(), Reject(&called));
+        assert!(called.get());
+        assert_eq!(result.unwrap_err().to_string(), "wrapper rejected value");
+    }
+
     struct Nested<T>(T);
     impl<'de, T: HandOff> Visitor<'de> for Nested<T> {
         type Value = T;
@@ -141,8 +164,10 @@ mod tests {
         let result: Result<Value, Error> =
             hand_off(Value::new_bool(true), Nested(Value::new_null()));
         assert!(crate::JsonValueTrait::as_bool(&result.unwrap()).unwrap());
-        let result: Result<OwnedLazyValue, Error> =
-            hand_off(OwnedLazyValue::from(true), Nested(OwnedLazyValue::default()));
+        let result: Result<OwnedLazyValue, Error> = hand_off(
+            OwnedLazyValue::from(true),
+            Nested(OwnedLazyValue::default()),
+        );
         assert!(crate::JsonValueTrait::as_bool(&result.unwrap()).unwrap());
         VALUE.with(|slot| {
             assert!(ManuallyDrop::into_inner(slot.replace(ManuallyDrop::new(None))).is_none())
