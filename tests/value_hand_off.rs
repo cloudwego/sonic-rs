@@ -155,3 +155,25 @@ fn from_value_in_thread_local_destructor() {
     .unwrap();
     assert!(SUCCEEDED.load(Ordering::Relaxed));
 }
+
+#[test]
+fn wrapped_nested_fields_preserve_borrowing_raw_text_and_shared_clones() {
+    #[derive(Deserialize)]
+    struct Fields<'a> {
+        label: &'a str,
+        dom: Value,
+        lazy: OwnedLazyValue,
+    }
+    let input = r#"{"label":"borrowed","dom":{"a":[1,"x"]},"lazy":[ 1, 2 ]}"#;
+    let mut de = sonic_rs::Deserializer::from_str(input);
+    let fields: Fields = serde_path_to_error::deserialize(&mut de).unwrap();
+    de.end().unwrap();
+    assert_eq!(fields.label.as_ptr(), input[10..].as_ptr());
+    assert_eq!(fields.dom["a"][1].as_str(), Some("x"));
+    assert_eq!(sonic_rs::to_string(&fields.lazy).unwrap(), "[ 1, 2 ]");
+
+    let copy: Value = serde_path_to_error::deserialize(&fields.dom).unwrap();
+    assert_eq!(copy, fields.dom);
+    drop(fields);
+    assert_eq!(copy["a"][1].as_str(), Some("x"));
+}
