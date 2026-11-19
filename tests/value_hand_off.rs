@@ -138,17 +138,28 @@ fn from_value_in_thread_local_destructor() {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     static SUCCEEDED: AtomicBool = AtomicBool::new(false);
+    // Wrapping the Value visitor forces the marker-based TLS hand-off.
+    fn wrapped_value_round_trip() -> bool {
+        let result = serde_path_to_error::deserialize::<_, Value>(&Value::new_bool(true));
+        result.is_ok_and(|value| value.as_bool() == Some(true))
+    }
+
     struct AtExit;
     impl Drop for AtExit {
         fn drop(&mut self) {
             let result = sonic_rs::from_value::<Value>(&Value::new_null());
-            SUCCEEDED.store(result.is_ok_and(|value| value.is_null()), Ordering::Relaxed);
+            SUCCEEDED.store(
+                result.is_ok_and(|value| value.is_null()) && wrapped_value_round_trip(),
+                Ordering::Relaxed,
+            );
         }
     }
     thread_local! { static EXIT: AtExit = const { AtExit }; }
 
     std::thread::spawn(|| {
+        // Register EXIT before first touching the hand-off slot.
         EXIT.with(|_| ());
+        assert!(wrapped_value_round_trip());
         sonic_rs::from_value::<Value>(&Value::new_null()).unwrap();
     })
     .join()
