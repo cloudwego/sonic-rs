@@ -138,20 +138,53 @@ fn from_value_in_thread_local_destructor() {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     static SUCCEEDED: AtomicBool = AtomicBool::new(false);
+    // Wrapping the Value visitor forces the marker-based TLS hand-off.
+    fn wrapped_value_round_trip() -> bool {
+        let result = serde_path_to_error::deserialize::<_, Value>(&Value::new_bool(true));
+        result.is_ok_and(|value| value.as_bool() == Some(true))
+    }
+
     struct AtExit;
     impl Drop for AtExit {
         fn drop(&mut self) {
             let result = sonic_rs::from_value::<Value>(&Value::new_null());
-            SUCCEEDED.store(result.is_ok_and(|value| value.is_null()), Ordering::Relaxed);
+            SUCCEEDED.store(
+                result.is_ok_and(|value| value.is_null()) && wrapped_value_round_trip(),
+                Ordering::Relaxed,
+            );
         }
     }
     thread_local! { static EXIT: AtExit = const { AtExit }; }
 
     std::thread::spawn(|| {
+        // Register EXIT before first touching the hand-off slot.
         EXIT.with(|_| ());
+        assert!(wrapped_value_round_trip());
         sonic_rs::from_value::<Value>(&Value::new_null()).unwrap();
     })
     .join()
     .unwrap();
     assert!(SUCCEEDED.load(Ordering::Relaxed));
+}
+
+#[test]
+fn wrapped_nested_fields_preserve_borrowing_raw_text_and_shared_clones() {
+    #[derive(Deserialize)]
+    struct Fields<'a> {
+        label: &'a str,
+        dom: Value,
+        lazy: OwnedLazyValue,
+    }
+    let input = r#"{"label":"borrowed","dom":{"a":[1,"x"]},"lazy":[ 1, 2 ]}"#;
+    let mut de = sonic_rs::Deserializer::from_str(input);
+    let fields: Fields = serde_path_to_error::deserialize(&mut de).unwrap();
+    de.end().unwrap();
+    assert_eq!(fields.label.as_ptr(), input[10..].as_ptr());
+    assert_eq!(fields.dom["a"][1].as_str(), Some("x"));
+    assert_eq!(sonic_rs::to_string(&fields.lazy).unwrap(), "[ 1, 2 ]");
+
+    let copy: Value = serde_path_to_error::deserialize(&fields.dom).unwrap();
+    assert_eq!(copy, fields.dom);
+    drop(fields);
+    assert_eq!(copy["a"][1].as_str(), Some("x"));
 }
