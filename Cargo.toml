@@ -4,13 +4,13 @@ categories    = ["encoding", "parser-implementations"]
 description   = "Sonic-rs is a fast Rust JSON library based on SIMD"
 documentation = "https://docs.rs/sonic-rs"
 edition       = "2021"
-exclude       = ["benchmarks", "assets", "bindings"]
+exclude       = ["benchmarks", "assets", "bindings", "reports"]
 keywords      = ["json", "simd", "serde", "serialization"]
 license       = "Apache-2.0"
 name          = "sonic-rs"
 readme        = "README.md"
 repository    = "https://github.com/cloudwego/sonic-rs"
-version       = "0.5.10"
+version       = "0.5.11"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -24,8 +24,8 @@ itoa         = "1.0"
 ref-cast     = "1.0"
 serde        = { version = "1.0", features = ["rc", "derive"] }
 simdutf8     = "0.1"
-sonic-number = { path = "./sonic-number", version = "0.1" }
-sonic-simd   = { path = "./sonic-simd", version = "0.1" }
+sonic-number = { path = "./sonic-number", version = "0.1.3" }
+sonic-simd   = { path = "./sonic-simd", version = "0.1.4" }
 thiserror    = "2.0"
 zmij         = "1.0"
 
