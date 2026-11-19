@@ -39,6 +39,8 @@ pub use crate::lazyvalue::{
     OwnedLazyValue,
 };
 #[doc(inline)]
+pub use crate::parser::{parse_owned_lazy_value, parse_value};
+#[doc(inline)]
 pub use crate::pointer::{JsonPointer, PointerNode, PointerTree};
 #[doc(inline)]
 pub use crate::serde::de::{MapAccess, SeqAccess};
