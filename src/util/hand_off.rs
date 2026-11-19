@@ -1,79 +1,79 @@
-//! Hands a value that sonic-rs has already built (a `Value` or an `OwnedLazyValue`) to the
-//! matching visitor.
-//!
-//! serde has no way to pass an arbitrary Rust value to a visitor, so the value is moved into a
-//! thread-local slot and the visitor is called with an empty byte string. Only the matching
-//! visitor takes it back out of the slot ([`take`]). The bytes themselves are never read as a
-//! value, so a byte string from any other deserializer (serde's
-//! `BytesDeserializer`/`BorrowedBytesDeserializer`, or any deserializer that forwards
-//! `deserialize_newtype_struct` to `deserialize_any` while holding bytes, e.g. via
-//! `forward_to_deserialize_any!`) can only be refused, never turned into a value.
-//!
-//! The slot is restored when the visitor returns or unwinds, so a panicking visitor cannot leave
-//! a value behind for a later, unrelated `visit_bytes` to pick up.
+//! Move a parsed value to its serde visitor without exposing the value's representation.
+//! The visitor receives a borrow of a one-byte stack marker. Only that slice can claim the
+//! current hand-off, once, while the call is active.
 
-use std::{cell::Cell, thread::LocalKey};
+use std::{cell::Cell, mem::ManuallyDrop, thread::LocalKey};
 
 use serde::de::{self, Visitor};
 
 use crate::{value::node::Value, OwnedLazyValue};
 
-/// A type that can be handed to its visitor through a thread-local slot.
+// The guard owns cleanup, even on unwind. Keeping the slot free of thread-local destructors
+// also lets a hand-off run inside another thread-local's destructor.
+type Entry<T> = ManuallyDrop<Option<(*const u8, T)>>;
+type Slot<T> = Cell<Entry<T>>;
+
 pub(crate) trait HandOff: Sized + 'static {
-    fn slot() -> &'static LocalKey<Cell<Option<Self>>>;
+    fn slot() -> &'static LocalKey<Slot<Self>>;
 }
 
 thread_local! {
-    static VALUE: Cell<Option<Value>> = const { Cell::new(None) };
-    static OWNED_LAZY_VALUE: Cell<Option<OwnedLazyValue>> = const { Cell::new(None) };
+    static VALUE: Slot<Value> = const { Cell::new(ManuallyDrop::new(None)) };
+    static OWNED_LAZY_VALUE: Slot<OwnedLazyValue> = const { Cell::new(ManuallyDrop::new(None)) };
 }
 
 impl HandOff for Value {
-    fn slot() -> &'static LocalKey<Cell<Option<Self>>> {
+    fn slot() -> &'static LocalKey<Slot<Self>> {
         &VALUE
     }
 }
 
 impl HandOff for OwnedLazyValue {
-    fn slot() -> &'static LocalKey<Cell<Option<Self>>> {
+    fn slot() -> &'static LocalKey<Slot<Self>> {
         &OWNED_LAZY_VALUE
     }
 }
 
-/// Puts back what the slot held before a hand-off, and drops whatever the visitor did not take.
-struct Restore<T: HandOff>(Option<T>);
+struct Restore<'a, T> {
+    slot: &'a Slot<T>,
+    previous: Option<(*const u8, T)>,
+}
 
-impl<T: HandOff> Drop for Restore<T> {
+impl<T> Drop for Restore<'_, T> {
     fn drop(&mut self) {
-        let prev = self.0.take();
-        // `try_with`: never panic here, this may run while unwinding. The leftover is dropped
-        // after the slot is released.
-        let _ = T::slot().try_with(|slot| slot.replace(prev));
+        let leftover = self.slot.replace(ManuallyDrop::new(self.previous.take()));
+        drop(ManuallyDrop::into_inner(leftover));
     }
 }
 
-/// Passes `value` to `visitor`, as an empty byte string; the matching visitor gets it with
-/// [`take`]. If the visitor does not take it, it is dropped here.
 pub(crate) fn hand_off<'de, T, V, E>(value: T, visitor: V) -> Result<V::Value, E>
 where
     T: HandOff,
     V: Visitor<'de>,
     E: de::Error,
 {
-    // Keep what the slot held (a hand-off in progress further up the stack) and put it back
-    // afterwards, so nested hand-offs do not lose it.
-    let prev = T::slot()
-        .try_with(|slot| slot.replace(Some(value)))
-        .map_err(|_| E::custom("thread-local storage is being destroyed"))?;
-    let _restore = Restore::<T>(prev);
-    visitor.visit_bytes(&[])
+    let marker = [0u8];
+    T::slot().with(|slot| {
+        let previous = slot.replace(ManuallyDrop::new(Some((marker.as_ptr(), value))));
+        let _restore = Restore {
+            slot,
+            previous: ManuallyDrop::into_inner(previous),
+        };
+        visitor.visit_bytes(&marker)
+    })
 }
 
-/// The value handed off by [`hand_off`], if `bytes` is its empty byte string and a hand-off is in
-/// progress. Anything else is a byte string from some other deserializer.
 pub(crate) fn take<T: HandOff>(bytes: &[u8]) -> Option<T> {
-    if !bytes.is_empty() {
+    if bytes.len() != 1 {
         return None;
     }
-    T::slot().try_with(|slot| slot.take()).ok().flatten()
+    T::slot().with(
+        |slot| match ManuallyDrop::into_inner(slot.replace(ManuallyDrop::new(None))) {
+            Some((marker, value)) if marker == bytes.as_ptr() => Some(value),
+            previous => {
+                slot.set(ManuallyDrop::new(previous));
+                None
+            }
+        },
+    )
 }

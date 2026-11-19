@@ -87,3 +87,71 @@ mod unwind {
         assert!(OwnedLazyValue::deserialize(BytesDeserializer::<Error>::new(&[])).is_err());
     }
 }
+
+#[test]
+fn reentrant_visitor_only_accepts_its_own_marker_once() {
+    use serde::de::{DeserializeOwned, Deserializer as _, Visitor};
+
+    struct Reenter<T>(std::marker::PhantomData<T>);
+
+    impl<'de, T: DeserializeOwned> Visitor<'de> for Reenter<T> {
+        type Value = T;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("a hand-off")
+        }
+
+        fn visit_bytes<E: serde::de::Error>(self, marker: &[u8]) -> Result<T, E> {
+            let read = |bytes| T::deserialize(BytesDeserializer::<E>::new(bytes));
+            assert!(read(&[]).is_err());
+            let copy = marker.to_vec();
+            assert!(read(&copy).is_err());
+            let _: T = sonic_rs::from_str("42").unwrap();
+            let outer = read(marker)?;
+            assert!(read(marker).is_err());
+            Ok(outer)
+        }
+    }
+
+    let mut de = sonic_rs::Deserializer::from_str("17");
+    let value = (&mut de)
+        .deserialize_newtype_struct(
+            "$sonic_rs::private::Value",
+            Reenter::<Value>(Default::default()),
+        )
+        .unwrap();
+    assert_eq!(value.as_u64(), Some(17));
+
+    let mut de = sonic_rs::Deserializer::from_str("17");
+    let lazy = (&mut de)
+        .deserialize_newtype_struct(
+            "$sonic::OwnedLv",
+            Reenter::<OwnedLazyValue>(Default::default()),
+        )
+        .unwrap();
+    assert_eq!(lazy.as_u64(), Some(17));
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[test]
+fn from_value_in_thread_local_destructor() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static SUCCEEDED: AtomicBool = AtomicBool::new(false);
+    struct AtExit;
+    impl Drop for AtExit {
+        fn drop(&mut self) {
+            let result = sonic_rs::from_value::<Value>(&Value::new_null());
+            SUCCEEDED.store(result.is_ok_and(|value| value.is_null()), Ordering::Relaxed);
+        }
+    }
+    thread_local! { static EXIT: AtExit = const { AtExit }; }
+
+    std::thread::spawn(|| {
+        EXIT.with(|_| ());
+        sonic_rs::from_value::<Value>(&Value::new_null()).unwrap();
+    })
+    .join()
+    .unwrap();
+    assert!(SUCCEEDED.load(Ordering::Relaxed));
+}
