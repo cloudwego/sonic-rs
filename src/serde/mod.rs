@@ -1,6 +1,7 @@
 //! Serde between JSON text and Rust data structure.
 
 pub(crate) mod de;
+pub(crate) mod hand_off;
 pub(crate) mod number;
 pub(crate) mod rawnumber;
 pub(crate) mod ser;
