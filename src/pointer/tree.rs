@@ -82,6 +82,9 @@ pub(crate) enum PointerTreeInner {
     Empty,
     Key(MultiKey),
     Index(MultiIndex),
+    // paths that continue with a key and paths that continue with an index from the same node:
+    // which ones can match depends on whether the JSON value there is an object or an array
+    KeyAndIndex(MultiKey, MultiIndex),
 }
 
 // Note: support the repeat path
@@ -115,18 +118,32 @@ impl PointerTreeNode {
     }
 
     fn insert_key(&mut self, key: &str) -> &mut Self {
-        if let PointerTreeInner::Key(mkey) = &mut self.children {
-            mkey.entry(FastStr::new(key)).or_insert(Self::default())
-        } else {
-            unreachable!()
+        if let PointerTreeInner::Index(_) = self.children {
+            let PointerTreeInner::Index(midx) = std::mem::take(&mut self.children) else {
+                unreachable!()
+            };
+            self.children = PointerTreeInner::KeyAndIndex(HashMap::new(), midx);
+        }
+        match &mut self.children {
+            PointerTreeInner::Key(mkey) | PointerTreeInner::KeyAndIndex(mkey, _) => {
+                mkey.entry(FastStr::new(key)).or_default()
+            }
+            _ => unreachable!("add_path sets the children before inserting"),
         }
     }
 
     fn insert_index(&mut self, idx: usize) -> &mut Self {
-        if let PointerTreeInner::Index(midx) = &mut self.children {
-            midx.entry(idx).or_insert(Self::default())
-        } else {
-            unreachable!()
+        if let PointerTreeInner::Key(_) = self.children {
+            let PointerTreeInner::Key(mkey) = std::mem::take(&mut self.children) else {
+                unreachable!()
+            };
+            self.children = PointerTreeInner::KeyAndIndex(mkey, HashMap::new());
+        }
+        match &mut self.children {
+            PointerTreeInner::Index(midx) | PointerTreeInner::KeyAndIndex(_, midx) => {
+                midx.entry(idx).or_default()
+            }
+            _ => unreachable!("add_path sets the children before inserting"),
         }
     }
 }
@@ -153,5 +170,30 @@ mod test {
         tree.add_path(pointer![].iter());
         assert_eq!(tree.size(), 7);
         println!("tree is {tree:#?}");
+    }
+
+    #[test]
+    fn test_tree_key_and_index_at_the_same_node() {
+        // A key path and an index path from the same node used to panic in `add_path`
+        // ("entered unreachable code"); whether the JSON value there is an object or an array
+        // decides which of them can match.
+        let mut tree = PointerTree::new();
+        tree.add_path(&pointer!["a"]);
+        tree.add_path(&pointer![0]);
+        tree.add_path(&pointer!["x", 1]);
+        tree.add_path(&pointer!["x", "k"]);
+        assert_eq!(tree.size(), 4);
+
+        let get = |json: &str| -> Vec<Option<String>> {
+            crate::get_many(json, &tree)
+                .unwrap()
+                .into_iter()
+                .map(|v| v.map(|v| v.as_raw_str().to_string()))
+                .collect()
+        };
+        let s = |v: &str| Some(v.to_string());
+        assert_eq!(get(r#"{"a":1,"x":[5,6]}"#), [s("1"), None, s("6"), None]);
+        assert_eq!(get(r#"{"a":1,"x":{"k":7}}"#), [s("1"), None, None, s("7")]);
+        assert_eq!(get(r#"[10]"#), [None, s("10"), None, None]);
     }
 }
