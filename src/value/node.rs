@@ -346,6 +346,7 @@ impl Meta {
         self.read_val() & Self::KIND_MASK
     }
 
+    #[inline]
     fn get_type(&self) -> u64 {
         let val = self.read_val();
         let typ = val & Self::TYPE_MASK;
@@ -415,13 +416,12 @@ struct NodeMeta {
 
 struct NodeInDom<'a> {
     node: &'a Value,
-    dom: &'a Shared,
 }
 
 impl<'a> NodeInDom<'a> {
     #[inline(always)]
     fn get_inner(&self) -> ValueRefInner<'a> {
-        let typ = self.node.meta.get_type();
+        let typ = self.node.meta.get_kind();
         match typ {
             Meta::STR_NODE => ValueRefInner::Str(self.unpack_str()),
             Meta::RAWNUM_NODE => ValueRefInner::RawNum(self.unpack_str()),
@@ -450,17 +450,6 @@ impl<'a> NodeInDom<'a> {
         let len = self.node.meta.unpack_dom_node().len as usize;
         let pairs = unsafe { self.node.data.obj_pairs.as_ptr() };
         unsafe { from_raw_parts(pairs, len) }
-    }
-}
-
-impl<'a> From<NodeInDom<'a>> for Value {
-    fn from(value: NodeInDom<'a>) -> Self {
-        Self {
-            meta: Meta::pack_shared(value.dom as *const _),
-            data: Data {
-                root: NonNull::from(value.node),
-            },
-        }
     }
 }
 
@@ -701,10 +690,7 @@ impl Value {
             Meta::EMPTY_ARR => ValueDetail::EmptyArray,
             Meta::EMPTY_OBJ => ValueDetail::EmptyObject,
             Meta::STR_NODE | Meta::RAWNUM_NODE | Meta::ARR_NODE | Meta::OBJ_NODE => {
-                ValueDetail::NodeInDom(NodeInDom {
-                    node: self,
-                    dom: self.unpack_shared(),
-                })
+                ValueDetail::NodeInDom(NodeInDom { node: self })
             }
             Meta::FASTSTR => ValueDetail::FastStr(unsafe { &self.data.str_own }),
             Meta::RAWNUM_FASTSTR => ValueDetail::RawNumFasStr(unsafe { &self.data.str_own }),
@@ -712,7 +698,6 @@ impl Value {
             Meta::OBJ_MUT => ValueDetail::Object(unsafe { &self.data.obj_own }),
             Meta::ROOT_NODE => ValueDetail::Root(NodeInDom {
                 node: unsafe { self.data.root.as_ref() },
-                dom: unsafe { &*self.meta.unpack_root() },
             }),
             _ => unreachable!("unknown type"),
         }
@@ -735,7 +720,20 @@ impl Clone for Value {
     /// ```
     fn clone(&self) -> Self {
         match self.unpack_ref() {
-            ValueDetail::Root(indom) | ValueDetail::NodeInDom(indom) => Value::from(indom),
+            ValueDetail::Root(indom) | ValueDetail::NodeInDom(indom) => {
+                // Only an independently owned handle needs a reference to the DOM.
+                let shared = if self.meta.get_kind() == Meta::ROOT_NODE {
+                    self.meta.unpack_root()
+                } else {
+                    self.unpack_shared()
+                };
+                Value {
+                    meta: Meta::pack_shared(shared),
+                    data: Data {
+                        root: NonNull::from(indom.node),
+                    },
+                }
+            }
             ValueDetail::Null => Value::new_null(),
             ValueDetail::Bool(b) => Value::new_bool(b),
             ValueDetail::Number(n) => n.into(),
@@ -1828,6 +1826,17 @@ mod test {
     #[cfg(feature = "sort_keys")]
     use crate::object;
     use crate::{error::make_error, from_slice, from_str, pointer, util::mock::MockString};
+
+    #[test]
+    fn cloned_dom_child_outlives_its_owners() {
+        let child = {
+            let doc: Value = from_str(r#"{"items":[{"name":"sonic"}]}"#).unwrap();
+            doc["items"][0].clone()
+        };
+        let copy = child.clone();
+        drop(child);
+        assert_eq!(crate::to_string(&copy).unwrap(), r#"{"name":"sonic"}"#);
+    }
 
     /// `Value` is built by the DOM parser, which recurses once per array or object. It stops at
     /// the same depth as the serde visitors instead of overflowing the stack.
