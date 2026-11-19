@@ -87,7 +87,6 @@ jobs:
               subprocess.run(["wasmtime", "run", module], check=True)
           PYTHON
 
-
   test-nightly-hosted:
     strategy:
       fail-fast: false
