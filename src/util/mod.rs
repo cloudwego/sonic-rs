@@ -1,6 +1,5 @@
 pub(crate) mod arch;
 
-pub(crate) mod hand_off;
 pub(crate) mod private;
 pub(crate) mod reborrow;
 pub(crate) mod string;

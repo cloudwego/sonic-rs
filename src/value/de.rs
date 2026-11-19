@@ -12,8 +12,7 @@ use super::node::ValueRef;
 use crate::{
     error::{Error, ErrorCode},
     reader::Reader,
-    serde::{number::N, tri},
-    util::hand_off,
+    serde::{hand_off, number::N, tri},
     value::{node::Value, Array, Object},
 };
 
@@ -91,7 +90,7 @@ impl<'de> Visitor<'de> for ValueVisitor {
         formatter.write_str("a valid json")
     }
 
-    /// sonic-rs's own deserializers hand over the value they built (see `util::hand_off`). Any
+    /// sonic-rs's own deserializers hand over the value they built (see `serde::hand_off`). Any
     /// other byte string is not a JSON value.
     fn visit_bytes<E>(self, v: &[u8]) -> StdResult<Value, E>
     where

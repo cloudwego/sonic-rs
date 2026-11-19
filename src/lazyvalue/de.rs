@@ -4,7 +4,7 @@ use ::serde::{de, de::Visitor, Deserialize, Deserializer};
 use faststr::FastStr;
 
 use super::{owned::OwnedLazyValue, value::LazyValue};
-use crate::{lazyvalue::value::HasEsc, util::hand_off};
+use crate::{lazyvalue::value::HasEsc, serde::hand_off};
 
 impl<'de: 'a, 'a> Deserialize<'de> for LazyValue<'a> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -45,32 +45,22 @@ impl<'de: 'a, 'a> Deserialize<'de> for LazyValue<'a> {
     }
 }
 
+pub(crate) struct OwnedVisitor;
+
+impl<'de> Visitor<'de> for OwnedVisitor {
+    type Value = OwnedLazyValue;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("expect a valid json")
+    }
+
+    fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+        hand_off::take(v).ok_or_else(|| E::invalid_type(de::Unexpected::Bytes(v), &self))
+    }
+}
+
 impl<'de> Deserialize<'de> for OwnedLazyValue {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct OwnedVisitor;
-
-        let visit = OwnedVisitor;
-
-        impl<'de> Visitor<'de> for OwnedVisitor {
-            type Value = OwnedLazyValue;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("expect a valid json")
-            }
-
-            /// sonic-rs's own deserializer hands over the value it built (see
-            /// `util::hand_off`). Any other byte string is not a JSON value.
-            fn visit_bytes<E>(self, v: &[u8]) -> std::result::Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                hand_off::take(v).ok_or_else(|| E::invalid_type(de::Unexpected::Bytes(v), &self))
-            }
-        }
-
-        deserializer.deserialize_newtype_struct(super::OWNED_LAZY_VALUE_TOKEN, visit)
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_newtype_struct(super::OWNED_LAZY_VALUE_TOKEN, OwnedVisitor)
     }
 }

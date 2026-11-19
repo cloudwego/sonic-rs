@@ -39,6 +39,9 @@ use crate::{
     JsonValueMutTrait, JsonValueTrait, LazyValue, Number, OwnedLazyValue,
 };
 
+mod document;
+pub use document::{parse_owned_lazy_value, parse_value};
+
 // support borrow for owned deserizlie or skip
 pub enum Reference<'b, 'c, T>
 where
@@ -687,18 +690,10 @@ where
     #[inline(always)]
     pub(crate) fn get_owned_lazyvalue(&mut self, strict: bool) -> Result<OwnedLazyValue> {
         let c = self.skip_space();
-        let start = match c {
+        let (start, plain_string) = match c {
             Some(b'"') => {
                 let start = self.read.index() - 1;
-                match self.skip_string()? {
-                    ParseStatus::None => {
-                        let slice = self.read.slice_unchecked(start, self.read.index());
-                        let raw = self.read.slice_ref(slice).as_faststr();
-                        return Ok(OwnedLazyValue::from_non_esc_str(raw));
-                    }
-                    ParseStatus::HasEscaped => {}
-                }
-                start
+                (start, self.skip_string()? == ParseStatus::None)
             }
             Some(b't') if self.match_literal("rue")? => return Ok(true.into()),
             Some(b'f') if self.match_literal("alse")? => return Ok(false.into()),
@@ -708,13 +703,22 @@ where
                 let start = self.read.index() - 1;
                 self.read.backward(1);
                 self.skip_one(strict)?;
-                start
+                (start, false)
             }
         };
         let end = self.read.index();
+        // Raw JSON is about to become a FastStr. Reject invalid bytes in this
+        // value before constructing the string, including for nested lazy fields.
+        if self.read.next_invalid_utf8() < end {
+            self.read.check_utf8_final()?;
+        }
         let sub = self.read.slice_unchecked(start, end);
         let raw = self.read.slice_ref(sub).as_faststr();
-        Ok(OwnedLazyValue::new(raw.into(), HasEsc::Possible))
+        if plain_string {
+            Ok(OwnedLazyValue::from_non_esc_str(raw))
+        } else {
+            Ok(OwnedLazyValue::new(raw.into(), HasEsc::Possible))
+        }
     }
 
     #[inline(always)]
@@ -2209,7 +2213,7 @@ where
         let end = self.read.index();
         if should_replace && start < end {
             let slice = self.read.slice_unchecked(start, end);
-            *schema = crate::from_slice(slice)?;
+            *schema = crate::parse_value(slice)?;
         }
         Ok(())
     }
