@@ -2,6 +2,9 @@ cfg_if::cfg_if! {
     if #[cfg(all(target_arch = "x86_64", target_feature = "pclmulqdq", target_feature = "avx2", target_feature = "sse2"))] {
         mod x86_64;
         pub use x86_64::*;
+    } else if #[cfg(all(target_feature="sve2", target_arch="aarch64"))] {
+        mod sve2;
+        pub use sve2::*;
     } else if #[cfg(all(target_feature="neon", target_arch="aarch64"))] {
         mod aarch64;
         pub use aarch64::*;
@@ -18,8 +21,16 @@ mod test {
     #[test]
     fn test_get_non_space_bits() {
         let input = b"\t\r\n xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
-        let non_space_bits = unsafe { get_nonspace_bits(input) };
-        let expected_bits = 0b1111111111111111111111111111111111111111111111111111111111110000;
-        assert_eq!(non_space_bits, expected_bits, "bits is {non_space_bits:b}");
+        cfg_if::cfg_if! {
+            if #[cfg(all(target_feature="sve2", target_arch="aarch64"))] {
+                let first_nonspace_idx = unsafe { get_nonspace_index(std::mem::transmute(input)) };
+                // sve2 cannot generate the full bitmap(without performance loss)
+                assert_eq!(first_nonspace_idx, 4, "first non-space index is {first_nonspace_idx}");
+            } else {
+                let non_space_bits = unsafe { get_nonspace_bits(input) };
+                let expected_bits = 0b1111111111111111111111111111111111111111111111111111111111110000;
+                assert_eq!(non_space_bits, expected_bits, "bits is {non_space_bits:b}");
+            }
+        }
     }
 }
