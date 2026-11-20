@@ -1871,14 +1871,21 @@ where
 
         let mut status = ParseStatus::None;
         match &node.children {
+            // A leaf is skipped iteratively; only traversal through the pointer tree recurses.
             PointerTreeInner::Empty => {
                 status = self.skip_one(true)?.1;
             }
             PointerTreeInner::Index(midxs) => {
-                self.get_many_index(midxs, strbuf, out, remain, is_safe)?
+                self.enter_nested()?;
+                let ret = self.get_many_index(midxs, strbuf, out, remain, is_safe);
+                self.leave_nested();
+                ret?
             }
             PointerTreeInner::Key(mkeys) => {
-                self.get_many_keys(mkeys, strbuf, out, remain, is_safe)?
+                self.enter_nested()?;
+                let ret = self.get_many_keys(mkeys, strbuf, out, remain, is_safe);
+                self.leave_nested();
+                ret?
             }
         };
 
