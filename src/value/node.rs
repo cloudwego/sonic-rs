@@ -1534,6 +1534,8 @@ impl<'a> DocumentVisitor<'a> {
 #[repr(C)]
 struct MetaNode {
     shared: *const Shared,
+    #[cfg(target_pointer_width = "32")]
+    _padding: u32,
     canary: u64,
 }
 
@@ -1547,6 +1549,8 @@ impl MetaNode {
         let canary = b"SONICRS\0";
         MetaNode {
             shared,
+            #[cfg(target_pointer_width = "32")]
+            _padding: 0,
             canary: u64::from_ne_bytes(*canary),
         }
     }

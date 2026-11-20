@@ -1,7 +1,8 @@
-use core::{
-    arch::x86_64::*,
-    ops::{BitAnd, BitOr, BitOrAssign},
-};
+#[cfg(target_arch = "x86")]
+use core::arch::x86::*;
+#[cfg(target_arch = "x86_64")]
+use core::arch::x86_64::*;
+use core::ops::{BitAnd, BitOr, BitOrAssign};
 
 use super::{Mask, Simd};
 
