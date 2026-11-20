@@ -72,6 +72,28 @@ impl Default for OwnedLazyValue {
 }
 
 impl OwnedLazyValue {
+    /// Return the raw JSON text if this value is still in its unparsed (lazy)
+    /// form. Returns `None` if the value has already been fully parsed into a
+    /// concrete representation.
+    ///
+    /// This is the owned counterpart to [`LazyValue::as_raw_str`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use sonic_rs::{get, OwnedLazyValue};
+    ///
+    /// let input = r#"{"a": [1, 2, 3]}"#;
+    /// let own = OwnedLazyValue::from(get(input, &["a"]).unwrap());
+    /// assert_eq!(own.as_raw_str(), Some("[1, 2, 3]"));
+    /// ```
+    pub fn as_raw_str(&self) -> Option<&str> {
+        match &self.0 {
+            LazyPacked::Raw(raw) => Some(raw.raw.as_str()),
+            _ => None,
+        }
+    }
+
     pub(crate) fn from_non_esc_str(raw: FastStr) -> Self {
         Self(LazyPacked::NonEscStrRaw(raw))
     }
