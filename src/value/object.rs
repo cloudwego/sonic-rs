@@ -806,7 +806,7 @@ impl<'a> Entry<'a> {
 /// An iterator over the entries of a `Object`.
 enum IterInner<'a> {
     #[cfg(not(feature = "sort_keys"))]
-    Map(std::collections::hash_map::Iter<'a, FastStr, Value>),
+    Map(hashbrown::hash_map::Iter<'a, FastStr, Value>),
     #[cfg(feature = "sort_keys")]
     Map(std::collections::btree_map::Iter<'a, FastStr, Value>),
     Slice(slice::Iter<'a, (Value, Value)>),
@@ -839,7 +839,7 @@ impl<'a> FusedIterator for Iter<'a> {}
 
 /// A mutable iterator over the entries of a `Object`.
 pub struct IterMut<'a>(
-    #[cfg(not(feature = "sort_keys"))] std::collections::hash_map::IterMut<'a, FastStr, Value>,
+    #[cfg(not(feature = "sort_keys"))] hashbrown::hash_map::IterMut<'a, FastStr, Value>,
     #[cfg(feature = "sort_keys")] std::collections::btree_map::IterMut<'a, FastStr, Value>,
 );
 
