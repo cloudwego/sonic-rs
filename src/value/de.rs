@@ -118,6 +118,81 @@ impl<'de> Visitor<'de> for ValueVisitor {
     {
         deserializer.deserialize_any(ValueBuilder)
     }
+
+    // Many deserializers (serde's `de::value::*`, `IntoDeserializer`, `MapAccessDeserializer`)
+    // forward `deserialize_newtype_struct` to `deserialize_any`, so this visitor sees the parts
+    // of the value directly: build it from them, as `ValueBuilder` does. `visit_bytes` is not
+    // forwarded: it is the hand-off above.
+
+    fn visit_bool<E>(self, v: bool) -> StdResult<Value, E>
+    where
+        E: de::Error,
+    {
+        ValueBuilder.visit_bool(v)
+    }
+
+    fn visit_i64<E>(self, v: i64) -> StdResult<Value, E>
+    where
+        E: de::Error,
+    {
+        ValueBuilder.visit_i64(v)
+    }
+
+    fn visit_u64<E>(self, v: u64) -> StdResult<Value, E>
+    where
+        E: de::Error,
+    {
+        ValueBuilder.visit_u64(v)
+    }
+
+    fn visit_f64<E>(self, v: f64) -> StdResult<Value, E>
+    where
+        E: de::Error,
+    {
+        ValueBuilder.visit_f64(v)
+    }
+
+    fn visit_str<E>(self, v: &str) -> StdResult<Value, E>
+    where
+        E: de::Error,
+    {
+        ValueBuilder.visit_str(v)
+    }
+
+    fn visit_unit<E>(self) -> StdResult<Value, E>
+    where
+        E: de::Error,
+    {
+        ValueBuilder.visit_unit()
+    }
+
+    fn visit_none<E>(self) -> StdResult<Value, E>
+    where
+        E: de::Error,
+    {
+        ValueBuilder.visit_none()
+    }
+
+    fn visit_some<D>(self, deserializer: D) -> StdResult<Value, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        ValueBuilder.visit_some(deserializer)
+    }
+
+    fn visit_seq<A>(self, seq: A) -> StdResult<Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        ValueBuilder.visit_seq(seq)
+    }
+
+    fn visit_map<A>(self, map: A) -> StdResult<Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        ValueBuilder.visit_map(map)
+    }
 }
 
 /// Builds a `Value` from any self-describing deserializer, as `serde_json::Value` does. Unlike
