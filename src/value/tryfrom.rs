@@ -58,6 +58,6 @@ impl TryFrom<f64> for Value {
 impl<'de> TryFrom<LazyValue<'de>> for Value {
     type Error = crate::Error;
     fn try_from(value: LazyValue<'de>) -> Result<Self, Self::Error> {
-        crate::from_str(value.as_raw_str())
+        crate::parse_value(value.as_raw_str())
     }
 }

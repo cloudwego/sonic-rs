@@ -1,10 +1,10 @@
-use std::{marker::PhantomData, mem::MaybeUninit};
+use std::marker::PhantomData;
 
 use ::serde::{de, de::Visitor, Deserialize, Deserializer};
 use faststr::FastStr;
 
 use super::{owned::OwnedLazyValue, value::LazyValue};
-use crate::lazyvalue::value::HasEsc;
+use crate::{lazyvalue::value::HasEsc, serde::hand_off};
 
 impl<'de: 'a, 'a> Deserialize<'de> for LazyValue<'a> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -45,44 +45,22 @@ impl<'de: 'a, 'a> Deserialize<'de> for LazyValue<'a> {
     }
 }
 
+pub(crate) struct OwnedVisitor;
+
+impl<'de> Visitor<'de> for OwnedVisitor {
+    type Value = OwnedLazyValue;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("expect a valid json")
+    }
+
+    fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+        hand_off::take(v).ok_or_else(|| E::invalid_type(de::Unexpected::Bytes(v), &self))
+    }
+}
+
 impl<'de> Deserialize<'de> for OwnedLazyValue {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct OwnedVisitor;
-
-        let visit = OwnedVisitor;
-
-        impl<'de> Visitor<'de> for OwnedVisitor {
-            type Value = OwnedLazyValue;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("expect a valid json")
-            }
-
-            fn visit_bytes<E>(self, value_binary: &[u8]) -> std::result::Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                // we pass the value from value_binary
-                unsafe {
-                    assert!(
-                        value_binary.len() == std::mem::size_of::<Self::Value>(),
-                        "invalid value size {}",
-                        value_binary.len()
-                    );
-                    let mut dom: MaybeUninit<Self::Value> = MaybeUninit::zeroed();
-                    std::ptr::copy_nonoverlapping(
-                        value_binary.as_ptr() as *const Self::Value,
-                        dom.as_mut_ptr(),
-                        1,
-                    );
-                    Ok(dom.assume_init())
-                }
-            }
-        }
-
-        deserializer.deserialize_newtype_struct(super::OWNED_LAZY_VALUE_TOKEN, visit)
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_newtype_struct(super::OWNED_LAZY_VALUE_TOKEN, OwnedVisitor)
     }
 }
