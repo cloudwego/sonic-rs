@@ -357,7 +357,9 @@ where
     /// Parse a JSON string and visit it.
     /// When `strbuf` is Some, copies into the buffer (owned, calls visit_str).
     /// When `strbuf` is None, parses inplace zero-copy (calls visit_borrowed_str).
-    #[inline(always)]
+    // Keep scalar/SIMD scratch frames out of recursive DOM frames in debug builds.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     fn parse_string_visit<V>(&mut self, vis: &mut V, strbuf: Option<&mut Vec<u8>>) -> Result<()>
     where
         V: JsonVisitor<'de>,
@@ -388,7 +390,8 @@ where
     /// Only called when strbuf=None (padded reader path). PaddedSliceRead has 64 bytes
     /// of zero-padding beyond valid JSON, so scanning 24 bytes ahead is always safe.
     /// Padding bytes (0x00) are < 0x20 and will bail to parse_string_visit.
-    #[inline(always)]
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     fn parse_key_scalar<V>(&mut self, vis: &mut V) -> Result<()>
     where
         V: JsonVisitor<'de>,
@@ -415,7 +418,8 @@ where
     }
 
     /// Parse a number. When `inplace` is true, visits as borrowed raw number.
-    #[inline(always)]
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     fn parse_number_visit<V>(&mut self, first: u8, vis: &mut V, inplace: bool) -> Result<()>
     where
         V: JsonVisitor<'de>,
@@ -561,7 +565,11 @@ where
     /// Dispatch value parsing based on the peeked byte.
     /// When `strbuf` is None, strings are parsed inplace (zero-copy borrowed).
     /// When `strbuf` is Some, strings are parsed into the buffer (owned copy).
-    #[inline(always)]
+    // This frame stays live while a child container is parsed. Separating only this
+    // dispatcher is insufficient: its scalar helpers must also stay out of line in
+    // debug builds so their scratch space is not retained at every nesting level.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
     fn dispatch_value<V>(
         &mut self,
         ch: Option<u8>,

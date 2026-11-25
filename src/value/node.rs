@@ -1880,11 +1880,18 @@ mod test {
             );
         }
 
-        /// Debug builds use about 75 KB of stack per nested object, so the maximum depth needs
-        /// about 19 MB.
+        /// The maximum depth must fit a small stack in debug builds too (it needed about 19 MB
+        /// before the scalar helpers were kept out of line), independent of RUST_MIN_STACK.
         fn with_stack(f: impl FnOnce() + Send + 'static) {
             std::thread::Builder::new()
-                .stack_size(64 * 1024 * 1024)
+                // Named after the test, so an overflow report says which one.
+                .name(
+                    std::thread::current()
+                        .name()
+                        .unwrap_or("depth_limit")
+                        .into(),
+                )
+                .stack_size(4 * 1024 * 1024)
                 .spawn(f)
                 .unwrap()
                 .join()
